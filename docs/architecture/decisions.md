@@ -23,3 +23,9 @@ For example, kashkeshet calls the backup implementation itself and also passes i
 Keep source-supported handoffs, possible connections, and the place a trace stops distinguishable. A missing route can mean incomplete evidence. The reviewer’s confidence in a label cannot supply a missing handoff.
 
 The module boundaries, dependency arrangements and review workflow for dep-mapper itself are proposals for design review.
+
+## Proposed composition for review
+
+Mapper command owns three handoffs. It supplies Rust project reader to Dependency evidence through the shared Project observations contract. It also supplies Architecture review with a source of judgments for the selected evidence graph. The first proposed source is a small command-owned adapter over Map files that reads a review authored by a human or LLM. Architecture review owns the requirement and checks the returned labels against the evidence.
+
+For presentation, Mapper command pairs the document returned by Architecture review with the Map viewer bundle. Map files writes both for publication. The browser opens the bundle and reads the accompanying document. This handoff works across the Rust and TypeScript boundary.
