@@ -30,6 +30,17 @@ Architecture review is a contract for making an architectural judgment. The requ
 
 Two proposed effect modules implement the contract. **Architecture review terminal** displays the evidence, asks a human to decide, and returns the answer. **Architecture review LLM** submits the review request to a model API and returns the model’s decision. A different review mechanism can implement the same contract.
 
-**Mapper command** owns the composition. It selects a reader for the project language and supplies it to Dependency evidence through Project observations. The Rust reader serves the initial investigation. The TypeScript reader illustrates how another language can supply the same observations. Mapper command obtains the resulting graph and adapts the relevant evidence to the review contract. It selects a reviewer and calls it through that contract. For publication it pairs decisions with the original evidence and prepares the input document defined by Map viewer. The reviewer owns the decision, Dependency evidence owns the facts, and Map viewer owns their presentation.
+**Mapper command** owns the composition. It selects a reader for the project language and supplies it to Dependency evidence through Project observations. The Rust reader serves the initial investigation. The TypeScript reader illustrates how another language can supply the same observations. Mapper command obtains the resulting graph and adapts the relevant evidence to the review contract. It selects a reviewer and calls it through that contract. It passes the resulting DependencyGraph and ArchitectureJudgments to the Project map logic module.
 
-**Map files** handles persistence. It can save evidence and completed decisions for reuse and write the published map. Making a fresh decision takes place in the selected reviewer.
+## Building and consuming ProjectMap
+
+| Type | Owner | Meaning |
+| --- | --- | --- |
+| `ProjectObservations` | Project observations | Build-scoped facts returned by the selected reader. |
+| `DependencyGraph` | Dependency evidence | Modules, dependencies and routes derived from observations, with their evidence and any gaps. |
+| `ArchitectureJudgments` | Architecture review | Decisions about identified modules and routes, made by the selected reviewer. |
+| `ProjectMap` | Project map | A self-contained map associating the graph’s modules and routes with judgments and supporting evidence. |
+
+**Project map** is a pure logic module. Its contract is `DependencyGraph + ArchitectureJudgments → ProjectMap`. It matches judgments to their subjects, retains unreviewed routes and uncertain hops, and reports judgments whose subjects are missing. Repeating the transformation on the same inputs produces the same map.
+
+**Mapper command** calls this transformation and supplies the result to the consumers. **Map files** saves and loads a ProjectMap. **Map viewer** presents a ProjectMap and owns its visual layout and interactions. A saved map can be reopened without rerunning analysis or review.

@@ -473,7 +473,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "title": "Project observations",
       "kind": "contract",
       "concern": "Defines what a source reader can report about one selected build.",
-      "surface": "The capability to obtain project observations for a selected build, including source locations and collection gaps.",
+      "surface": "A reader for a selected build returns ProjectObservations, including source locations and collection gaps.",
       "ownership": "Defines the language-independent reader contract. Mapper command chooses a reader for the project. Dependency evidence consumes its observations through this contract.",
       "alias": "observations",
       "layer": "platform"
@@ -506,9 +506,19 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "title": "Dependency evidence",
       "kind": "logic",
       "concern": "Connects observed surfaces and handoffs into routes between project packages.",
-      "surface": "A neutral evidence graph for one build. Each package, import, use and route can be cited. Each hop carries its source and whether it was established, is a candidate, or ends at a boundary.",
-      "ownership": "Requires a reader through Project observations. It asks the injected reader for observations, connects them according to the evidence rules, and returns the graph. A saved graph can be reviewed separately.",
+      "surface": "Builds a DependencyGraph from ProjectObservations. Modules, imports, uses and routes can be cited individually. Each hop retains its source and any uncertainty.",
+      "ownership": "Requires a reader through Project observations and owns the rules that connect its observations into source-backed routes.",
       "alias": "evidence",
+      "layer": "core"
+    },
+    {
+      "name": "project-map",
+      "bins": [],
+      "title": "Project map",
+      "kind": "logic",
+      "concern": "Builds a map by attaching architectural judgments to the dependency graph.",
+      "surface": "DependencyGraph + ArchitectureJudgments → ProjectMap. ProjectMap is the public representation for saving and viewing a reviewed project.",
+      "ownership": "Matches each judgment to the module or route it describes. Retains evidence references, uncertainty and unreviewed routes. A judgment pointing to a missing subject is reported. The same inputs produce the same map.",
       "layer": "core"
     },
     {
@@ -517,7 +527,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "title": "Architecture review",
       "kind": "contract",
       "concern": "Defines how to ask for an architectural decision about a module or a dependency route.",
-      "surface": "A review request identifies the subject, the relevant evidence, and the judgment sought. The reviewer returns a decision linked to that subject and evidence, or leaves it undecided.",
+      "surface": "Given a review request identifying a subject and its supporting evidence, returns ArchitectureJudgments tied to those references. A subject can remain undecided.",
       "ownership": "Owns the vocabulary for review requests and decisions. Each implementation decides how to obtain the judgment. Mapper command presents evidence in this vocabulary and consumes the result.",
       "alias": "review",
       "layer": "reviewers"
@@ -528,8 +538,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "title": "Map viewer",
       "kind": "effect",
       "concern": "Lets a reader explore a reviewed architecture in the browser.",
-      "surface": "A browser bundle and its input document contract for displaying packages, evidence-backed routes and their judgments.",
-      "ownership": "Owns the presentation format, navigation and source drill-down. Mapper command supplies a document in this format alongside the browser bundle.",
+      "surface": "Accepts a ProjectMap and presents its modules, routes, judgments and supporting evidence.",
+      "ownership": "Owns browser layout, navigation, selection and evidence drill-down. The map representation belongs to Project map.",
       "alias": "viewer",
       "layer": "surfaces"
     },
@@ -538,9 +548,9 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "bins": [],
       "title": "Map files",
       "kind": "effect",
-      "concern": "Persists evidence, completed decisions and published maps.",
-      "surface": "Read or write saved artifacts and report file-access failures.",
-      "ownership": "Handles storage for Mapper command. A saved decision records the outcome of an earlier review.",
+      "concern": "Saves and loads a ProjectMap.",
+      "surface": "Write a ProjectMap to storage or read one back.",
+      "ownership": "Owns the on-disk encoding, compatibility when reading saved maps, and storage errors.",
       "alias": "files",
       "layer": "platform"
     },
@@ -551,9 +561,9 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       ],
       "title": "Mapper command",
       "kind": "composition",
-      "concern": "Composes evidence collection, architectural review and publication.",
+      "concern": "Coordinates collection, review, map construction and publication.",
       "surface": "Collect evidence for a build, request decisions from the selected reviewer, and publish an explorable map.",
-      "ownership": "Chooses the reader for the project language and supplies it to Dependency evidence through Project observations. Selects one reviewer and invokes it through Architecture review. Adapts the graph into review requests, matches returned decisions to their evidence, and supplies both to the viewer in its own document format. Map files persists artifacts.",
+      "ownership": "Selects the reader and reviewer, prepares review requests from the evidence, then calls Project map with the graph and the returned judgments. Supplies the resulting ProjectMap to Map files and Map viewer.",
       "alias": "program",
       "layer": "programs"
     },
@@ -654,7 +664,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
           "role": "uses"
         }
       ],
-      "detail": "Packages the browser bundle and adapts evidence and review decisions to the viewer’s input document."
+      "detail": "Supplies the finished ProjectMap for display."
     },
     {
       "to": "architecture-review",
@@ -720,7 +730,62 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
           "role": "uses"
         }
       ],
-      "detail": "Reads and writes saved artifacts, including completed decisions and the published viewer document."
+      "detail": "Saves or loads the finished ProjectMap."
+    },
+    {
+      "to": "dependency-evidence",
+      "from": "project-map",
+      "kind": "normal",
+      "roles": [
+        {
+          "role": "uses"
+        }
+      ],
+      "detail": "Uses DependencyGraph as the source of modules, routes and their evidence."
+    },
+    {
+      "to": "architecture-review",
+      "from": "project-map",
+      "kind": "normal",
+      "roles": [
+        {
+          "role": "uses"
+        }
+      ],
+      "detail": "Uses ArchitectureJudgments as labels tied to subjects in the graph."
+    },
+    {
+      "to": "project-map",
+      "from": "mapper-command",
+      "kind": "normal",
+      "roles": [
+        {
+          "role": "uses"
+        }
+      ],
+      "detail": "Calls the pure map builder with both inputs and receives a ProjectMap."
+    },
+    {
+      "to": "project-map",
+      "from": "map-files",
+      "kind": "normal",
+      "roles": [
+        {
+          "role": "uses"
+        }
+      ],
+      "detail": "Uses the public ProjectMap representation for persistence."
+    },
+    {
+      "to": "project-map",
+      "from": "map-viewer",
+      "kind": "normal",
+      "roles": [
+        {
+          "role": "uses"
+        }
+      ],
+      "detail": "Uses the public ProjectMap representation for display."
     }
   ],
   "groups": {
@@ -743,7 +808,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     {
       "id": "core",
       "title": "Core",
-      "about": "Connects project observations into source-backed dependency routes."
+      "about": "Builds the evidence graph and combines it with judgments to form the project map."
     },
     {
       "id": "reviewers",
@@ -816,13 +881,13 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "contract": "architecture-review"
     },
     {
-      "title": "Publish the LLM decision",
+      "title": "Apply the LLM judgments",
       "kind": "Data handoff",
       "supplier": "architecture-review-llm",
       "program": "mapper-command",
-      "receiver": "map-viewer",
-      "note": "The selected LLM reviewer returns its decision through Architecture review. Mapper command pairs it with the original evidence and supplies a document in Map viewer’s format.",
-      "carry": "Evidence + decision",
+      "receiver": "project-map",
+      "note": "Mapper command calls the LLM reviewer through the review contract, then passes its judgments and the DependencyGraph to Project map.",
+      "carry": "ArchitectureJudgments",
       "document": true,
       "firstRole": "wires",
       "contract": "architecture-review"
@@ -840,16 +905,49 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "contract": "architecture-review"
     },
     {
-      "title": "Publish the terminal decision",
+      "title": "Apply the terminal judgments",
       "kind": "Data handoff",
       "supplier": "architecture-review-terminal",
       "program": "mapper-command",
-      "receiver": "map-viewer",
-      "note": "The selected terminal reviewer returns its decision through Architecture review. Mapper command pairs it with the original evidence and supplies a document in Map viewer’s format.",
-      "carry": "Evidence + decision",
+      "receiver": "project-map",
+      "note": "Mapper command calls the terminal reviewer through the review contract, then passes its judgments and the DependencyGraph to Project map.",
+      "carry": "ArchitectureJudgments",
       "document": true,
       "firstRole": "wires",
       "contract": "architecture-review"
+    },
+    {
+      "title": "Supply the dependency graph",
+      "kind": "Data handoff",
+      "supplier": "dependency-evidence",
+      "program": "mapper-command",
+      "receiver": "project-map",
+      "note": "Mapper command passes the original graph to Project map so its routes and evidence can be matched to the review decisions.",
+      "carry": "DependencyGraph",
+      "document": true,
+      "firstRole": "uses"
+    },
+    {
+      "title": "Save the project map",
+      "kind": "Data handoff",
+      "supplier": "project-map",
+      "program": "mapper-command",
+      "receiver": "map-files",
+      "note": "Mapper command passes the completed ProjectMap to Map files for storage.",
+      "carry": "ProjectMap",
+      "document": true,
+      "firstRole": "uses"
+    },
+    {
+      "title": "Present the project map",
+      "kind": "Data handoff",
+      "supplier": "project-map",
+      "program": "mapper-command",
+      "receiver": "map-viewer",
+      "note": "Mapper command supplies a completed ProjectMap to the browser viewer for display.",
+      "carry": "ProjectMap",
+      "document": true,
+      "firstRole": "uses"
     }
   ]
 }</script>
@@ -1775,7 +1873,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     const panel=$("panel"), n=state.selected, highlighted=selectionList();
     if (!n) {
       panel.replaceChildren(...[highlighted,el("h2",{},"The proposed architecture"),
-        el("p",{},"Mapper command selects a project reader, collects dependency evidence, asks either a terminal or an LLM reviewer for architectural decisions, and prepares the result for the browser."),
+        el("p",{},"Mapper command collects the graph and requests architectural judgments. Project map combines them into a ProjectMap that Map files can save and Map viewer can display."),
         el("ul",{class:"overview"},graph.layers.map(l=>el("li",{},el("strong",{},l.title+". "),l.about))),
         el("p",{}, "Select a module for its public contract. Tick its corner to highlight its dependencies. The panel describes how Mapper command uses the selected reviewer.")].filter(Boolean));
       return;
