@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+proof=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+subject=$(CDPATH= cd -- "${1:?pass the pinned kashkeshet checkout}" && pwd)
+cd "$subject"
+test "$(git rev-parse HEAD)" = 4c520c70618845c90fd62c0e3c6a9961cbf3dbff || { echo 'Wrong kashkeshet revision' >&2; exit 1; }
+test -z "$(git status --porcelain --untracked-files=normal)" || { echo 'The proof requires a clean checkout' >&2; exit 1; }
+case "$(rustc -vV)" in *-linux-*) ;; *) echo 'Use a Linux host for this proof' >&2; exit 1 ;; esac
+build=$(mktemp -d)
+trap 'rm -rf "$build"' EXIT
+export PROOF_DUMPS="$build/mir" CARGO_TARGET_DIR="$build/target" CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0
+RUSTC_BOOTSTRAP=1 RUSTC_WORKSPACE_WRAPPER="$proof/capture" cargo build --locked -p kashkeshet --lib --bin kkt
+rustc --edition 2024 -D warnings --test "$proof/backup.rs" -o "$build/check"
+"$build/check" --nocapture --test-threads=1
