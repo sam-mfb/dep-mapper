@@ -516,7 +516,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "bins": [],
       "title": "Dependency graph",
       "kind": "contract",
-      "concern": "Defines the evidence graph that analysis produces and map construction consumes.",
+      "concern": "Defines the evidence graph used by analysis, review and map construction.",
       "surface": "DependencyGraph describes modules, dependencies, routes and the observations that support them, including uncertain or unresolved hops.",
       "ownership": "Owns the graph representation and the identities used to cite its contents. Dependency evidence owns the rules for deriving these facts from source.",
       "layer": "core"
@@ -537,8 +537,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "title": "Architecture review",
       "kind": "contract",
       "concern": "Defines how to ask for an architectural decision about a module or a dependency route.",
-      "surface": "Given a review request identifying a subject and its supporting evidence, returns ArchitectureJudgments tied to those references. A subject can remain undecided.",
-      "ownership": "Owns the vocabulary for review requests and decisions. Each implementation decides how to obtain the judgment. Mapper command presents evidence in this vocabulary and consumes the result.",
+      "surface": "Accepts a DependencyGraph and a module or route to review. Returns ArchitectureJudgments that cite the subject and its supporting evidence in that graph. The subject may remain undecided.",
+      "ownership": "Defines the review request and the returned judgments. The selected reviewer reads the supplied graph to assess the subject.",
       "alias": "review",
       "layer": "reviewers"
     },
@@ -685,7 +685,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
           "role": "uses"
         }
       ],
-      "detail": "Requests a judgment from the chosen reviewer through the shared review contract."
+      "detail": "Passes the completed DependencyGraph and review subject to the chosen reviewer."
     },
     {
       "to": "architecture-review",
@@ -818,6 +818,17 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
         }
       ],
       "detail": "Reads graph subjects and supporting evidence to prepare review requests."
+    },
+    {
+      "to": "dependency-graph",
+      "from": "architecture-review",
+      "kind": "normal",
+      "roles": [
+        {
+          "role": "uses"
+        }
+      ],
+      "detail": "Uses DependencyGraph as the review input and its subject identities to anchor the returned judgments."
     }
   ],
   "groups": {
@@ -906,7 +917,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "supplier": "dependency-evidence",
       "program": "mapper-command",
       "receiver": "architecture-review-llm",
-      "note": "When the LLM reviewer is selected, Mapper command takes the relevant observations and route from the evidence graph and submits them through Architecture review. This implementation calls the model API.",
+      "note": "Mapper command passes the completed DependencyGraph and the subject for review through Architecture review. The LLM reviewer presents the relevant evidence to the model.",
       "carry": "Review request",
       "document": true,
       "firstRole": "uses",
@@ -930,7 +941,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "supplier": "dependency-evidence",
       "program": "mapper-command",
       "receiver": "architecture-review-terminal",
-      "note": "When the terminal reviewer is selected, Mapper command takes the relevant observations and route from the evidence graph and submits them through Architecture review. This implementation prompts the human reviewer.",
+      "note": "Mapper command passes the completed DependencyGraph and the subject for review through Architecture review. The terminal reviewer presents the relevant evidence to the human.",
       "carry": "Review request",
       "document": true,
       "firstRole": "uses",

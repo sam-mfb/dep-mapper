@@ -26,11 +26,11 @@ The module boundaries, dependency arrangements and review workflow for dep-mappe
 
 ## Review decisions and composition
 
-Architecture review is a contract for making an architectural judgment. The request identifies a module or route, the evidence bearing on it, and the decision being requested. Its response ties the judgment to that subject and evidence. A reviewer can leave a subject undecided.
+Architecture review is a contract for making an architectural judgment. The request takes the shared `DependencyGraph` value and identifies the module or route to review. The reviewer reads the supporting evidence from that graph. Its response ties the judgment to that subject and evidence. A reviewer can leave a subject undecided.
 
 Two proposed effect modules implement the contract. **Architecture review terminal** displays the evidence, asks a human to decide, and returns the answer. **Architecture review LLM** submits the review request to a model API and returns the model’s decision. A different review mechanism can implement the same contract.
 
-**Mapper command** owns the composition. It selects a reader for the project language and supplies it to Dependency evidence through Project observations. The Rust reader serves the initial investigation. The TypeScript reader illustrates how another language can supply the same observations. Mapper command obtains the resulting graph and adapts the relevant evidence to the review contract. It selects a reviewer and calls it through that contract. It passes the resulting DependencyGraph and ArchitectureJudgments to the Project map logic module.
+**Mapper command** owns the composition. It selects a reader for the project language and supplies it to Dependency evidence through Project observations. The Rust reader serves the initial investigation. The TypeScript reader illustrates how another language can supply the same observations. Mapper command passes the resulting graph and review subject to the selected reviewer through Architecture review. It passes the resulting DependencyGraph and ArchitectureJudgments to the Project map logic module.
 
 ## Building and consuming ProjectMap
 
@@ -41,7 +41,7 @@ Two proposed effect modules implement the contract. **Architecture review termin
 | `ArchitectureJudgments` | Architecture review | Decisions about identified modules and routes, made by the selected reviewer. |
 | `ProjectMap` | Project map | A self-contained map associating the graph’s modules and routes with judgments and supporting evidence. |
 
-**Dependency graph** is a proposed shared data-contract module. Dependency evidence produces its `DependencyGraph` value. Mapper command reads the relevant facts for review and passes the completed graph to Project map. Neither logic module calls or imports the other.
+**Dependency graph** is a proposed shared data-contract module. Dependency evidence produces its `DependencyGraph` value. Mapper command supplies the same graph to Architecture review for judgment and to Project map for construction. Neither logic module calls or imports the other.
 
 **Project map** is a pure logic module. Its contract is `DependencyGraph + ArchitectureJudgments → ProjectMap`. It matches judgments to their subjects, retains unreviewed routes and uncertain hops, and reports judgments whose subjects are missing. Repeating the transformation on the same inputs produces the same map.
 
