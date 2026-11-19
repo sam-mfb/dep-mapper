@@ -418,11 +418,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
 .section > summary h3 { display: inline; margin: 0; }
 .section .count { font-weight: 500; color: var(--muted); }
 
-.edge.document-hop,.delivery.document-hop { stroke:var(--out); }
-.delivery.document-hop { stroke-dasharray:6 3; }
-.delivery-label.document-hop { fill:var(--out); }
 .route-key { display:inline-block; width:18px; border-top:2px dotted var(--wires); }
-.route-key.document-hop { border-top:2px dashed var(--out); }
 </style>
 </head>
 <body>
@@ -1118,8 +1114,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       el("span", {}, el("strong", {}, "Roles: "), Object.entries(ROLES).map(([role, words]) =>
         el("span", { class: "key-item", title: ROLE_ABOUT[role] }, el("span", { class: `role-key role-${role}` }), words))),
       el("span", { class:"key-item" }, el("span",{class:"route-key"}), "Injected capability"),
-      el("span", { class:"key-item" }, el("span",{class:"route-key document-hop"}), "Data handoff"),
-      el("span", { class:"muted" }, "Dependency arrows point toward the consumer. Tick a module to follow a handoff through Mapper command."));
+      el("span", { class:"muted" }, "Dependency arrows point toward the consumer. Tick a module to highlight dependencies and injected capabilities."));
   }
 
   function draw() { keepFocus(drawNow); }
@@ -1619,18 +1614,18 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
   function paintDeliveries() {
     const layer = view.deliveryLayer, labelLayer = view.deliveryLabels;
     layer.replaceChildren(); labelLayer.replaceChildren();
-    for (const {path} of view.edgeNodes) path.classList.remove("route-hop","document-hop");
+    for (const {path} of view.edgeNodes) path.classList.remove("route-hop");
     const active = new Map();
     for (const route of graph.routes) {
+      // Data handoffs are described in the panel. Only injections add lines to the graph.
+      if (route.document) continue;
       const names = routeNames(route);
       if (!(names.some(n=>state.checked.has(n)) || state.checked.has(route.contract)) || !names.every(visibleCrate)) continue;
-      const role = route.document ? "uses" : "wires";
-      if (state.hiddenRoles.has(role) || state.hiddenRoles.has(route.firstRole)) continue;
+      if (state.hiddenRoles.has(route.firstRole)) continue;
       const strokes = view.edgeNodes.filter(({edge})=>edge.from===route.program && edge.to===route.supplier);
       const hop = strokes.find(({path})=>path.classList.contains("role-"+route.firstRole));
       if (!hop) continue;
       hop.path.classList.remove("faint"); hop.path.classList.add("route-hop");
-      if (route.document) hop.path.classList.add("document-hop");
       for (const n of names) view.nodes.get(n).classList.remove("dim");
       const leg = route.program + ">" + route.receiver;
       if (!active.has(leg)) active.set(leg,{program:route.program, receiver:route.receiver, routes:[]});
@@ -1682,11 +1677,11 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
 
     for (const {line,ends:[a,b]} of placeDeliveryEnds([...active.values()])) {
       const r=line.routes[0];
-      const path=svg("path",{d:edgePath(a,b),class:"delivery"+(r.document?" document-hop":""),"data-from":line.program,"data-to":line.receiver,"marker-end":"url(#"+(r.document?"head-uses":"head-wires")+")"});
+      const path=svg("path",{d:edgePath(a,b),class:"delivery","data-from":line.program,"data-to":line.receiver,"marker-end":"url(#head-wires)"});
       path.addEventListener("mousemove",ev=>showRouteTip(ev,line.routes));
       path.addEventListener("mouseleave",hideTip);
       layer.append(path);
-      labelOn(path,line,[r.carry],r.document?" document-hop":"");
+      labelOn(path,line,[r.carry],"");
     }
   }
   function tooltip(ev, ...content) {
@@ -1734,7 +1729,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       panel.replaceChildren(...[highlighted,el("h2",{},"The proposed architecture"),
         el("p",{},"Mapper command collects dependency evidence, asks either a terminal or an LLM reviewer for architectural decisions, and prepares the result for the browser."),
         el("ul",{class:"overview"},graph.layers.map(l=>el("li",{},el("strong",{},l.title+". "),l.about))),
-        el("p",{}, "Select a module for its public contract. Tick its corner to trace a handoff through Mapper command. Terminal and LLM routes show alternative choices for a review.")].filter(Boolean));
+        el("p",{}, "Select a module for its public contract. Tick its corner to highlight its dependencies. The panel describes how Mapper command uses the selected reviewer.")].filter(Boolean));
       return;
     }
     const c=crates.get(n), routes=graph.routes.filter(r=>routeNames(r).includes(n) || r.contract===n);
