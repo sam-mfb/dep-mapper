@@ -522,13 +522,23 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "layer": "core"
     },
     {
+      "name": "map-builder",
+      "bins": [],
+      "title": "Map builder",
+      "kind": "logic",
+      "concern": "Builds a map by attaching architectural judgments to the dependency graph.",
+      "surface": "DependencyGraph + ArchitectureJudgments → ProjectMap.",
+      "ownership": "Receives a completed DependencyGraph and ArchitectureJudgments from Mapper command. Matches judgments to subjects, preserves uncertain and unreviewed routes, and reports references to missing subjects.",
+      "layer": "core"
+    },
+    {
       "name": "project-map",
       "bins": [],
       "title": "Project map",
-      "kind": "logic",
-      "concern": "Builds a map by attaching architectural judgments to the dependency graph.",
-      "surface": "DependencyGraph + ArchitectureJudgments → ProjectMap. ProjectMap is the public representation for saving and viewing a reviewed project.",
-      "ownership": "Receives a completed DependencyGraph and ArchitectureJudgments from Mapper command. Matches judgments to subjects, preserves uncertain and unreviewed routes, and reports references to missing subjects.",
+      "kind": "contract",
+      "concern": "Defines the map that Map files saves and Map viewer displays.",
+      "surface": "ProjectMap describes the reviewed modules and routes, their judgments and supporting evidence, including unresolved hops and subjects still awaiting review.",
+      "ownership": "Owns the shared ProjectMap type. Map builder produces values of this type, Map files saves and loads them, and Map viewer displays them.",
       "layer": "core"
     },
     {
@@ -573,7 +583,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "composition",
       "concern": "Coordinates collection, review, map construction and publication.",
       "surface": "Collect evidence for a build, request decisions from the selected reviewer, and publish an explorable map.",
-      "ownership": "Calls Dependency evidence to build the graph using the selected reader. Obtains judgments through Architecture review. Calls Project map with that graph and those judgments, then supplies the resulting ProjectMap to Map files and Map viewer.",
+      "ownership": "Calls Dependency evidence to build the graph using the selected reader. Obtains judgments through Architecture review. Calls Map builder with that graph and those judgments, then supplies the resulting ProjectMap to Map files and Map viewer.",
       "alias": "program",
       "layer": "programs"
     },
@@ -744,7 +754,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     },
     {
       "to": "dependency-graph",
-      "from": "project-map",
+      "from": "map-builder",
       "kind": "normal",
       "roles": [
         {
@@ -755,7 +765,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     },
     {
       "to": "architecture-review",
-      "from": "project-map",
+      "from": "map-builder",
       "kind": "normal",
       "roles": [
         {
@@ -766,6 +776,17 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     },
     {
       "to": "project-map",
+      "from": "map-builder",
+      "kind": "normal",
+      "roles": [
+        {
+          "role": "uses"
+        }
+      ],
+      "detail": "Returns the completed map using the ProjectMap type defined by Project map."
+    },
+    {
+      "to": "map-builder",
       "from": "mapper-command",
       "kind": "normal",
       "roles": [
@@ -773,7 +794,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
           "role": "uses"
         }
       ],
-      "detail": "Calls Project map with the graph returned by Dependency evidence and the judgments returned by the reviewer."
+      "detail": "Calls Map builder with the graph returned by Dependency evidence and the judgments returned by the reviewer."
     },
     {
       "to": "project-map",
@@ -952,8 +973,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "Data handoff",
       "supplier": "architecture-review-llm",
       "program": "mapper-command",
-      "receiver": "project-map",
-      "note": "Mapper command calls the LLM reviewer through the review contract, then passes its judgments and the DependencyGraph to Project map.",
+      "receiver": "map-builder",
+      "note": "Mapper command calls the LLM reviewer through the review contract, then passes its judgments and the DependencyGraph to Map builder.",
       "carry": "ArchitectureJudgments",
       "document": true,
       "firstRole": "wires",
@@ -976,8 +997,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "Data handoff",
       "supplier": "architecture-review-terminal",
       "program": "mapper-command",
-      "receiver": "project-map",
-      "note": "Mapper command calls the terminal reviewer through the review contract, then passes its judgments and the DependencyGraph to Project map.",
+      "receiver": "map-builder",
+      "note": "Mapper command calls the terminal reviewer through the review contract, then passes its judgments and the DependencyGraph to Map builder.",
       "carry": "ArchitectureJudgments",
       "document": true,
       "firstRole": "wires",
@@ -988,8 +1009,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "Data handoff",
       "supplier": "dependency-evidence",
       "program": "mapper-command",
-      "receiver": "project-map",
-      "note": "Mapper command passes the original graph to Project map so its routes and evidence can be matched to the review decisions.",
+      "receiver": "map-builder",
+      "note": "Mapper command passes the original graph to Map builder so its routes and evidence can be matched to the review decisions.",
       "carry": "DependencyGraph",
       "document": true,
       "firstRole": "uses"
@@ -997,24 +1018,26 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     {
       "title": "Save the project map",
       "kind": "Data handoff",
-      "supplier": "project-map",
+      "supplier": "map-builder",
       "program": "mapper-command",
       "receiver": "map-files",
       "note": "Mapper command passes the completed ProjectMap to Map files for storage.",
       "carry": "ProjectMap",
       "document": true,
-      "firstRole": "uses"
+      "firstRole": "uses",
+      "contract": "project-map"
     },
     {
       "title": "Present the project map",
       "kind": "Data handoff",
-      "supplier": "project-map",
+      "supplier": "map-builder",
       "program": "mapper-command",
       "receiver": "map-viewer",
       "note": "Mapper command supplies a completed ProjectMap to the browser viewer for display.",
       "carry": "ProjectMap",
       "document": true,
-      "firstRole": "uses"
+      "firstRole": "uses",
+      "contract": "project-map"
     }
   ]
 }</script>
@@ -1940,7 +1963,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     const panel=$("panel"), n=state.selected, highlighted=selectionList();
     if (!n) {
       panel.replaceChildren(...[highlighted,el("h2",{},"The proposed architecture"),
-        el("p",{},"Mapper command collects the graph and requests architectural judgments. Project map combines them into a ProjectMap that Map files can save and Map viewer can display."),
+        el("p",{},"Mapper command collects the graph and requests architectural judgments. Map builder combines them into a ProjectMap that Map files can save and Map viewer can display."),
         el("ul",{class:"overview"},graph.layers.map(l=>el("li",{},el("strong",{},l.title+". "),l.about))),
         el("p",{}, "Select a module for its public contract. Tick its corner to highlight its dependencies. The panel describes how Mapper command uses the selected reviewer.")].filter(Boolean));
       return;

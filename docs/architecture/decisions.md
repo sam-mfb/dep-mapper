@@ -30,7 +30,7 @@ Architecture review is a contract for making an architectural judgment. The requ
 
 Two proposed effect modules implement the contract. **Architecture review terminal** displays the evidence, asks a human to decide, and returns the answer. **Architecture review LLM** submits the review request to a model API and returns the model’s decision. A different review mechanism can implement the same contract.
 
-**Mapper command** owns the composition. It selects a reader for the project language and supplies it to Dependency evidence through Project observations. The Rust reader serves the initial investigation. The TypeScript reader illustrates how another language can supply the same observations. Mapper command binds either the LLM reviewer or the terminal reviewer to Architecture review. The dashed arrow from the command to that contract shows where the selected implementation is wired. Mapper command passes the resulting graph and review subject through the contract. It passes the resulting DependencyGraph and ArchitectureJudgments to the Project map logic module.
+**Mapper command** owns the composition. It selects a reader for the project language and supplies it to Dependency evidence through Project observations. The Rust reader serves the initial investigation. The TypeScript reader illustrates how another language can supply the same observations. Mapper command binds either the LLM reviewer or the terminal reviewer to Architecture review. The dashed arrow from the command to that contract shows where the selected implementation is wired. Mapper command passes the resulting graph and review subject through the contract. It passes the resulting DependencyGraph and ArchitectureJudgments to Map builder.
 
 ## Building and consuming ProjectMap
 
@@ -41,8 +41,10 @@ Two proposed effect modules implement the contract. **Architecture review termin
 | `ArchitectureJudgments` | Architecture review | Decisions about identified modules and routes, made by the selected reviewer. |
 | `ProjectMap` | Project map | A self-contained map associating the graph’s modules and routes with judgments and supporting evidence. |
 
-**Dependency graph** is a proposed shared data-contract module. Dependency evidence produces its `DependencyGraph` value. Mapper command supplies the same graph to Architecture review for judgment and to Project map for construction. Neither logic module calls or imports the other.
+**Dependency graph** is a proposed shared data-contract module. Dependency evidence produces its `DependencyGraph` value. Mapper command supplies the same graph to Architecture review for judgment and to Map builder for construction. Mapper command composes Dependency evidence and Map builder.
 
-**Project map** is a pure logic module. Its contract is `DependencyGraph + ArchitectureJudgments → ProjectMap`. It matches judgments to their subjects, retains unreviewed routes and uncertain hops, and reports judgments whose subjects are missing. Repeating the transformation on the same inputs produces the same map.
+**Project map** is the contract package that defines the shared `ProjectMap` type. Map builder, Map files and Map viewer all depend on this contract.
 
-**Mapper command** directly depends on both logic modules. It calls Dependency evidence to build the graph, obtains the judgments, then calls Project map to build the map and supplies the result to the consumers. **Map files** saves and loads a ProjectMap. **Map viewer** presents a ProjectMap and owns its visual layout and interactions. A saved map can be reopened without rerunning analysis or review.
+**Map builder** is a pure logic module. Its contract is `DependencyGraph + ArchitectureJudgments → ProjectMap`. It matches judgments to their subjects, retains unreviewed routes and uncertain hops, and reports judgments whose subjects are missing. Repeating the transformation on the same inputs produces the same map.
+
+**Mapper command** directly depends on both logic modules. It calls Dependency evidence to build the graph, obtains the judgments, then calls Map builder and supplies the result to the consumers. **Map files** saves and loads a ProjectMap. **Map viewer** presents a ProjectMap and owns its visual layout and interactions. A saved map can be reopened without rerunning analysis or review.
