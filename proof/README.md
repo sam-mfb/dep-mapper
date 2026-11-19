@@ -20,3 +20,5 @@ These are static checks of the selected routes. Running them compiles the subjec
 Run `./proof/run /path/to/pinned/kashkeshet` from the mapper checkout on Linux. Cargo needs access to the locked dependencies, the pinned compiler and a native build toolchain. The runner builds in a temporary directory, prints the source locations supporting the assertions, then removes its build products.
 
 The proof queries selected operations in the compiler’s typed intermediate representation before optimization. Each question names its endpoints. The checks recover the actual operands, follow unique local definitions, map a field read to the corresponding aggregate field, and resolve the static reference. Unknown or ambiguous shapes fail the test. This small experiment depends on the pinned compiler’s unstable text format. It does not read the architecture map.
+
+A separate supplier-only discovery experiment runs with `python3 proof/discovery/run.py /path/to/pinned/kashkeshet kkt-llm-agent-command`. It enumerates possible adapter paths and reports where the tracked value reaches a contract call. The route-specific assertions above remain available for comparison.
