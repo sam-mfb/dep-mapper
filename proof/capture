@@ -14,7 +14,7 @@ for arg do
     previous=$arg
 done
 case "$name" in
-    kkt|kashkeshet|kkt_backup_os|kkt_install_commands)
+    kkt|kashkeshet|kkt_backup_os|kkt_install_commands|kkt_agent_commands|kkt_llm_agent_config)
         exec "$compiler" "$@" -Zdump-mir=built -Zmir-include-spans=yes \
             -Ztrim-diagnostic-paths=no "-Zdump-mir-dir=$PROOF_DUMPS/$name-$kind" ;;
     *) exec "$compiler" "$@" ;;

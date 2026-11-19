@@ -1,4 +1,5 @@
 //! A bounded proof over the pinned compiler's unoptimized, typed function bodies.
+mod client_command;
 use std::{collections::BTreeSet, env, fs, path::PathBuf};
 
 #[derive(Debug, PartialEq)]
