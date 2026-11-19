@@ -1,5 +1,7 @@
 # Tracing direct and adapted injection on kashkeshet
 
+The [compiler-based mapper experiment](compiler/README.md) measures project-wide discovery and its limits on a newer kashkeshet pin and an independent workspace.
+
 The subject is sam-mfb/kashkeshet at 4c520c70618845c90fd62c0e3c6a9961cbf3dbff (the next branch when pinned). The experiment targets the default Linux kkt binary and its libraries with Rust 1.98.1. It uses a local checkout of this exact revision.
 
 ## Expected answers from source
