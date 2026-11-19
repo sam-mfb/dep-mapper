@@ -912,6 +912,30 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "contract": "project-observations"
     },
     {
+      "title": "Wire the LLM reviewer",
+      "kind": "Shared-contract injection",
+      "supplier": "architecture-review-llm",
+      "program": "mapper-command",
+      "receiver": "architecture-review",
+      "note": "Mapper command binds the LLM reviewer to the Architecture review contract and calls it through that contract.",
+      "carry": "Architecture reviewer",
+      "document": false,
+      "firstRole": "wires",
+      "contract": "architecture-review"
+    },
+    {
+      "title": "Wire the terminal reviewer",
+      "kind": "Shared-contract injection",
+      "supplier": "architecture-review-terminal",
+      "program": "mapper-command",
+      "receiver": "architecture-review",
+      "note": "Mapper command binds the terminal reviewer to the Architecture review contract and calls it through that contract.",
+      "carry": "Architecture reviewer",
+      "document": false,
+      "firstRole": "wires",
+      "contract": "architecture-review"
+    },
+    {
       "title": "Evidence for LLM review",
       "kind": "Data handoff",
       "supplier": "dependency-evidence",

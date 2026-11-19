@@ -30,7 +30,7 @@ Architecture review is a contract for making an architectural judgment. The requ
 
 Two proposed effect modules implement the contract. **Architecture review terminal** displays the evidence, asks a human to decide, and returns the answer. **Architecture review LLM** submits the review request to a model API and returns the model’s decision. A different review mechanism can implement the same contract.
 
-**Mapper command** owns the composition. It selects a reader for the project language and supplies it to Dependency evidence through Project observations. The Rust reader serves the initial investigation. The TypeScript reader illustrates how another language can supply the same observations. Mapper command passes the resulting graph and review subject to the selected reviewer through Architecture review. It passes the resulting DependencyGraph and ArchitectureJudgments to the Project map logic module.
+**Mapper command** owns the composition. It selects a reader for the project language and supplies it to Dependency evidence through Project observations. The Rust reader serves the initial investigation. The TypeScript reader illustrates how another language can supply the same observations. Mapper command binds either the LLM reviewer or the terminal reviewer to Architecture review. The dashed arrow from the command to that contract shows where the selected implementation is wired. Mapper command passes the resulting graph and review subject through the contract. It passes the resulting DependencyGraph and ArchitectureJudgments to the Project map logic module.
 
 ## Building and consuming ProjectMap
 
