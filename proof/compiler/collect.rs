@@ -31,6 +31,15 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
+mod dispatch;
+
+fn source_inventory() -> bool {
+    let Ok(list) = env::var("MAPPER_SOURCE_DIRS") else {
+        return true;
+    };
+    env::var("CARGO_MANIFEST_DIR").is_ok_and(|dir| list.lines().any(|s| s == dir))
+}
+
 type Built = for<'tcx> fn(TyCtxt<'tcx>, LocalDefId) -> &'tcx Steal<Body<'tcx>>;
 static ORIGINAL: OnceLock<Built> = OnceLock::new();
 static STREAM: OnceLock<Mutex<BufWriter<File>>> = OnceLock::new();
@@ -63,10 +72,33 @@ fn at(tcx: TyCtxt<'_>, span: Span) -> String {
     tcx.sess.source_map().span_to_diagnostic_string(span)
 }
 
-fn place(p: Place<'_>) -> Value {
+fn place<'tcx>(tcx: TyCtxt<'tcx>, body: &Body<'tcx>, p: Place<'tcx>) -> Value {
+    let mut typed = PlaceTy::from_ty(body.local_decls[p.local].ty);
+    let mut slot = None;
+
     let mut fields = vec![];
     let mut indirect = false;
     for projection in p.projection {
+        if let ProjectionElem::Field(i, _) = projection {
+            slot = match *typed.ty.kind() {
+                ty::Adt(a, _) if a.is_struct() || typed.variant_index.is_some() => {
+                    let variant = typed
+                        .variant_index
+                        .map(|v| a.variant(v))
+                        .unwrap_or_else(|| a.non_enum_variant());
+                    Some(item(tcx, variant.fields[i].did)["id"].clone())
+                }
+                ty::Closure(d, _) | ty::Coroutine(d, _) | ty::CoroutineClosure(d, _) => {
+                    Some(json!(format!(
+                        "{}:capture:{}",
+                        item(tcx, d)["id"].as_str().unwrap(),
+                        i.as_usize()
+                    )))
+                }
+                _ => None,
+            }
+        }
+        typed = typed.projection_ty(tcx, projection);
         match projection {
             ProjectionElem::Deref => indirect = true,
             ProjectionElem::Field(index, _) => fields.push(json!(index.as_usize())),
@@ -76,7 +108,7 @@ fn place(p: Place<'_>) -> Value {
             _ => return json!({"local":p.local.as_usize(), "opaque":true}),
         }
     }
-    json!({"local":p.local.as_usize(),"fields":fields,"indirect":indirect})
+    json!({"local":p.local.as_usize(),"fields":fields,"indirect":indirect,"slot":slot})
 }
 
 // Peel shared references and matching smart-pointer constructors. Accept precisely
@@ -88,7 +120,7 @@ fn erasure<'tcx>(mut from: Ty<'tcx>, mut to: Ty<'tcx>) -> Option<(Ty<'tcx>, DefI
                 from = a;
                 to = b;
             }
-            (ty::Adt(..) | ty::Param(_), ty::Dynamic(preds, _)) => {
+            (ty::Adt(..) | ty::Param(_) | ty::Dynamic(..), ty::Dynamic(preds, _)) => {
                 return Some((from, preds.principal()?.def_id()));
             }
             (ty::Adt(a, aa), ty::Adt(b, ba)) if a == b => {
@@ -122,6 +154,7 @@ fn collect<'tcx>(tcx: TyCtxt<'tcx>, def: LocalDefId) -> &'tcx Steal<Body<'tcx>> 
             _ => None,
         })
         .collect();
+    let place = |p| place(tcx, &body, p);
     let operand = |op: &Operand<'tcx>| op.place().map(place);
     for (bb, block) in body.basic_blocks.iter_enumerated() {
         for stmt in &block.statements {
@@ -150,10 +183,13 @@ fn collect<'tcx>(tcx: TyCtxt<'tcx>, def: LocalDefId) -> &'tcx Steal<Body<'tcx>> 
                     ) => match erasure(op.ty(&body.local_decls, tcx), *to) {
                         Some((provider, contract)) => match *provider.kind() {
                             ty::Adt(a, _) => {
-                                json!({"provider":item(tcx,a.did()),"contract":item(tcx,contract)})
+                                json!({"provider":item(tcx,a.did()),"erasedFrom":operand(op),"contract":item(tcx,contract)})
+                            }
+                            ty::Dynamic(..) => {
+                                json!({"from":operand(op),"upcast":item(tcx,contract)})
                             }
                             ty::Param(p) => {
-                                json!({"typeParam":p.index,"contract":item(tcx,contract)})
+                                json!({"typeParam":p.index,"erasedFrom":operand(op),"contract":item(tcx,contract)})
                             }
                             _ => unreachable!(),
                         },
@@ -181,7 +217,7 @@ fn collect<'tcx>(tcx: TyCtxt<'tcx>, def: LocalDefId) -> &'tcx Steal<Body<'tcx>> 
                             | AggregateKind::CoroutineClosure(id, _) => *id,
                             _ => unreachable!(),
                         };
-                        json!({"environment":item(tcx,id),"parts":args.iter().map(operand).collect::<Vec<_>>()})
+                        json!({"coroutine":matches!(&**kind,AggregateKind::Coroutine(..)),"environment":item(tcx,id),"parts":args.iter().map(operand).collect::<Vec<_>>()})
                     }
                     Rvalue::Aggregate(kind, args)
                         if let AggregateKind::Adt(id, variant, ..) = &**kind
@@ -197,7 +233,21 @@ fn collect<'tcx>(tcx: TyCtxt<'tcx>, def: LocalDefId) -> &'tcx Steal<Body<'tcx>> 
                     }
                     _ => json!({"unknown":"unmodelled value"}),
                 };
-                ops.push(json!({"bb":bb.as_usize(),"at":at(tcx,stmt.source_info.span),"dst":place(*dst),"borrowed":borrowed,"flow":flow}));
+                let field_defs = match rhs {
+                    Rvalue::Aggregate(k, _) => match &**k {
+                        AggregateKind::Adt(id, v, ..) if !tcx.adt_def(*id).is_union() => Some(
+                            tcx.adt_def(*id)
+                                .variant(*v)
+                                .fields
+                                .iter()
+                                .map(|f| item(tcx, f.did))
+                                .collect::<Vec<_>>(),
+                        ),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                ops.push(json!({"bb":bb.as_usize(),"fieldDefs":field_defs,"at":at(tcx,stmt.source_info.span),"dst":place(*dst),"borrowed":borrowed,"flow":flow}));
             }
         }
         let t = block.terminator();
@@ -276,6 +326,14 @@ fn collect<'tcx>(tcx: TyCtxt<'tcx>, def: LocalDefId) -> &'tcx Steal<Body<'tcx>> 
             && let ty::Closure(def, _) = *args.type_at(0).kind()
         {
             Some(item(tcx, def))
+        } else {
+            None
+        };
+        let principal = if let ty::FnDef(id, substs) = *ty.kind()
+            && tcx.trait_of_assoc(id).is_some()
+            && let ty::Dynamic(predicates, _) = *substs.type_at(0).kind()
+        {
+            predicates.principal().map(|t| item(tcx, t.def_id()))
         } else {
             None
         };
@@ -372,8 +430,50 @@ fn collect<'tcx>(tcx: TyCtxt<'tcx>, def: LocalDefId) -> &'tcx Steal<Body<'tcx>> 
                 _ => None,
             })
             .collect();
-        ops.push(json!({"bb":bb.as_usize(),"pointerOp":pointer_op,"nominalArgs":nominal_args,"at":at(tcx,t.source_info.span),"dst":dst,
-            "call":kind,"selected":selected,"closure":closure,"nominalSelf":receiver,"target":target,"contract":contract,"args":args.iter().map(|a|operand(&a.node)).collect::<Vec<_>>() }));
+        let mut payload = None;
+        if let ty::FnDef(id, _) = *ty.kind()
+            && let TerminatorKind::Call { destination, .. } = &t.kind
+        {
+            let result = destination.ty(&body.local_decls, tcx).ty;
+            let arg = args.first().map(|a| a.node.ty(&body.local_decls, tcx));
+            let lang = tcx.lang_items();
+            let variant = |t: Ty<'tcx>, v: Option<DefId>| -> Option<String> {
+                let ty::Adt(a, _) = *t.kind() else {
+                    return None;
+                };
+                a.variants()
+                    .iter_enumerated()
+                    .find(|(_, x)| Some(x.def_id) == v)
+                    .map(|(n, _)| format!("variant:{}", n.as_usize()))
+            };
+            if Some(id) == lang.branch_fn()
+                && let Some(a) = arg
+                && let Some(out) = variant(result, lang.cf_continue_variant())
+                && let Some(input) = variant(a, lang.result_ok_variant())
+                    .or_else(|| variant(a, lang.option_some_variant()))
+            {
+                payload = Some(json!({"out":[out,0],"input":[input,0],"action":"successful try"}));
+            } else if Some(id) == lang.future_poll_fn()
+                && let Some(out) = variant(result, lang.poll_ready_variant())
+            {
+                payload =
+                    Some(json!({"out":[out,0],"input":["completion"],"action":"ready future"}));
+            } else if Some(id) == lang.into_future_fn()
+                && let Some(a) = arg
+                && tcx.erase_and_anonymize_regions(a) == tcx.erase_and_anonymize_regions(result)
+            {
+                payload = Some(json!({"out":[],"input":[],"action":"future into itself"}));
+            } else if tcx.opt_item_name(id) == Some(sym::new_unchecked)
+                && let ty::Adt(a, _) = *result.kind()
+                && Some(a.did()) == lang.pin_type()
+                && id.krate == a.did().krate
+                && tcx.inherent_impl_of_assoc(id).is_some()
+            {
+                payload = Some(json!({"out":[],"input":[],"action":"pin pointer"}));
+            }
+        }
+        ops.push(json!({"bb":bb.as_usize(),"payload":payload,"pointerOp":pointer_op,"nominalArgs":nominal_args,"at":at(tcx,t.source_info.span),"dst":dst,
+            "call":kind,"principal":principal,"selected":selected,"closure":closure,"nominalSelf":receiver,"target":target,"contract":contract,"args":args.iter().map(|a|operand(&a.node)).collect::<Vec<_>>() }));
     }
     emit(
         tcx,
@@ -417,8 +517,13 @@ struct Collector;
 impl rustc_driver::Callbacks for Collector {
     fn config(&mut self, config: &mut interface::Config) {
         config.override_queries = Some(|_, p| {
-            ORIGINAL.set(p.queries.mir_built).unwrap();
-            p.queries.mir_built = collect;
+            if env::var_os("MAPPER_DISPATCH").is_some() {
+                dispatch::install(p);
+            }
+            if source_inventory() {
+                ORIGINAL.set(p.queries.mir_built).unwrap();
+                p.queries.mir_built = collect;
+            }
         });
     }
     fn after_analysis<'tcx>(
@@ -426,6 +531,15 @@ impl rustc_driver::Callbacks for Collector {
         _: &interface::Compiler,
         tcx: TyCtxt<'tcx>,
     ) -> rustc_driver::Compilation {
+        if env::var_os("MAPPER_DISPATCH").is_some() {
+            dispatch::manifest(tcx);
+        }
+        if !source_inventory() {
+            return rustc_driver::Compilation::Continue;
+        }
+        if env::var_os("MAPPER_DISPATCH").is_some() {
+            dispatch::implementations(tcx);
+        }
         emit(
             tcx,
             json!({"kind":"crate","package":env::var("CARGO_PKG_NAME").ok(),"version":env::var("CARGO_PKG_VERSION").ok(),

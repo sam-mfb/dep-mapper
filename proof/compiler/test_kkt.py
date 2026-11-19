@@ -20,12 +20,14 @@ def main(report):
               r["evidence"]["consumer"]["crate"] == "kkt_llm_agent_config"]
     for method in ("add_server", "remove_server"):
         witnesses = [r for r in routes if r["member"]["name"].endswith("::" + method)]
-        assert len(witnesses) == 1
-        provider = witnesses[0]["provider"]
-        assert provider["item"]["name"].endswith("::ClaudeCommand")
-        assert any(s["owner"]["crate"] == "kkt_agent_commands" for s in provider["steps"])
-        assert any(s["target"]["name"] == "kkt_llm_agent_command::Claude::" + method
-                   for s in provider["implementation"]["calls"])
+        paths = [w["provider"] for w in witnesses]
+        assert paths and all(p["item"]["name"].endswith("::ClaudeCommand") for p in paths)
+        branches = [{s["owner"]["crate"] for s in p["steps"]} for p in paths]
+        assert any("kkt_agent_commands" in crates for crates in branches)
+        if json.loads((report / "build.json").read_text())["scope"] == "dispatch":
+            assert any("kkt_install_commands" in crates for crates in branches)
+        assert all(any(s["target"]["name"] == "kkt_llm_agent_command::Claude::" + method
+                       for s in p["implementation"]["calls"]) for p in paths)
     summary = json.loads((report / "summary.json").read_text())
     routes = json.loads((report / "routes.json").read_text())
     assert summary["calls"]["dynamic"] == len(routes) == summary["withWitness"] + summary["withoutWitness"]

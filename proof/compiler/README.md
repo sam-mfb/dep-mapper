@@ -15,6 +15,8 @@ The input is a Cargo build selection. The collector has no supplier, consumer, e
 
 Definition IDs are scoped to a build. The presentation includes readable names, source spans and crate identities. Joins use identities, including when source spells a dependency through an alias or public re-export.
 
+The closed-executable investigation accounts for the 375 previously missing sites, distinguishes receiver identity from handoff evidence, and tests the limit of exact discovery on independent programs. [Results and reproduction](limits.md)
+
 ## Measured on kashkeshet
 
 The pin for this experiment is [next at 41fbc289](https://github.com/sam-mfb/kashkeshet/commit/41fbc289dbfe68be90840d107e217762229b9745). The older proofs in the parent directory retain their original pin. This run selected the kkt binary and kashkeshet library on aarch64 Linux, default features, dev profile and workspace-body collection.

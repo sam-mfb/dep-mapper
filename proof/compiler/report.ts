@@ -1,6 +1,7 @@
 // Read compiler records for one build. Walk backward from each dynamic call's
 // receiver. Retain a source location for each handoff and each place we stop.
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { Bounds } from './bounds.ts';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { alternatives, liveBlock, possibleEdge, constrain, type Condition } from './conditions.ts';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -10,6 +11,7 @@ type Item = { id: string; crate: string; unit: string; name: string };
 type Place = { local: number; fields?: (number | string)[]; opaque?: boolean; indirect?: boolean };
 type Flow = {
   from?: Place;
+  erasedFrom?: Place;
   parts?: (Place | null)[];
   typeParam?: number;
   variant?: string;
@@ -28,6 +30,8 @@ type Op = {
   borrowed?: Place;
   flow?: Flow;
   call?: string;
+  boundBody?: Item;
+  principal?: Item;
   target?: Item;
   contract?: Item;
   closure?: Item;
@@ -71,6 +75,7 @@ type Point = {
   conditions?: Condition[];
   epoch?: number;
 };
+const bounds = new Bounds();
 const dir = process.argv[2];
 const omit = new Set(process.argv.slice(3));
 const captures = new Map<string, Site[]>();
@@ -92,6 +97,7 @@ for (const file of readdirSync(join(dir, 'facts')).sort()) {
   for await (const line of lines) {
     const fact = JSON.parse(line);
     increment(counts, fact.kind);
+    bounds.add(fact);
     if (fact.kind === 'mir-keys') {
       for (const member of fact.items) expectedBodies.set(member.id, member);
     }
@@ -115,15 +121,26 @@ for (const file of readdirSync(join(dir, 'facts')).sort()) {
       increment(callCounts, op.call);
       const site = { body, op, index };
       calls.push(site);
-      const callee = op.closure ?? op.selected ?? (op.call === 'direct' ? op.target : undefined);
-      if (!callee) return;
-      if (!callers.has(callee.id)) callers.set(callee.id, []);
-      callers.get(callee.id)!.push(site);
     });
   }
 }
 if (!crates.length || counts['mir-keys'] !== crates.length) {
   throw new Error('incomplete compiler inventory: each indexed crate must report its MIR keys');
+}
+const buildFile = join(dir, 'build.json');
+bounds.finish(existsSync(buildFile) && JSON.parse(readFileSync(buildFile, 'utf8')).scope === 'dispatch');
+const indexedUnits = new Set(crates.map((c) => c.owner.unit));
+for (const site of calls) {
+  if (!bounds.includes(site.body.owner)) continue;
+  const op = site.op;
+  if (op.call === 'dynamic' && op.contract && op.target && !omit.has('--without-dispatch')) {
+    op.boundBody = bounds.singleBody(op.contract, op.target, op.principal);
+  }
+  const callee =
+    op.boundBody ?? op.closure ?? op.selected ?? (op.call === 'direct' ? op.target : undefined);
+  if (!callee) continue;
+  if (!callers.has(callee.id)) callers.set(callee.id, []);
+  callers.get(callee.id)!.push(site);
 }
 for (const sites of callers.values()) {
   sites.sort((a, b) => a.body.owner.id.localeCompare(b.body.owner.id) || a.index - b.index);
@@ -241,14 +258,18 @@ function origins(start: Point[], contract?: Item): Result {
           steps: record ? [...steps, step(body, op)] : steps,
         });
       }
-      if (flow?.provider && flow.contract?.id === contract?.id && rest.length === 0) {
+      if (flow?.provider && bounds.satisfies(flow.contract, contract) && rest.length === 0) {
         hits.set(JSON.stringify([body.owner.id, index, conditions]), {
           ...step(body, op),
           item: flow.provider,
           steps,
           conditions,
         });
-      } else if (flow?.typeParam !== undefined && contract?.id === flow.contract?.id && !rest.length) {
+      } else if (
+        flow?.typeParam !== undefined &&
+        bounds.satisfies(flow.contract, contract) &&
+        !rest.length
+      ) {
         const sites = stack.length ? stack.slice(-1) : (callers.get(body.owner.id) ?? []);
         if (!sites.length || omit.has('--without-generics')) stop(p, 'unbound type parameter', op);
         else
@@ -287,6 +308,8 @@ function origins(start: Point[], contract?: Item): Result {
               },
             );
           }
+      } else if (contract && flow?.erasedFrom && rest.length) {
+        follow(flow.erasedFrom, rest, true);
       } else if (contract && op.pointerOp && !omit.has('--without-pointers')) {
         follow(op.args?.[0], rest, true);
       } else if (flow?.from) {
@@ -298,8 +321,8 @@ function origins(start: Point[], contract?: Item): Result {
           follow(flow.parts[rest[1]], rest.slice(2), true);
       } else if (flow?.parts && typeof rest[0] === 'number') {
         follow(flow.parts[rest[0]], rest.slice(1), true);
-      } else if ((op.call === 'direct' || op.closure || op.selected) && op.target) {
-        const target = op.closure ?? op.selected ?? op.target;
+      } else if ((op.call === 'direct' || op.closure || op.selected || op.boundBody) && op.target) {
+        const target = op.boundBody ?? op.closure ?? op.selected ?? op.target;
         if (!contract && target.unit !== start[0].body.owner.unit) {
           hits.set(body.owner.id + '@' + index, { ...step(body, op), item: target, steps });
         } else {
@@ -431,6 +454,10 @@ const routes = calls
       ...step(body, op),
       block: op.bb,
       member: op.target,
+      bound:
+        bounds.includes(body.owner) && op.contract && indexedUnits.has(op.contract.unit)
+          ? bounds.describe(op.contract, op.target!, op.principal)
+          : undefined,
       providers: result.hits.map((hit) => ({
         ...hit,
         conditions: hit.conditions?.map(({ activation, ...condition }) => condition),
@@ -454,7 +481,7 @@ const routes = calls
 routes.sort((a, b) => a.owner.id.localeCompare(b.owner.id) || a.block - b.block);
 const graph = JSON.parse(readFileSync(join(dir, 'units.json'), 'utf8'));
 if (graph.version !== 1) throw new Error('unsupported Cargo unit graph');
-const indexedUnits = new Set(crates.map((c) => c.owner.unit));
+
 const crossCrate = routes.filter(
   (r) => r.member && indexedUnits.has(r.member.unit) && r.member.unit !== r.owner.unit,
 );
