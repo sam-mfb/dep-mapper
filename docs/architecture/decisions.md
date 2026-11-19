@@ -37,10 +37,12 @@ Two proposed effect modules implement the contract. **Architecture review termin
 | Type | Owner | Meaning |
 | --- | --- | --- |
 | `ProjectObservations` | Project observations | Build-scoped facts returned by the selected reader. |
-| `DependencyGraph` | Dependency evidence | Modules, dependencies and routes derived from observations, with their evidence and any gaps. |
+| `DependencyGraph` | Dependency graph | Modules, dependencies and routes derived from observations, with their evidence and any gaps. |
 | `ArchitectureJudgments` | Architecture review | Decisions about identified modules and routes, made by the selected reviewer. |
 | `ProjectMap` | Project map | A self-contained map associating the graph’s modules and routes with judgments and supporting evidence. |
 
+**Dependency graph** is a proposed shared data-contract module. Dependency evidence produces its `DependencyGraph` value. Mapper command reads the relevant facts for review and passes the completed graph to Project map. Neither logic module calls or imports the other.
+
 **Project map** is a pure logic module. Its contract is `DependencyGraph + ArchitectureJudgments → ProjectMap`. It matches judgments to their subjects, retains unreviewed routes and uncertain hops, and reports judgments whose subjects are missing. Repeating the transformation on the same inputs produces the same map.
 
-**Mapper command** calls this transformation and supplies the result to the consumers. **Map files** saves and loads a ProjectMap. **Map viewer** presents a ProjectMap and owns its visual layout and interactions. A saved map can be reopened without rerunning analysis or review.
+**Mapper command** directly depends on both logic modules. It calls Dependency evidence to build the graph, obtains the judgments, then calls Project map to build the map and supplies the result to the consumers. **Map files** saves and loads a ProjectMap. **Map viewer** presents a ProjectMap and owns its visual layout and interactions. A saved map can be reopened without rerunning analysis or review.

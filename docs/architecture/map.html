@@ -512,13 +512,23 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "layer": "core"
     },
     {
+      "name": "dependency-graph",
+      "bins": [],
+      "title": "Dependency graph",
+      "kind": "contract",
+      "concern": "Defines the evidence graph that analysis produces and map construction consumes.",
+      "surface": "DependencyGraph describes modules, dependencies, routes and the observations that support them, including uncertain or unresolved hops.",
+      "ownership": "Owns the graph representation and the identities used to cite its contents. Dependency evidence owns the rules for deriving these facts from source.",
+      "layer": "core"
+    },
+    {
       "name": "project-map",
       "bins": [],
       "title": "Project map",
       "kind": "logic",
       "concern": "Builds a map by attaching architectural judgments to the dependency graph.",
       "surface": "DependencyGraph + ArchitectureJudgments → ProjectMap. ProjectMap is the public representation for saving and viewing a reviewed project.",
-      "ownership": "Matches each judgment to the module or route it describes. Retains evidence references, uncertainty and unreviewed routes. A judgment pointing to a missing subject is reported. The same inputs produce the same map.",
+      "ownership": "Receives a completed DependencyGraph and ArchitectureJudgments from Mapper command. Matches judgments to subjects, preserves uncertain and unreviewed routes, and reports references to missing subjects.",
       "layer": "core"
     },
     {
@@ -563,7 +573,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "composition",
       "concern": "Coordinates collection, review, map construction and publication.",
       "surface": "Collect evidence for a build, request decisions from the selected reviewer, and publish an explorable map.",
-      "ownership": "Selects the reader and reviewer, prepares review requests from the evidence, then calls Project map with the graph and the returned judgments. Supplies the resulting ProjectMap to Map files and Map viewer.",
+      "ownership": "Calls Dependency evidence to build the graph using the selected reader. Obtains judgments through Architecture review. Calls Project map with that graph and those judgments, then supplies the resulting ProjectMap to Map files and Map viewer.",
       "alias": "program",
       "layer": "programs"
     },
@@ -653,7 +663,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
           "role": "uses"
         }
       ],
-      "detail": "Receives source-backed routes and builds review requests from the relevant evidence."
+      "detail": "Calls Dependency evidence with the selected reader and receives the completed graph."
     },
     {
       "to": "map-viewer",
@@ -733,7 +743,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "detail": "Saves or loads the finished ProjectMap."
     },
     {
-      "to": "dependency-evidence",
+      "to": "dependency-graph",
       "from": "project-map",
       "kind": "normal",
       "roles": [
@@ -741,7 +751,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
           "role": "uses"
         }
       ],
-      "detail": "Uses DependencyGraph as the source of modules, routes and their evidence."
+      "detail": "Reads a completed DependencyGraph through its shared data contract."
     },
     {
       "to": "architecture-review",
@@ -763,7 +773,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
           "role": "uses"
         }
       ],
-      "detail": "Calls the pure map builder with both inputs and receives a ProjectMap."
+      "detail": "Calls Project map with the graph returned by Dependency evidence and the judgments returned by the reviewer."
     },
     {
       "to": "project-map",
@@ -786,6 +796,28 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
         }
       ],
       "detail": "Uses the public ProjectMap representation for display."
+    },
+    {
+      "to": "dependency-graph",
+      "from": "dependency-evidence",
+      "kind": "normal",
+      "roles": [
+        {
+          "role": "uses"
+        }
+      ],
+      "detail": "Builds and returns a DependencyGraph conforming to the shared graph contract."
+    },
+    {
+      "to": "dependency-graph",
+      "from": "mapper-command",
+      "kind": "normal",
+      "roles": [
+        {
+          "role": "uses"
+        }
+      ],
+      "detail": "Reads graph subjects and supporting evidence to prepare review requests."
     }
   ],
   "groups": {
