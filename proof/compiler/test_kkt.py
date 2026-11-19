@@ -29,7 +29,17 @@ def main(report):
     summary = json.loads((report / "summary.json").read_text())
     routes = json.loads((report / "routes.json").read_text())
     assert summary["calls"]["dynamic"] == len(routes) == summary["withWitness"] + summary["withoutWitness"]
-    assert all(route["providers"] or route["stops"] for route in routes)
+    assert all(route["providers"] or route["stops"] or route["excluded"] for route in routes)
+    decide, = (r for r in routes if r["owner"]["name"]=="Admission::decide")
+    bindings = {(v,p["item"]["name"]) for p in decide["providers"] for c in p["enumChoices"]
+                if c["enumName"]=="Admission" for v in c["variants"]}
+    assert bindings == {("Open","open::Open"),("SharedKey","shared_key::SharedKey"),("Bearer","any_bearer::AnyBearer")}
+    os_choices = [p["item"]["name"] for r in routes for p in r["providers"]
+                  if p["owner"]["name"]=="machine::service::for_this_os"]
+    assert set(os_choices)=={"kkt_bare_service_systemd::Systemd"}
+    assert any(r["owner"]["name"]=="RotatingFile::open" and
+               any(p["item"]["crate"]=="kkt_clock_system" for p in r["providers"]) for r in routes)
+    print("PASS the log clock, runtime admission modes and Linux service selection")
     print("PASS kkt direct calls, full injection, two adapted methods, and accounted virtual sites")
 
 

@@ -26,11 +26,26 @@ def main(temp):
     report = temp / "baseline"
     routes = collect(src, report)
     by_name = {route["owner"]["name"]: route for route in routes}
-    assert len(routes) == len(by_name) == 3
+    assert len(routes) == len(by_name) == 12
     providers = lambda route: {p["item"]["name"] for p in route["providers"]}
     expected = {"Bridge", "sensor::Factory"}
     assert providers(by_name["display"]) == expected
-    assert providers(by_name["gated"]) == expected
+    assert not providers(by_name["contradictory"])
+    assert any("opposite requirements" in e["reason"] for e in by_name["contradictory"]["excluded"])
+    assert providers(by_name["from_generic"]) == {"Bridge"}
+    assert providers(by_name["gated"]) == {"sensor::Factory"}
+    assert providers(by_name["inverted"]) == {"sensor::Factory"}
+    assert providers(by_name["independent"]) == expected
+    assert providers(by_name["deferred::{closure#0}"]) == {"sensor::Factory"}
+    assert providers(by_name["shared"]) == {"Bridge"}
+    assert providers(by_name["active_only"]) == {"Bridge"}
+    assert providers(by_name["build_choice"]) == {"Spare"}
+    assert providers(by_name["redirected"]) == {"Spare"}
+    independent = by_name["independent"]["providers"]
+    for hit in independent:
+        observed = {(c["name"],c["value"]) for c in hit["conditions"]}
+        assert observed == {("right",True),("left",hit["item"]["name"]=="Bridge")}
+    assert any(c["variants"]==["Active"] for c in by_name["active_only"]["providers"][0]["enumChoices"])
     assert not by_name["after_edit"]["providers"]
     assert any(s["reason"] == "mutable borrow on incoming path" for s in by_name["after_edit"]["stops"])
     bridge = next(p for p in by_name["display"]["providers"] if p["item"]["name"] == "Bridge")
@@ -70,7 +85,8 @@ def main(temp):
     manifest = src / "Cargo.toml"
     manifest.write_text(manifest.read_text().replace('"sensor", ', '').replace('[workspace]', '[workspace]\nexclude = ["sensor"]'))
     external = temp / "external"
-    collect(src, external, "--features", "console/calibration", external=True)
+    feature_routes = collect(src, external, "--features", "console/calibration", external=True)
+    assert providers(next(r for r in feature_routes if r["owner"]["name"]=="build_choice")) == {"Bridge"}
     external_facts = query(external,"sensor")
     def calibration(rows):
         return any(f["kind"]=="call" and f["evidence"]["owner"]["name"]=="calibrate" for f in rows)

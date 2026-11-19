@@ -28,13 +28,13 @@ The pin for this experiment is [next at 41fbc289](https://github.com/sam-mfb/kas
 | Named direct calls / compiler-selected static trait calls | 24,418 / 15,883 |
 | Trait calls left at the contract / compiler-confirmed virtual calls | 4,832 / 1,349 |
 | Indirect / foreign calls | 6 / 2 |
-| Virtual sites with at least one provider witness / without one | 177 / 1,172 |
-| Virtual sites with multiple provider types found | 6 |
-| Virtual sites whose contract belongs to another indexed crate / with a provider witness | 300 / 8 |
+| Virtual sites with at least one provider witness / without one | 297 / 1,052 |
+| Virtual sites with multiple provider types found | 10 |
+| Virtual sites whose contract belongs to another indexed crate / with a provider witness | 300 / 55 |
 
-The 473 missing body records are all constructor functions listed by rustc, 412 for variants and 61 for structs. Every other listed key had a captured body. Of the 177 sites with a structural witness, 47 also had an unresolved incoming path. The cross-crate row uses the location of the contract declaration. An adapter can cross crate boundaries on its way to a consumer that declares its own contract.
+The 473 missing body records are all constructor functions listed by rustc, 412 for variants and 61 for structs. Every other listed key had a captured body. Of the 297 sites with a structural witness, 66 also had an unresolved incoming path. The cross-crate row uses the location of the contract declaration. An adapter can cross crate boundaries on its way to a consumer that declares its own contract.
 
-Among the 1,172 sites with no witness, the search encountered an unmodelled value at 492, a call without an indexed return at 325, and a function with no indexed caller at 308. A site can have several stopping reasons.
+For written calls to kkt contracts, the matched-site comparison is 173 of 668 before and 293 of 668 now. The follow-up accounts for all 495 original misses and tests which providers the build and runtime conditions select. [Coverage and condition investigation](investigation.md)
 
 Two supplier-only queries recover the motivating distinctions.
 
@@ -45,11 +45,11 @@ Two supplier-only queries recover the motivating distinctions.
 
 One compiled consumer reads a field. A runtime argument selects either the supplier's Factory implementation or the caller's Bridge implementation. Bridge calls an audit function, calls a helper, and returns a measurement from the supplier through a renamed Cargo dependency and a re-export. The analysis finds both providers, identifies the measurement as a return source, and excludes the adjacent spare field and another same-trait implementation. Running the same binary twice produces 11 and 22.
 
-A second consumer is called only when that same flag is false. Its possible runtime provider is always Factory. The structural search finds both Factory and Bridge because it follows each branch independently. A third consumer receives a slot edited through a mutable reference. The mapper stops at the borrow and reports an unknown. The executable checks that the new provider really was installed. These tests give an observed false positive and an observed abstention.
+A second consumer is called only when that same flag is false. Its possible runtime provider is always Factory. The analysis now follows the immutable flag across the helper call and rules out Bridge on that path. A third consumer receives a slot edited through a mutable reference. The mapper stops at the borrow and reports an unknown. The executable checks that the new provider really was installed. The tests check both the corrected false positive and the remaining unknown.
 
 ## What complete could mean
 
-Cargo's unit graph is enumerable for a fixed successful build. Source relationships also become checkable once their units are defined, for example one edge for every external resolved HIR path or one observation for every MIR call terminator. A check can reconcile the compiler's list of bodies with the captured bodies, then reconcile the call inventory with its categories. For each confirmed virtual site this experiment emits a provider witness, a stopping reason, or both. Its missing-body list and the unselected trait calls remain part of the result.
+Cargo's unit graph is enumerable for a fixed successful build. Source relationships also become checkable once their units are defined, for example one edge for every external resolved HIR path or one observation for every MIR call terminator. A check can reconcile the compiler's list of bodies with the captured bodies, then reconcile the call inventory with its categories. For each confirmed virtual site this experiment records a provider witness, a stopping reason, evidence of an excluded path, or a combination. Its missing-body list and the unselected trait calls remain part of the result.
 
 Exact feasible work paths for arbitrary programs have a different limit. Put a call to the supplier after an arbitrary computation. Deciding whether execution can reach that call in every such program would decide whether that computation halts. Even in a terminating program, a command-line choice can select a different provider each run. A plugin discovered at runtime may supply an implementation outside the build entirely. Runtime observation can say which path a particular run took.
 
