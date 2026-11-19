@@ -508,12 +508,12 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "name": "architecture-review",
       "bins": [],
       "title": "Architecture review",
-      "kind": "logic",
-      "concern": "Attaches architectural judgments to the modules and routes they describe.",
-      "surface": "Accepts an evidence graph, requires a source of judgments for that graph, and returns a reviewed map. Owns the review document format and the published map format.",
-      "ownership": "The human or LLM authors the labels. Architecture review calls its injected judgment source, checks the returned references against the evidence, and preserves unresolved or unlabeled subjects. Mapper command supplies a small adapter over Map files to satisfy this requirement.",
+      "kind": "contract",
+      "concern": "Defines how to ask for an architectural decision about a module or a dependency route.",
+      "surface": "A review request identifies the subject, the relevant evidence, and the judgment sought. The reviewer returns a decision linked to that subject and evidence, or leaves it undecided.",
+      "ownership": "Owns the vocabulary for review requests and decisions. Each implementation decides how to obtain the judgment. Mapper command presents evidence in this vocabulary and consumes the result.",
       "alias": "review",
-      "layer": "core"
+      "layer": "reviewers"
     },
     {
       "name": "map-viewer",
@@ -521,8 +521,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "title": "Map viewer",
       "kind": "effect",
       "concern": "Lets a reader explore a reviewed architecture in the browser.",
-      "surface": "A browser viewer bundle with an entry page that loads the accompanying reviewed map document.",
-      "ownership": "Mapper command selects this bundle and pairs it with the output of Architecture review. In the browser the viewer reads that document and owns layout, selection and evidence drill-down. TypeScript, React, Redux Toolkit and Vite belong here.",
+      "surface": "A browser bundle and its input document contract for displaying packages, evidence-backed routes and their judgments.",
+      "ownership": "Owns the presentation format, navigation and source drill-down. Mapper command supplies a document in this format alongside the browser bundle.",
       "alias": "viewer",
       "layer": "surfaces"
     },
@@ -531,9 +531,9 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "bins": [],
       "title": "Map files",
       "kind": "effect",
-      "concern": "Keeps the evidence, authored review and published map available between runs.",
-      "surface": "File access to saved evidence, an authored review document, and the files of the published map. Missing or unreadable input is reported to the caller.",
-      "ownership": "Supplies the file-reading effect behind the judgment source. It reads the authored document selected by Mapper command. Architecture review owns interpretation of its contents. Map files also writes the viewer bundle and reviewed document together for publication.",
+      "concern": "Persists evidence, completed decisions and published maps.",
+      "surface": "Read or write saved artifacts and report file-access failures.",
+      "ownership": "Handles storage for Mapper command. A saved decision records the outcome of an earlier review.",
       "alias": "files",
       "layer": "platform"
     },
@@ -544,11 +544,31 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       ],
       "title": "Mapper command",
       "kind": "composition",
-      "concern": "Coordinates collecting evidence and publishing a reviewed map.",
-      "surface": "Collect evidence from a selected Rust build, then publish a browser map from saved evidence and an authored review.",
-      "ownership": "Injects Rust project reader into Dependency evidence. For review it adapts the selected file reader to the judgment source required by Architecture review. For publication it pairs the returned map document with the viewer bundle and uses Map files to write them together.",
+      "concern": "Composes evidence collection, architectural review and publication.",
+      "surface": "Collect evidence for a build, request decisions from the selected reviewer, and publish an explorable map.",
+      "ownership": "Supplies the Rust reader to Dependency evidence. Selects one reviewer and invokes it through Architecture review. Adapts the graph into review requests, matches returned decisions to their evidence, and supplies both to the viewer in its own document format. Map files persists artifacts.",
       "alias": "program",
       "layer": "programs"
+    },
+    {
+      "name": "architecture-review-llm",
+      "bins": [],
+      "title": "Architecture review · LLM",
+      "kind": "effect",
+      "concern": "Obtains an architectural judgment from a language model.",
+      "surface": "Implements Architecture review. Presents the subject and its supporting evidence to an LLM API and returns its decision through the review contract.",
+      "ownership": "Owns model interaction and interpretation of the API response. Provider-specific requests and responses stay inside this module.",
+      "layer": "reviewers"
+    },
+    {
+      "name": "architecture-review-terminal",
+      "bins": [],
+      "title": "Architecture review · terminal",
+      "kind": "effect",
+      "concern": "Asks a human to make an architectural judgment in the terminal.",
+      "surface": "Implements Architecture review. Shows the subject and supporting evidence, prompts the reviewer, and returns their decision or explicit deferral.",
+      "ownership": "Owns the terminal conversation. The human chooses the label. Other user interfaces can implement the same review contract.",
+      "layer": "reviewers"
     }
   ],
   "edges": [
@@ -594,46 +614,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
           "role": "uses"
         }
       ],
-      "detail": "Calls the analysis and receives the graph to save."
-    },
-    {
-      "to": "dependency-evidence",
-      "from": "architecture-review",
-      "kind": "normal",
-      "roles": [
-        {
-          "role": "uses"
-        }
-      ],
-      "detail": "Uses the evidence graph to check the references in an authored review."
-    },
-    {
-      "to": "architecture-review",
-      "from": "mapper-command",
-      "kind": "normal",
-      "roles": [
-        {
-          "role": "adapts"
-        },
-        {
-          "role": "uses"
-        }
-      ],
-      "detail": "Adapts Map files to the judgment source and receives the reviewed document for publication."
-    },
-    {
-      "to": "map-files",
-      "from": "mapper-command",
-      "kind": "normal",
-      "roles": [
-        {
-          "role": "wires"
-        },
-        {
-          "role": "uses"
-        }
-      ],
-      "detail": "Supplies file access to the judgment adapter and writes the evidence and publication files."
+      "detail": "Receives source-backed routes and builds review requests from the relevant evidence."
     },
     {
       "to": "map-viewer",
@@ -644,18 +625,73 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
           "role": "uses"
         }
       ],
-      "detail": "Takes the browser bundle for publication alongside the reviewed document."
+      "detail": "Packages the browser bundle and adapts evidence and review decisions to the viewer’s input document."
     },
     {
       "to": "architecture-review",
-      "from": "map-viewer",
+      "from": "mapper-command",
       "kind": "normal",
       "roles": [
         {
           "role": "uses"
         }
       ],
-      "detail": "Reads the published document format across the Rust–TypeScript boundary."
+      "detail": "Requests a judgment from the chosen reviewer through the shared review contract."
+    },
+    {
+      "to": "architecture-review",
+      "from": "architecture-review-llm",
+      "kind": "normal",
+      "roles": [
+        {
+          "role": "implements"
+        }
+      ],
+      "detail": "Implements the review decision contract for the LLM workflow."
+    },
+    {
+      "to": "architecture-review-llm",
+      "from": "mapper-command",
+      "kind": "normal",
+      "roles": [
+        {
+          "role": "wires"
+        }
+      ],
+      "detail": "Constructs this reviewer when the LLM workflow is selected."
+    },
+    {
+      "to": "architecture-review",
+      "from": "architecture-review-terminal",
+      "kind": "normal",
+      "roles": [
+        {
+          "role": "implements"
+        }
+      ],
+      "detail": "Implements the review decision contract for the terminal workflow."
+    },
+    {
+      "to": "architecture-review-terminal",
+      "from": "mapper-command",
+      "kind": "normal",
+      "roles": [
+        {
+          "role": "wires"
+        }
+      ],
+      "detail": "Constructs this reviewer when the terminal workflow is selected."
+    },
+    {
+      "to": "map-files",
+      "from": "mapper-command",
+      "kind": "normal",
+      "roles": [
+        {
+          "role": "uses"
+        }
+      ],
+      "detail": "Reads and writes saved artifacts, including completed decisions and the published viewer document."
     }
   ],
   "groups": {
@@ -677,7 +713,12 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     {
       "id": "core",
       "title": "Core",
-      "about": "The evidence graph and its architectural interpretation."
+      "about": "Connects project observations into source-backed dependency routes."
+    },
+    {
+      "id": "reviewers",
+      "title": "Architectural review",
+      "about": "The decision contract and its alternative human and LLM implementations."
     },
     {
       "id": "platform",
@@ -694,7 +735,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     {
       "id": "effect",
       "title": "Effect",
-      "about": "Interacts with the compiler, file system or browser."
+      "about": "Interacts with the compiler, file system, browser, terminal or model API."
     },
     {
       "id": "contract",
@@ -716,27 +757,56 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "receiver": "dependency-evidence",
       "note": "Dependency evidence calls the supplied reader through Project observations.",
       "carry": "Project reader",
-      "document": false
+      "document": false,
+      "firstRole": "wires"
     },
     {
-      "title": "Obtain judgments",
-      "kind": "Injection through an adapter",
-      "supplier": "map-files",
+      "title": "Evidence for LLM review",
+      "kind": "Data handoff",
+      "supplier": "dependency-evidence",
       "program": "mapper-command",
-      "receiver": "architecture-review",
-      "note": "A human or LLM reads the saved evidence and authors a review document. Architecture review asks its supplied source for those judgments. The adapter reads the selected document through Map files.",
-      "carry": "Judgment source",
-      "document": false
+      "receiver": "architecture-review-llm",
+      "note": "When the LLM reviewer is selected, Mapper command takes the relevant observations and route from the evidence graph and submits them through Architecture review. This implementation calls the model API.",
+      "carry": "Review request",
+      "document": true,
+      "firstRole": "uses",
+      "contract": "architecture-review"
     },
     {
-      "title": "Publish the map",
-      "kind": "Document handoff",
-      "supplier": "architecture-review",
+      "title": "Publish the LLM decision",
+      "kind": "Data handoff",
+      "supplier": "architecture-review-llm",
       "program": "mapper-command",
       "receiver": "map-viewer",
-      "note": "Mapper command takes the viewer bundle and the reviewed document and has Map files write them together. Opening the entry page loads that document in the browser.",
-      "carry": "Reviewed document",
-      "document": true
+      "note": "The selected LLM reviewer returns its decision through Architecture review. Mapper command pairs it with the original evidence and supplies a document in Map viewer’s format.",
+      "carry": "Evidence + decision",
+      "document": true,
+      "firstRole": "wires",
+      "contract": "architecture-review"
+    },
+    {
+      "title": "Evidence for terminal review",
+      "kind": "Data handoff",
+      "supplier": "dependency-evidence",
+      "program": "mapper-command",
+      "receiver": "architecture-review-terminal",
+      "note": "When the terminal reviewer is selected, Mapper command takes the relevant observations and route from the evidence graph and submits them through Architecture review. This implementation prompts the human reviewer.",
+      "carry": "Review request",
+      "document": true,
+      "firstRole": "uses",
+      "contract": "architecture-review"
+    },
+    {
+      "title": "Publish the terminal decision",
+      "kind": "Data handoff",
+      "supplier": "architecture-review-terminal",
+      "program": "mapper-command",
+      "receiver": "map-viewer",
+      "note": "The selected terminal reviewer returns its decision through Architecture review. Mapper command pairs it with the original evidence and supplies a document in Map viewer’s format.",
+      "carry": "Evidence + decision",
+      "document": true,
+      "firstRole": "wires",
+      "contract": "architecture-review"
     }
   ]
 }</script>
@@ -1048,7 +1118,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       el("span", {}, el("strong", {}, "Roles: "), Object.entries(ROLES).map(([role, words]) =>
         el("span", { class: "key-item", title: ROLE_ABOUT[role] }, el("span", { class: `role-key role-${role}` }), words))),
       el("span", { class:"key-item" }, el("span",{class:"route-key"}), "Injected capability"),
-      el("span", { class:"key-item" }, el("span",{class:"route-key document-hop"}), "Document handoff"),
+      el("span", { class:"key-item" }, el("span",{class:"route-key document-hop"}), "Data handoff"),
       el("span", { class:"muted" }, "Dependency arrows point toward the consumer. Tick a module to follow a handoff through Mapper command."));
   }
 
@@ -1550,19 +1620,21 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     const layer = view.deliveryLayer, labelLayer = view.deliveryLabels;
     layer.replaceChildren(); labelLayer.replaceChildren();
     for (const {path} of view.edgeNodes) path.classList.remove("route-hop","document-hop");
-    const active = [];
+    const active = new Map();
     for (const route of graph.routes) {
       const names = routeNames(route);
-      if (!names.some(n=>state.checked.has(n)) || !names.every(visibleCrate)) continue;
+      if (!(names.some(n=>state.checked.has(n)) || state.checked.has(route.contract)) || !names.every(visibleCrate)) continue;
       const role = route.document ? "uses" : "wires";
-      if (state.hiddenRoles.has(role) || (route.kind.includes("adapter") && state.hiddenRoles.has("adapts"))) continue;
+      if (state.hiddenRoles.has(role) || state.hiddenRoles.has(route.firstRole)) continue;
       const strokes = view.edgeNodes.filter(({edge})=>edge.from===route.program && edge.to===route.supplier);
-      const hop = strokes.find(({path})=>path.classList.contains("role-"+role));
+      const hop = strokes.find(({path})=>path.classList.contains("role-"+route.firstRole));
       if (!hop) continue;
       hop.path.classList.remove("faint"); hop.path.classList.add("route-hop");
       if (route.document) hop.path.classList.add("document-hop");
       for (const n of names) view.nodes.get(n).classList.remove("dim");
-      active.push({program:route.program, receiver:route.receiver, route});
+      const leg = route.program + ">" + route.receiver;
+      if (!active.has(leg)) active.set(leg,{program:route.program, receiver:route.receiver, routes:[]});
+      active.get(leg).routes.push(route);
     }
     const LABEL_CLEAR = 5;
     const placed = [...view.nodes.keys()].map((n) => view.position.get(n)).filter(Boolean)
@@ -1579,7 +1651,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     // it sits mid-line on a backing of the page's colour, so it reads
     // over the box.
     const labelOn = (path, line, words, extra, suffix = "") => {
-      const tip = (ev) => showRouteTip(ev, line.route);
+      const tip = (ev) => showRouteTip(ev, line.routes);
       const label = svg("text", { class: "delivery-label" + extra, "data-from": line.program, "data-to": line.receiver });
       label.textContent = words.join(", ") + suffix;
       label.addEventListener("mousemove", tip);
@@ -1608,10 +1680,10 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       }
     };
 
-    for (const {line,ends:[a,b]} of placeDeliveryEnds(active)) {
-      const r=line.route;
+    for (const {line,ends:[a,b]} of placeDeliveryEnds([...active.values()])) {
+      const r=line.routes[0];
       const path=svg("path",{d:edgePath(a,b),class:"delivery"+(r.document?" document-hop":""),"data-from":line.program,"data-to":line.receiver,"marker-end":"url(#"+(r.document?"head-uses":"head-wires")+")"});
-      path.addEventListener("mousemove",ev=>showRouteTip(ev,r));
+      path.addEventListener("mousemove",ev=>showRouteTip(ev,line.routes));
       path.addEventListener("mouseleave",hideTip);
       layer.append(path);
       labelOn(path,line,[r.carry],r.document?" document-hop":"");
@@ -1622,7 +1694,9 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     tip.style.left=Math.max(8,Math.min(ev.clientX+14,innerWidth-tip.offsetWidth-8))+"px";
     tip.style.top=Math.max(8,Math.min(ev.clientY+14,innerHeight-tip.offsetHeight-8))+"px";
   }
-  function showRouteTip(ev,r) { tooltip(ev,el("strong",{},r.kind),el("div",{},routeNames(r).join(" → ")),el("div",{},r.note)); }
+  function showRouteTip(ev,routes) {
+    tooltip(ev,...routes.flatMap(r=>[el("strong",{},r.title),el("div",{},routeNames(r).join(" → ")),el("div",{},r.note)]));
+  }
   function showTip(ev,e) { tooltip(ev,el("strong",{},drawnEnds(e).join(" → ")),el("div",{},e.roles.map(r=>ROLES[r.role]).join(" · ")),el("div",{},e.detail)); }
   function hideTip() { $("tip").hidden=true; }
 
@@ -1651,19 +1725,19 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     return el("button",{class:"crate-link",type:"button",onclick:()=>select(n)},n);
   }
   function routeList(routes) {
-    return el("ul",{class:"flows"},routes.map(r=>el("li",{},el("strong",{},r.kind),
+    return el("ul",{class:"flows"},routes.map(r=>el("li",{},el("strong",{},r.title),
       el("div",{},routeNames(r).map((n,i)=>[i?" → ":"",moduleLink(n)])), el("p",{},r.note))));
   }
   function renderPanel() {
     const panel=$("panel"), n=state.selected, highlighted=selectionList();
     if (!n) {
       panel.replaceChildren(...[highlighted,el("h2",{},"The proposed architecture"),
-        el("p",{},"Seven modules collect Rust dependency evidence, attach judgments from a human or LLM, and publish a browser map."),
+        el("p",{},"Mapper command collects dependency evidence, asks either a terminal or an LLM reviewer for architectural decisions, and prepares the result for the browser."),
         el("ul",{class:"overview"},graph.layers.map(l=>el("li",{},el("strong",{},l.title+". "),l.about))),
-        el("p",{}, "Select a module for its public contract. Tick its corner to trace the reader, judgment source, or reviewed document through Mapper command.")].filter(Boolean));
+        el("p",{}, "Select a module for its public contract. Tick its corner to trace a handoff through Mapper command. Terminal and LLM routes show alternative choices for a review.")].filter(Boolean));
       return;
     }
-    const c=crates.get(n), routes=graph.routes.filter(r=>routeNames(r).includes(n));
+    const c=crates.get(n), routes=graph.routes.filter(r=>routeNames(r).includes(n) || r.contract===n);
     const neighbors=(edges,other)=>el("ul",{class:"flows"},edges.map(e=>el("li",{},moduleLink(e[other]),el("div",{},e.detail))));
     const includes=graph.edges.filter(e=>e.from===n), users=graph.edges.filter(e=>e.to===n);
     panel.replaceChildren(...[el("h2",{},c.title),highlighted,el("div",{class:"muted mono"},n),

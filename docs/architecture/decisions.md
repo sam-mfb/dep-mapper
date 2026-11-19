@@ -24,8 +24,12 @@ Keep source-supported handoffs, possible connections, and the place a trace stop
 
 The module boundaries, dependency arrangements and review workflow for dep-mapper itself are proposals for design review.
 
-## Proposed composition for review
+## Review decisions and composition
 
-Mapper command owns three handoffs. It supplies Rust project reader to Dependency evidence through the shared Project observations contract. It also supplies Architecture review with a source of judgments for the selected evidence graph. The first proposed source is a small command-owned adapter over Map files that reads a review authored by a human or LLM. Architecture review owns the requirement and checks the returned labels against the evidence.
+Architecture review is a contract for making an architectural judgment. The request identifies a module or route, the evidence bearing on it, and the decision being requested. Its response ties the judgment to that subject and evidence. A reviewer can leave a subject undecided.
 
-For presentation, Mapper command pairs the document returned by Architecture review with the Map viewer bundle. Map files writes both for publication. The browser opens the bundle and reads the accompanying document. This handoff works across the Rust and TypeScript boundary.
+Two proposed effect modules implement the contract. **Architecture review terminal** displays the evidence, asks a human to decide, and returns the answer. **Architecture review LLM** submits the review request to a model API and returns the model’s decision. A different review mechanism can implement the same contract.
+
+**Mapper command** owns the composition. It supplies Rust project reader to Dependency evidence, obtains the graph, and adapts the relevant evidence to the review contract. It selects a reviewer and calls it through that contract. For publication it pairs decisions with the original evidence and prepares the input document defined by Map viewer. The reviewer owns the decision, Dependency evidence owns the facts, and Map viewer owns their presentation.
+
+**Map files** handles persistence. It can save evidence and completed decisions for reuse and write the published map. Making a fresh decision takes place in the selected reviewer.
