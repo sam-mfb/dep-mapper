@@ -474,7 +474,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "contract",
       "concern": "Defines what a source reader can report about one selected build.",
       "surface": "The capability to obtain project observations for a selected build, including source locations and collection gaps.",
-      "ownership": "Defines the shared contract. Rust project reader implements it. Dependency evidence requires it. Mapper command supplies the implementation.",
+      "ownership": "Defines the language-independent reader contract. Mapper command chooses a reader for the project. Dependency evidence consumes its observations through this contract.",
       "alias": "observations",
       "layer": "platform"
     },
@@ -487,6 +487,17 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "surface": "An implementation of Project observations backed by Cargo and the Rust compiler.",
       "ownership": "Owns build and compiler access. Mapper command constructs the reader and injects it into Dependency evidence. A request through that contract returns observations about the selected build.",
       "alias": "rust",
+      "layer": "platform"
+    },
+    {
+      "name": "typescript-project-reader",
+      "bins": [],
+      "title": "TypeScript project reader",
+      "kind": "effect",
+      "concern": "Obtains project observations from a TypeScript project.",
+      "surface": "Illustrative implementation of Project observations. It would report the selected project’s surfaces, references, value handoffs, source locations and collection gaps through the same contract as the Rust reader.",
+      "ownership": "Owns TypeScript compiler access and translation into project observations.",
+      "illustrative": true,
       "layer": "platform"
     },
     {
@@ -542,7 +553,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "composition",
       "concern": "Composes evidence collection, architectural review and publication.",
       "surface": "Collect evidence for a build, request decisions from the selected reviewer, and publish an explorable map.",
-      "ownership": "Supplies the Rust reader to Dependency evidence. Selects one reviewer and invokes it through Architecture review. Adapts the graph into review requests, matches returned decisions to their evidence, and supplies both to the viewer in its own document format. Map files persists artifacts.",
+      "ownership": "Chooses the reader for the project language and supplies it to Dependency evidence through Project observations. Selects one reviewer and invokes it through Architecture review. Adapts the graph into review requests, matches returned decisions to their evidence, and supplies both to the viewer in its own document format. Map files persists artifacts.",
       "alias": "program",
       "layer": "programs"
     },
@@ -581,6 +592,17 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     },
     {
       "to": "project-observations",
+      "from": "typescript-project-reader",
+      "kind": "normal",
+      "roles": [
+        {
+          "role": "implements"
+        }
+      ],
+      "detail": "Illustrates implementing the same observation contract with the TypeScript compiler."
+    },
+    {
+      "to": "project-observations",
       "from": "dependency-evidence",
       "kind": "normal",
       "roles": [
@@ -599,7 +621,18 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
           "role": "wires"
         }
       ],
-      "detail": "Constructs the reader that Dependency evidence receives."
+      "detail": "Selects and supplies the Rust reader for a Rust build."
+    },
+    {
+      "to": "typescript-project-reader",
+      "from": "mapper-command",
+      "kind": "normal",
+      "roles": [
+        {
+          "role": "wires"
+        }
+      ],
+      "detail": "For a TypeScript project, the command would select this reader and supply it through Project observations."
     },
     {
       "to": "dependency-evidence",
@@ -692,7 +725,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
   ],
   "groups": {
     "project-observations": [
-      "rust-project-reader"
+      "rust-project-reader",
+      "typescript-project-reader"
     ]
   },
   "layers": [
@@ -746,15 +780,28 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
   ],
   "routes": [
     {
-      "title": "Read the project",
+      "title": "Read a Rust project",
       "kind": "Shared-contract injection",
       "supplier": "rust-project-reader",
       "program": "mapper-command",
       "receiver": "dependency-evidence",
-      "note": "Dependency evidence calls the supplied reader through Project observations.",
+      "note": "For a Rust build, Mapper command supplies the Rust reader. Dependency evidence calls it through Project observations.",
       "carry": "Project reader",
       "document": false,
-      "firstRole": "wires"
+      "firstRole": "wires",
+      "contract": "project-observations"
+    },
+    {
+      "title": "Read a TypeScript project (illustrative)",
+      "kind": "Shared-contract injection",
+      "supplier": "typescript-project-reader",
+      "program": "mapper-command",
+      "receiver": "dependency-evidence",
+      "note": "For a TypeScript project, Mapper command would supply the TypeScript reader. Dependency evidence uses the same Project observations contract.",
+      "carry": "Project reader",
+      "document": false,
+      "firstRole": "wires",
+      "contract": "project-observations"
     },
     {
       "title": "Evidence for LLM review",
@@ -1514,6 +1561,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
   }
 
   function subtitle(c) {
+    if (c.illustrative) return c.kind + " · illustrative";
     return c.kind === "composition" ? "program · composition" : c.kind;
   }
 
@@ -1727,7 +1775,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     const panel=$("panel"), n=state.selected, highlighted=selectionList();
     if (!n) {
       panel.replaceChildren(...[highlighted,el("h2",{},"The proposed architecture"),
-        el("p",{},"Mapper command collects dependency evidence, asks either a terminal or an LLM reviewer for architectural decisions, and prepares the result for the browser."),
+        el("p",{},"Mapper command selects a project reader, collects dependency evidence, asks either a terminal or an LLM reviewer for architectural decisions, and prepares the result for the browser."),
         el("ul",{class:"overview"},graph.layers.map(l=>el("li",{},el("strong",{},l.title+". "),l.about))),
         el("p",{}, "Select a module for its public contract. Tick its corner to highlight its dependencies. The panel describes how Mapper command uses the selected reviewer.")].filter(Boolean));
       return;
