@@ -24,6 +24,15 @@ Keep source-supported handoffs, possible connections, and the place a trace stop
 
 The module boundaries, dependency arrangements and review workflow for dep-mapper itself are proposals for design review.
 
+## Map levels
+
+| Level | Packages |
+| --- | --- |
+| Program | `mapper` |
+| Map | `project-map`, `map-builder`, `map-web`, `map-persist` |
+| Evaluation | `graph-evaluator`, `graph-evaluator-llm`, `graph-evaluator-manual` |
+| Evidence | `dependency-evidence`, `project-grapher`, `project-reader`, `project-reader-rust`, `project-reader-typescript` |
+
 ## Review decisions and composition
 
 `graph-evaluator` is a contract for making an architectural judgment. The request takes the shared `DependencyGraph` value and identifies the module or route to review. The reviewer reads the supporting evidence from that graph. Its response ties the judgment to that subject and evidence. A reviewer can leave a subject undecided.

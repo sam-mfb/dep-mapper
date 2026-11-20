@@ -481,7 +481,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "surface": "A reader for a selected build returns ProjectObservations, including source locations and collection gaps.",
       "ownership": "Defines the language-independent reader contract. Mapper chooses a reader for the project. Project grapher consumes its observations through this contract.",
       "alias": "observations",
-      "layer": "platform",
+      "layer": "evidence",
       "previousName": "project-observations"
     },
     {
@@ -493,7 +493,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "surface": "An implementation of Project reader backed by Cargo and the Rust compiler.",
       "ownership": "Owns build and compiler access. Mapper constructs the reader and injects it into Project grapher. A request through that contract returns observations about the selected build.",
       "alias": "rust",
-      "layer": "platform",
+      "layer": "evidence",
       "previousName": "rust-project-reader"
     },
     {
@@ -505,7 +505,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "surface": "Illustrative implementation of Project reader. It would report the selected project’s surfaces, references, value handoffs, source locations and collection gaps through the same contract as the Rust reader.",
       "ownership": "Owns TypeScript compiler access and translation into project observations.",
       "illustrative": true,
-      "layer": "platform",
+      "layer": "evidence",
       "previousName": "typescript-project-reader"
     },
     {
@@ -517,7 +517,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "surface": "Builds a DependencyGraph from ProjectObservations. Modules, imports, uses and routes can be cited individually. Each hop retains its source and any uncertainty.",
       "ownership": "Requires a reader through Project reader and owns the rules that connect its observations into source-backed routes.",
       "alias": "evidence",
-      "layer": "core"
+      "layer": "evidence"
     },
     {
       "name": "dependency-evidence",
@@ -527,7 +527,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "concern": "Defines the evidence graph used by analysis, review and map construction.",
       "surface": "DependencyGraph describes modules, dependencies, routes and the observations that support them, including uncertain or unresolved hops.",
       "ownership": "Owns the graph representation and the identities used to cite its contents. Project grapher owns the rules for deriving these facts from source.",
-      "layer": "core",
+      "layer": "evidence",
       "previousName": "dependency-graph"
     },
     {
@@ -538,7 +538,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "concern": "Builds a map by attaching architectural judgments to the dependency graph.",
       "surface": "DependencyGraph + ArchitectureJudgments → ProjectMap.",
       "ownership": "Receives a completed DependencyGraph and ArchitectureJudgments from Mapper. Matches judgments to subjects, preserves uncertain and unreviewed routes, and reports references to missing subjects.",
-      "layer": "core"
+      "layer": "map"
     },
     {
       "name": "project-map",
@@ -548,7 +548,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "concern": "Defines the map that Map persist saves and Map web displays.",
       "surface": "ProjectMap describes the reviewed modules and routes, their judgments and supporting evidence, including unresolved hops and subjects still awaiting review.",
       "ownership": "Owns the shared ProjectMap type. Map builder produces values of this type, Map persist saves and loads them, and Map web displays them.",
-      "layer": "core"
+      "layer": "map"
     },
     {
       "name": "graph-evaluator",
@@ -559,7 +559,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "surface": "Accepts a DependencyGraph and a module or route to review. Returns ArchitectureJudgments that cite the subject and its supporting evidence in that graph. The subject may remain undecided.",
       "ownership": "Defines the review request and the returned judgments. The selected reviewer reads the supplied graph to assess the subject.",
       "alias": "review",
-      "layer": "evaluators",
+      "layer": "evaluation",
       "previousName": "architecture-review"
     },
     {
@@ -571,7 +571,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "surface": "Accepts a ProjectMap and presents its modules, routes, judgments and supporting evidence.",
       "ownership": "Owns browser layout, navigation, selection and evidence drill-down. The map representation belongs to Project map.",
       "alias": "viewer",
-      "layer": "surfaces",
+      "layer": "map",
       "previousName": "map-viewer"
     },
     {
@@ -583,7 +583,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "surface": "Write a ProjectMap to storage or read one back.",
       "ownership": "Owns the on-disk encoding, compatibility when reading saved maps, and storage errors.",
       "alias": "files",
-      "layer": "platform",
+      "layer": "map",
       "previousName": "map-files"
     },
     {
@@ -597,7 +597,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "surface": "Collect evidence for a build, request architectural judgments, and present the resulting map through Map web.",
       "ownership": "Calls Project grapher to build the graph using the selected reader. Obtains judgments through Graph evaluator. Calls Map builder with that graph and those judgments, then supplies the resulting ProjectMap to Map persist and Map web.",
       "alias": "program",
-      "layer": "programs",
+      "layer": "program",
       "previousName": "mapper-command"
     },
     {
@@ -608,7 +608,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "concern": "Obtains an architectural judgment from a language model.",
       "surface": "Implements Graph evaluator. Presents the subject and its supporting evidence to an LLM API and returns its decision through the review contract.",
       "ownership": "Owns model interaction and interpretation of the API response. Provider-specific requests and responses stay inside this module.",
-      "layer": "evaluators",
+      "layer": "evaluation",
       "previousName": "architecture-review-llm"
     },
     {
@@ -619,7 +619,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "concern": "Asks a human to make an architectural judgment in the terminal.",
       "surface": "Implements Graph evaluator. Shows the subject and supporting evidence, prompts the reviewer, and returns their decision or explicit deferral.",
       "ownership": "Owns the terminal conversation. The human chooses the label. Other user interfaces can implement the same review contract.",
-      "layer": "evaluators",
+      "layer": "evaluation",
       "previousName": "architecture-review-terminal"
     }
   ],
@@ -878,29 +878,24 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
   },
   "layers": [
     {
-      "id": "programs",
-      "title": "Programs",
-      "about": "Mapper assembles the reader, evaluator, persistence and web surface."
+      "id": "program",
+      "title": "Program",
+      "about": "Composes evidence collection, evaluation, map construction, display and storage."
     },
     {
-      "id": "surfaces",
-      "title": "Surfaces",
-      "about": "The browser interface for the reviewed map."
+      "id": "map",
+      "title": "Map",
+      "about": "Defines, builds, displays and persists the reviewed map."
     },
     {
-      "id": "core",
-      "title": "Core",
-      "about": "Builds the evidence graph and combines it with judgments to form the project map."
+      "id": "evaluation",
+      "title": "Evaluation",
+      "about": "Defines the judgment contract and supplies its LLM and human implementations."
     },
     {
-      "id": "evaluators",
-      "title": "Graph evaluation",
-      "about": "The decision contract and its alternative human and LLM implementations."
-    },
-    {
-      "id": "platform",
-      "title": "Platform",
-      "about": "Project observation and document access."
+      "id": "evidence",
+      "title": "Evidence",
+      "about": "Reads the project and builds the dependency graph from source observations."
     }
   ],
   "kinds": [
@@ -1233,8 +1228,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
           const units = row.units.slice(l * perLine, (l + 1) * perLine);
           const depth = Math.max(...units.map((u) => u.length));
           const span = units.length * (BOX_W + GAP_X) - GAP_X;
-          // Leave the central paths to the composition module clear of the browser box.
-          const left = row.layer.id === "surfaces" ? width - PAD_X - span : (width - span) / 2;
+          const left = (width - span) / 2;
           units.forEach((unit, i) => {
             unit.forEach((name, k) => {
               position.set(name, {
