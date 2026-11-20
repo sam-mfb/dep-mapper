@@ -39,7 +39,7 @@ The module boundaries, dependency arrangements and review workflow for dep-mappe
 
 Two proposed effect modules implement the contract. `graph-evaluator-manual` displays the evidence in the terminal, asks a human to decide, and returns the answer. `graph-evaluator-llm` submits the review request to a model API and returns the model’s decision. A different review mechanism can implement the same contract.
 
-`mapper` owns the composition. It selects a reader for the project language and supplies it to `project-grapher` through `project-reader`. `project-reader-rust` serves the initial investigation. `project-reader-typescript` illustrates how another language can supply the same observations. `mapper` binds either the LLM evaluator or the manual evaluator to `graph-evaluator`. The dashed arrow from the command to that contract shows where the selected implementation is wired. `mapper` passes the resulting graph and review subject through the contract. It passes the resulting DependencyGraph and ArchitectureJudgments to `map-builder`.
+`mapper` owns the composition. It depends directly on the `project-reader` contract to pass the selected language reader to `project-grapher`. `project-reader-rust` serves the initial investigation. `project-reader-typescript` illustrates how another language can supply the same observations. `mapper` binds either the LLM evaluator or the manual evaluator to `graph-evaluator`. The dashed arrow from the command to that contract shows where the selected implementation is wired. `mapper` passes the resulting graph and review subject through the contract. It passes the resulting DependencyGraph and ArchitectureJudgments to `map-builder`.
 
 ## Building and consuming ProjectMap
 
@@ -52,7 +52,7 @@ Two proposed effect modules implement the contract. `graph-evaluator-manual` dis
 
 `dependency-evidence` is a proposed shared data-contract module. `project-grapher` produces its `DependencyGraph` value. `mapper` supplies the same graph to `graph-evaluator` for judgment and to `map-builder` for construction. `mapper` composes `project-grapher` and `map-builder`.
 
-`project-map` is the contract package that defines the shared `ProjectMap` type. `map-builder`, `map-persist` and `map-web` all depend on this contract.
+`project-map` is the contract package that defines the shared `ProjectMap` type. `map-builder`, `mapper`, `map-persist` and `map-web` all depend on this contract.
 
 `map-builder` is a pure logic module. Its contract is `DependencyGraph + ArchitectureJudgments → ProjectMap`. It matches judgments to their subjects, retains unreviewed routes and uncertain hops, and reports judgments whose subjects are missing. Repeating the transformation on the same inputs produces the same map.
 

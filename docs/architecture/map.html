@@ -656,6 +656,17 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "detail": "Requires the reader contract to obtain observations for a selected build."
     },
     {
+      "to": "project-reader",
+      "from": "mapper",
+      "kind": "normal",
+      "roles": [
+        {
+          "role": "uses"
+        }
+      ],
+      "detail": "Uses the shared reader contract to pass the selected language reader to Project grapher."
+    },
+    {
       "to": "project-reader-rust",
       "from": "mapper",
       "kind": "normal",
@@ -799,6 +810,17 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
         }
       ],
       "detail": "Returns the completed map using the ProjectMap type defined by Project map."
+    },
+    {
+      "to": "project-map",
+      "from": "mapper",
+      "kind": "normal",
+      "roles": [
+        {
+          "role": "uses"
+        }
+      ],
+      "detail": "Uses the ProjectMap type for the value it receives from Map builder and supplies to Map web and Map persist."
     },
     {
       "to": "map-builder",
