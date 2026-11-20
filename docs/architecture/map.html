@@ -222,8 +222,6 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
   :root:not([data-theme="light"]) { --implements: #4fd1a8; --uses: #9a9aa3; --wires: #f0b54a; --adapts: #e3e15a; }
 }
 :root[data-theme="dark"] { --implements: #4fd1a8; --uses: #9a9aa3; --wires: #f0b54a; --adapts: #e3e15a; }
-.edge.role-types { stroke: var(--uses); stroke-dasharray: 3 3; }
-.role-key.role-types { border-top-style: dashed; }
 .edge.role-supplies { stroke: var(--accent); }
 .head-supplies, .delivery-label.input-label { fill: var(--accent); }
 .role-key.role-supplies { border-top-color: var(--accent); }
@@ -775,7 +773,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "normal",
       "roles": [
         {
-          "role": "types"
+          "role": "uses"
         }
       ],
       "detail": "Reads a completed DependencyGraph through its shared data contract."
@@ -786,7 +784,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "normal",
       "roles": [
         {
-          "role": "types"
+          "role": "uses"
         }
       ],
       "detail": "Map builder imports the ArchitectureJudgments type from Graph evaluator. Mapper supplies the judgment values when it calls Map builder."
@@ -797,7 +795,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "normal",
       "roles": [
         {
-          "role": "types"
+          "role": "uses"
         }
       ],
       "detail": "Returns the completed map using the ProjectMap type defined by Project map."
@@ -820,7 +818,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "normal",
       "roles": [
         {
-          "role": "types"
+          "role": "uses"
         }
       ],
       "detail": "Uses the public ProjectMap representation for persistence."
@@ -831,7 +829,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "normal",
       "roles": [
         {
-          "role": "types"
+          "role": "uses"
         }
       ],
       "detail": "Uses the public ProjectMap representation for display."
@@ -842,7 +840,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "normal",
       "roles": [
         {
-          "role": "types"
+          "role": "uses"
         }
       ],
       "detail": "Builds and returns a DependencyGraph conforming to the shared graph contract."
@@ -853,7 +851,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "normal",
       "roles": [
         {
-          "role": "types"
+          "role": "uses"
         }
       ],
       "detail": "Reads graph subjects and supporting evidence to prepare review requests."
@@ -864,7 +862,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "normal",
       "roles": [
         {
-          "role": "types"
+          "role": "uses"
         }
       ],
       "detail": "Uses DependencyGraph as the review input and its subject identities to anchor the returned judgments."
@@ -1068,16 +1066,14 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     implements: "implemented by",
     adapts: "adapted by",
     uses: "used by",
-    types: "type used by",
     supplies: "supplies input to",
     wires: "built by",
   };
   const ROLE_ABOUT = {
     implements: "the crate at the arrow's head implements a trait the crate at its tail defines",
     adapts: "the crate at the arrow's head, a program or other composition, has a type of its own that meets a trait the crate at its tail declares, and injects it: an adapter over another crate's work, or its own work. Not an implementation of a contract",
-    types: "the crate at the head imports a type defined by the crate at the tail",
     supplies: "Mapper calls the crate at the arrowhead with the labeled input",
-    uses: "the crate at the arrow's head calls or reads items of the crate at its tail",
+    uses: "the crate at the arrow's head uses a type, value or operation from the crate at its tail",
     wires: "the crate at the arrow's head builds implementations or holders from the crate at its tail, to hand on",
   };
   const drawnEnds = (e) => e.input ? [e.from, e.to] : [e.to, e.from];
@@ -1358,7 +1354,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       el("span", {}, el("strong", {}, "Roles: "), Object.entries(ROLES).map(([role, words]) =>
         el("span", { class: "key-item", title: ROLE_ABOUT[role] }, el("span", { class: `role-key role-${role}` }), words))),
       el("span", { class:"key-item" }, el("span",{class:"route-key"}), "Injected capability"),
-      el("span", { class:"muted" }, "Tick Mapper to see the inputs it supplies. Gray dashed arrows identify imported types."));
+      el("span", { class:"muted" }, "Tick Mapper to see the inputs it supplies."));
   }
 
   function draw() { keepFocus(drawNow); }
@@ -1576,7 +1572,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
   // the program's eye, which sit on the right-hand corners.
   const MARGIN = { top: 16, bottom: 16, left: 9, right: 9 };
   const faceLength = (face) => (face === "top" || face === "bottom" ? BOX_W : BOX_H);
-  const ROLE_ORDER = ["uses", "wires", "implements", "adapts", "types", "supplies"];
+  const ROLE_ORDER = ["uses", "wires", "implements", "adapts", "supplies"];
 
   // `ends`: [{ order, run }]; gives each its place along the face (0 to
   // 1) and whether it leads its run, in `t` and `lead`.
@@ -1704,7 +1700,6 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
   function markers() {
     const defs = svg("defs");
     const shapes = {
-      types: ["M0,0 L8,4 L0,8 z", "head-uses"],
       supplies: ["M0,0 L8,4 L0,8 z", "head-supplies"],
       uses: ["M0,0 L8,4 L0,8 z", "head-uses"],
       implements: ["M0.5,0.5 L8,4 L0.5,7.5 z", "head-implements"],
