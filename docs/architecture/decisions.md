@@ -31,29 +31,22 @@ The module boundaries, dependency arrangements and review workflow for dep-mappe
 | Program | `mapper` |
 | Map | `project-map`, `map-builder`, `map-web`, `map-persist` |
 | Evaluation | `graph-evaluator`, `graph-evaluator-llm`, `graph-evaluator-manual` |
-| Evidence | `dependency-evidence`, `project-grapher`, `project-reader`, `project-reader-rust`, `project-reader-typescript` |
+| Evidence | `project-graph`, `project-grapher`, `project-reader`, `project-reader-rust`, `project-reader-typescript` |
 
-## Review decisions and composition
+## Three core types
 
-`graph-evaluator` is a contract for making an architectural judgment. The request takes the shared `DependencyGraph` value and identifies the module or route to review. The reviewer reads the supporting evidence from that graph. Its response ties the judgment to that subject and evidence. A reviewer can leave a subject undecided.
+| Step | Type | Defined by | Produced by |
+| --- | --- | --- | --- |
+| Analyze the project | `ProjectGraph` | `project-graph` | `project-grapher` builds the graph from the selected reader’s observations. Each route retains its supporting evidence and gaps. |
+| Evaluate the graph | `GraphEvaluation` | `graph-evaluator` | The selected evaluator obtains human or LLM judgments about modules and routes in the supplied graph. Each judgment cites its subject and supporting evidence. A subject may remain undecided. |
+| Build the map | `ProjectMap` | `project-map` | `map-builder` combines the original `ProjectGraph` and its `GraphEvaluation`. It matches judgments to their subjects, preserves unreviewed routes and uncertain hops, and reports judgments whose subjects are missing. |
 
-Two proposed effect modules implement the contract. `graph-evaluator-manual` displays the evidence in the terminal, asks a human to decide, and returns the answer. `graph-evaluator-llm` submits the review request to a model API and returns the model’s decision. A different review mechanism can implement the same contract.
+## Composition and effects
 
-`mapper` owns the composition. It depends directly on the `project-reader` contract to pass the selected language reader to `project-grapher`. `project-reader-rust` serves the initial investigation. `project-reader-typescript` illustrates how another language can supply the same observations. `mapper` binds either the LLM evaluator or the manual evaluator to `graph-evaluator`. The dashed arrow from the command to that contract shows where the selected implementation is wired. `mapper` passes the resulting graph and review subject through the contract. It passes the resulting DependencyGraph and ArchitectureJudgments to `map-builder`.
+`mapper` owns the composition. It supplies the chosen `project-reader` implementation to `project-grapher`. The language reader returns build-scoped `ProjectObservations` for analysis. `project-reader-rust` serves the initial investigation, and `project-reader-typescript` illustrates the same contract for another language.
 
-## Building and consuming ProjectMap
+`mapper` passes the resulting `ProjectGraph` to the selected `graph-evaluator`. The manual implementation presents evidence in the terminal and asks a human to decide. The LLM implementation submits the evidence to a model API. Both return a `GraphEvaluation` through the same contract.
 
-| Type | Owner | Meaning |
-| --- | --- | --- |
-| `ProjectObservations` | `project-reader` | Build-scoped facts returned by the selected reader. |
-| `DependencyGraph` | `dependency-evidence` | Modules, dependencies and routes derived from observations, with their evidence and any gaps. |
-| `ArchitectureJudgments` | `graph-evaluator` | Decisions about identified modules and routes, made by the selected reviewer. |
-| `ProjectMap` | `project-map` | A self-contained map associating the graph’s modules and routes with judgments and supporting evidence. |
+`mapper` retains the original graph and calls `map-builder` with both values. The transformation `ProjectGraph + GraphEvaluation → ProjectMap` is pure. `mapper` sends the returned map to `map-persist` for storage and `map-web` for display. A saved map can be reopened without rerunning analysis or evaluation.
 
-`dependency-evidence` is a proposed shared data-contract module. `project-grapher` produces its `DependencyGraph` value. `mapper` supplies the same graph to `graph-evaluator` for judgment and to `map-builder` for construction. `mapper` composes `project-grapher` and `map-builder`.
-
-`project-map` is the contract package that defines the shared `ProjectMap` type. `map-builder`, `mapper`, `map-persist` and `map-web` all depend on this contract.
-
-`map-builder` is a pure logic module. Its contract is `DependencyGraph + ArchitectureJudgments → ProjectMap`. It matches judgments to their subjects, retains unreviewed routes and uncertain hops, and reports judgments whose subjects are missing. Repeating the transformation on the same inputs produces the same map.
-
-`mapper` directly depends on both logic modules. It retains the `DependencyGraph` returned by `project-grapher`, obtains `ArchitectureJudgments` from `graph-evaluator`, and passes both values to `map-builder`. The builder returns its `ProjectMap` to `mapper`, which passes it to `map-web` and `map-persist`. On the map, “supplies input to” identifies the caller and recipient. A solid gray “used by” arrow covers use of a type, value or operation. `map-persist` saves and loads a ProjectMap. `map-web` provides the web surface for `mapper`. It presents a `ProjectMap` and owns its visual layout and interactions. A saved map can be reopened without rerunning analysis or review.
+On the architecture map, a solid gray “used by” arrow covers use of a type, value or operation. The dashed wiring arrow shows where `mapper` binds the selected implementation. “Supplies input to” identifies the caller and recipient.

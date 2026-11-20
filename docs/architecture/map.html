@@ -512,21 +512,22 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "title": "Project grapher",
       "kind": "logic",
       "concern": "Connects observed surfaces and handoffs into routes between project packages.",
-      "surface": "Builds a DependencyGraph from ProjectObservations. Modules, imports, uses and routes can be cited individually. Each hop retains its source and any uncertainty.",
+      "surface": "Builds a ProjectGraph from ProjectObservations. Modules, imports, uses and routes can be cited individually. Each hop retains its source and any uncertainty.",
       "ownership": "Requires a reader through Project reader and owns the rules that connect its observations into source-backed routes.",
       "alias": "evidence",
       "layer": "evidence"
     },
     {
-      "name": "dependency-evidence",
+      "name": "project-graph",
       "bins": [],
-      "title": "Dependency evidence",
+      "title": "Project graph",
       "kind": "contract",
       "concern": "Defines the evidence graph used by analysis, review and map construction.",
-      "surface": "DependencyGraph describes modules, dependencies, routes and the observations that support them, including uncertain or unresolved hops.",
+      "surface": "ProjectGraph describes modules, dependencies, routes and the observations that support them, including uncertain or unresolved hops.",
       "ownership": "Owns the graph representation and the identities used to cite its contents. Project grapher owns the rules for deriving these facts from source.",
       "layer": "evidence",
-      "previousName": "dependency-graph"
+      "previousName": "dependency-evidence",
+      "alias": "dependency-graph"
     },
     {
       "name": "map-builder",
@@ -534,8 +535,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "title": "Map builder",
       "kind": "logic",
       "concern": "Builds a map by attaching architectural judgments to the dependency graph.",
-      "surface": "DependencyGraph + ArchitectureJudgments → ProjectMap.",
-      "ownership": "Receives a completed DependencyGraph and ArchitectureJudgments from Mapper. Matches judgments to subjects, preserves uncertain and unreviewed routes, and reports references to missing subjects.",
+      "surface": "ProjectGraph + GraphEvaluation → ProjectMap.",
+      "ownership": "Receives the ProjectGraph and its GraphEvaluation from Mapper. Matches judgments to subjects, preserves uncertain and unreviewed routes, and reports references to missing subjects.",
       "layer": "map"
     },
     {
@@ -553,9 +554,9 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "bins": [],
       "title": "Graph evaluator",
       "kind": "contract",
-      "concern": "Defines how to ask for an architectural decision about a module or a dependency route.",
-      "surface": "Accepts a DependencyGraph and a module or route to review. Returns ArchitectureJudgments that cite the subject and its supporting evidence in that graph. The subject may remain undecided.",
-      "ownership": "Defines the review request and the returned judgments. The selected reviewer reads the supplied graph to assess the subject.",
+      "concern": "Defines how to evaluate a project graph and record architectural judgments about its modules and routes.",
+      "surface": "Accepts a ProjectGraph and returns a GraphEvaluation. Each judgment identifies its module or route and cites supporting evidence. A subject may remain undecided.",
+      "ownership": "Defines the GraphEvaluation type and the evaluator contract. The selected implementation obtains judgments from a human or a model.",
       "alias": "review",
       "layer": "evaluation",
       "previousName": "architecture-review"
@@ -593,7 +594,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "composition",
       "concern": "Coordinates collection, review, map construction and publication.",
       "surface": "Collect evidence for a build, request architectural judgments, and present the resulting map through Map web.",
-      "ownership": "Calls Project grapher to build the graph using the selected reader. Obtains judgments through Graph evaluator. Calls Map builder with that graph and those judgments, then supplies the resulting ProjectMap to Map persist and Map web.",
+      "ownership": "Gets a ProjectGraph from Project grapher and passes it to Graph evaluator for a GraphEvaluation. Supplies both to Map builder, then sends the resulting ProjectMap to Map persist and Map web.",
       "alias": "program",
       "layer": "program",
       "previousName": "mapper-command"
@@ -720,7 +721,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
           "role": "uses"
         }
       ],
-      "detail": "Passes the completed DependencyGraph and review subject to the chosen reviewer."
+      "detail": "Passes the ProjectGraph to the selected evaluator and receives its GraphEvaluation."
     },
     {
       "to": "graph-evaluator",
@@ -779,7 +780,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "input": "ProjectMap"
     },
     {
-      "to": "dependency-evidence",
+      "to": "project-graph",
       "from": "map-builder",
       "kind": "normal",
       "roles": [
@@ -787,7 +788,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
           "role": "uses"
         }
       ],
-      "detail": "Reads a completed DependencyGraph through its shared data contract."
+      "detail": "Reads a completed ProjectGraph through its shared data contract."
     },
     {
       "to": "graph-evaluator",
@@ -798,7 +799,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
           "role": "uses"
         }
       ],
-      "detail": "Map builder imports the ArchitectureJudgments type from Graph evaluator. Mapper supplies the judgment values when it calls Map builder."
+      "detail": "Map builder imports the GraphEvaluation type from Graph evaluator. Mapper supplies the evaluation when it calls Map builder."
     },
     {
       "to": "project-map",
@@ -832,7 +833,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
         }
       ],
       "detail": "Mapper passes the graph it received from Project grapher and the judgments it received from Graph evaluator to Map builder. Map builder returns a ProjectMap to Mapper.",
-      "input": "DependencyGraph + ArchitectureJudgments"
+      "input": "ProjectGraph + GraphEvaluation"
     },
     {
       "to": "project-map",
@@ -857,7 +858,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "detail": "Uses the public ProjectMap representation for display."
     },
     {
-      "to": "dependency-evidence",
+      "to": "project-graph",
       "from": "project-grapher",
       "kind": "normal",
       "roles": [
@@ -865,10 +866,10 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
           "role": "uses"
         }
       ],
-      "detail": "Builds and returns a DependencyGraph conforming to the shared graph contract."
+      "detail": "Builds and returns a ProjectGraph conforming to the shared graph contract."
     },
     {
-      "to": "dependency-evidence",
+      "to": "project-graph",
       "from": "mapper",
       "kind": "normal",
       "roles": [
@@ -879,7 +880,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "detail": "Reads graph subjects and supporting evidence to prepare review requests."
     },
     {
-      "to": "dependency-evidence",
+      "to": "project-graph",
       "from": "graph-evaluator",
       "kind": "normal",
       "roles": [
@@ -887,7 +888,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
           "role": "uses"
         }
       ],
-      "detail": "Uses DependencyGraph as the review input and its subject identities to anchor the returned judgments."
+      "detail": "Uses ProjectGraph as the review input and its subject identities to anchor the returned judgments."
     }
   ],
   "groups": {
@@ -995,8 +996,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "supplier": "project-grapher",
       "program": "mapper",
       "receiver": "graph-evaluator-llm",
-      "note": "Mapper passes the completed DependencyGraph and the subject for review through Graph evaluator. The LLM evaluator presents the relevant evidence to the model.",
-      "carry": "Review request",
+      "note": "Mapper passes the ProjectGraph through the Graph evaluator contract. The LLM evaluator presents the relevant evidence to the model.",
+      "carry": "ProjectGraph",
       "document": true,
       "firstRole": "uses",
       "contract": "graph-evaluator"
@@ -1007,8 +1008,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "supplier": "graph-evaluator-llm",
       "program": "mapper",
       "receiver": "map-builder",
-      "note": "Mapper calls the LLM evaluator through the review contract, then passes its judgments and the DependencyGraph to Map builder.",
-      "carry": "ArchitectureJudgments",
+      "note": "Mapper calls the LLM evaluator through the review contract, then passes its GraphEvaluation and the original ProjectGraph to Map builder.",
+      "carry": "GraphEvaluation",
       "document": true,
       "firstRole": "wires",
       "contract": "graph-evaluator"
@@ -1019,8 +1020,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "supplier": "project-grapher",
       "program": "mapper",
       "receiver": "graph-evaluator-manual",
-      "note": "Mapper passes the completed DependencyGraph and the subject for review through Graph evaluator. The manual evaluator presents the relevant evidence to the human.",
-      "carry": "Review request",
+      "note": "Mapper passes the ProjectGraph through the Graph evaluator contract. The manual evaluator presents the relevant evidence to the human.",
+      "carry": "ProjectGraph",
       "document": true,
       "firstRole": "uses",
       "contract": "graph-evaluator"
@@ -1031,23 +1032,23 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "supplier": "graph-evaluator-manual",
       "program": "mapper",
       "receiver": "map-builder",
-      "note": "Mapper calls the manual evaluator through the review contract, then passes its judgments and the DependencyGraph to Map builder.",
-      "carry": "ArchitectureJudgments",
+      "note": "Mapper calls the manual evaluator through the review contract, then passes its GraphEvaluation and the original ProjectGraph to Map builder.",
+      "carry": "GraphEvaluation",
       "document": true,
       "firstRole": "wires",
       "contract": "graph-evaluator"
     },
     {
-      "title": "Supply the dependency graph",
+      "title": "Supply the project graph",
       "kind": "Data handoff",
       "supplier": "project-grapher",
       "program": "mapper",
       "receiver": "map-builder",
       "note": "Mapper passes the original graph to Map builder so its routes and evidence can be matched to the review decisions.",
-      "carry": "DependencyGraph",
+      "carry": "ProjectGraph",
       "document": true,
       "firstRole": "uses",
-      "contract": "dependency-evidence"
+      "contract": "project-graph"
     },
     {
       "title": "Save the project map",
@@ -1994,7 +1995,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     const panel=$("panel"), n=state.selected, highlighted=selectionList();
     if (!n) {
       panel.replaceChildren(...[highlighted,el("h2",{},"The proposed architecture"),
-        el("p",{},"Mapper passes the dependency graph and the evaluator’s judgments to Map builder. Mapper then sends the returned ProjectMap to Map persist for storage and Map web for display."),
+        el("p",{},"Project grapher analyzes the project to produce a ProjectGraph. A human or LLM evaluates that graph through Graph evaluator, producing a GraphEvaluation. Mapper passes both to Map builder, which combines them into a ProjectMap."),
         el("ul",{class:"overview"},graph.layers.map(l=>el("li",{},el("strong",{},l.title+". "),l.about))),
         el("p",{}, "Select a module for its public contract. Tick its corner to highlight its dependencies. The panel describes how Mapper uses the selected reviewer.")].filter(Boolean));
       return;
