@@ -41,6 +41,10 @@ The module boundaries, dependency arrangements and review workflow for dep-mappe
 | Evaluate the graph | `GraphEvaluation` | `graph-evaluator` | The selected evaluator obtains human or LLM judgments about modules and routes in the supplied graph. Each judgment cites its subject and supporting evidence. A subject may remain undecided. |
 | Build the map | `ProjectMap` | `project-map` | `map-builder` combines the original `ProjectGraph` and its `GraphEvaluation`. It matches judgments to their subjects, preserves unreviewed routes and uncertain hops, and reports judgments whose subjects are missing. |
 
+A `GraphEvaluation` names the particular graph snapshot it reviews. Its module and route judgments use that snapshot’s identifiers. Two paths through different wiring sites can have the same endpoints and different judgments. Each judgment includes its reason and supporting citations. A deferred subject records a reason, while a subject omitted from the evaluation remains unreviewed.
+
+A `ProjectGraph` records receiver bounds separately from witnessed handoffs. A route can cite a known use site and end at an unresolved handoff. A `ProjectMap` carries the resulting route, review status and source citations in its own representation so it can be opened independently. The snapshot and reference checks belong to the producer and to `map-builder` when it joins the two inputs.
+
 ## Composition and effects
 
 `mapper` owns the composition. It supplies the chosen `project-reader` implementation to `project-grapher`. The language reader returns build-scoped `ProjectObservations` for analysis. `project-reader-rust` serves the initial investigation, and `project-reader-typescript` illustrates the same contract for another language.
