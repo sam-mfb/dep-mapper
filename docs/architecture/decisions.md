@@ -26,25 +26,25 @@ The module boundaries, dependency arrangements and review workflow for dep-mappe
 
 ## Review decisions and composition
 
-Architecture review is a contract for making an architectural judgment. The request takes the shared `DependencyGraph` value and identifies the module or route to review. The reviewer reads the supporting evidence from that graph. Its response ties the judgment to that subject and evidence. A reviewer can leave a subject undecided.
+`graph-evaluator` is a contract for making an architectural judgment. The request takes the shared `DependencyGraph` value and identifies the module or route to review. The reviewer reads the supporting evidence from that graph. Its response ties the judgment to that subject and evidence. A reviewer can leave a subject undecided.
 
-Two proposed effect modules implement the contract. **Architecture review terminal** displays the evidence, asks a human to decide, and returns the answer. **Architecture review LLM** submits the review request to a model API and returns the model’s decision. A different review mechanism can implement the same contract.
+Two proposed effect modules implement the contract. `graph-evaluator-manual` displays the evidence in the terminal, asks a human to decide, and returns the answer. `graph-evaluator-llm` submits the review request to a model API and returns the model’s decision. A different review mechanism can implement the same contract.
 
-**Mapper command** owns the composition. It selects a reader for the project language and supplies it to Dependency evidence through Project observations. The Rust reader serves the initial investigation. The TypeScript reader illustrates how another language can supply the same observations. Mapper command binds either the LLM reviewer or the terminal reviewer to Architecture review. The dashed arrow from the command to that contract shows where the selected implementation is wired. Mapper command passes the resulting graph and review subject through the contract. It passes the resulting DependencyGraph and ArchitectureJudgments to Map builder.
+`mapper` owns the composition. It selects a reader for the project language and supplies it to `project-grapher` through `project-reader`. `project-reader-rust` serves the initial investigation. `project-reader-typescript` illustrates how another language can supply the same observations. `mapper` binds either the LLM evaluator or the manual evaluator to `graph-evaluator`. The dashed arrow from the command to that contract shows where the selected implementation is wired. `mapper` passes the resulting graph and review subject through the contract. It passes the resulting DependencyGraph and ArchitectureJudgments to `map-builder`.
 
 ## Building and consuming ProjectMap
 
 | Type | Owner | Meaning |
 | --- | --- | --- |
-| `ProjectObservations` | Project observations | Build-scoped facts returned by the selected reader. |
-| `DependencyGraph` | Dependency graph | Modules, dependencies and routes derived from observations, with their evidence and any gaps. |
-| `ArchitectureJudgments` | Architecture review | Decisions about identified modules and routes, made by the selected reviewer. |
-| `ProjectMap` | Project map | A self-contained map associating the graph’s modules and routes with judgments and supporting evidence. |
+| `ProjectObservations` | `project-reader` | Build-scoped facts returned by the selected reader. |
+| `DependencyGraph` | `dependency-evidence` | Modules, dependencies and routes derived from observations, with their evidence and any gaps. |
+| `ArchitectureJudgments` | `graph-evaluator` | Decisions about identified modules and routes, made by the selected reviewer. |
+| `ProjectMap` | `project-map` | A self-contained map associating the graph’s modules and routes with judgments and supporting evidence. |
 
-**Dependency graph** is a proposed shared data-contract module. Dependency evidence produces its `DependencyGraph` value. Mapper command supplies the same graph to Architecture review for judgment and to Map builder for construction. Mapper command composes Dependency evidence and Map builder.
+`dependency-evidence` is a proposed shared data-contract module. `project-grapher` produces its `DependencyGraph` value. `mapper` supplies the same graph to `graph-evaluator` for judgment and to `map-builder` for construction. `mapper` composes `project-grapher` and `map-builder`.
 
-**Project map** is the contract package that defines the shared `ProjectMap` type. Map builder, Map files and Map viewer all depend on this contract.
+`project-map` is the contract package that defines the shared `ProjectMap` type. `map-builder`, `map-persist` and `map-web` all depend on this contract.
 
-**Map builder** is a pure logic module. Its contract is `DependencyGraph + ArchitectureJudgments → ProjectMap`. It matches judgments to their subjects, retains unreviewed routes and uncertain hops, and reports judgments whose subjects are missing. Repeating the transformation on the same inputs produces the same map.
+`map-builder` is a pure logic module. Its contract is `DependencyGraph + ArchitectureJudgments → ProjectMap`. It matches judgments to their subjects, retains unreviewed routes and uncertain hops, and reports judgments whose subjects are missing. Repeating the transformation on the same inputs produces the same map.
 
-**Mapper command** directly depends on both logic modules. It calls Dependency evidence to build the graph, obtains the judgments, then calls Map builder and supplies the result to the consumers. **Map files** saves and loads a ProjectMap. **Map viewer** presents a ProjectMap and owns its visual layout and interactions. A saved map can be reopened without rerunning analysis or review.
+`mapper` directly depends on both logic modules. It calls `project-grapher` to build the graph, obtains the judgments, then calls `map-builder` and supplies the result to the consumers. `map-persist` saves and loads a ProjectMap. `map-web` provides the web surface for `mapper`. It presents a `ProjectMap` and owns its visual layout and interactions. A saved map can be reopened without rerunning analysis or review.

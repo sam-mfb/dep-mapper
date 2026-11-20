@@ -468,58 +468,62 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
 {
   "crates": [
     {
-      "name": "project-observations",
+      "name": "project-reader",
       "bins": [],
-      "title": "Project observations",
+      "title": "Project reader",
       "kind": "contract",
       "concern": "Defines what a source reader can report about one selected build.",
       "surface": "A reader for a selected build returns ProjectObservations, including source locations and collection gaps.",
-      "ownership": "Defines the language-independent reader contract. Mapper command chooses a reader for the project. Dependency evidence consumes its observations through this contract.",
+      "ownership": "Defines the language-independent reader contract. Mapper chooses a reader for the project. Project grapher consumes its observations through this contract.",
       "alias": "observations",
-      "layer": "platform"
+      "layer": "platform",
+      "previousName": "project-observations"
     },
     {
-      "name": "rust-project-reader",
+      "name": "project-reader-rust",
       "bins": [],
-      "title": "Rust project reader",
+      "title": "Project reader · Rust",
       "kind": "effect",
       "concern": "Obtains build-scoped observations from a Rust project.",
-      "surface": "An implementation of Project observations backed by Cargo and the Rust compiler.",
-      "ownership": "Owns build and compiler access. Mapper command constructs the reader and injects it into Dependency evidence. A request through that contract returns observations about the selected build.",
+      "surface": "An implementation of Project reader backed by Cargo and the Rust compiler.",
+      "ownership": "Owns build and compiler access. Mapper constructs the reader and injects it into Project grapher. A request through that contract returns observations about the selected build.",
       "alias": "rust",
-      "layer": "platform"
+      "layer": "platform",
+      "previousName": "rust-project-reader"
     },
     {
-      "name": "typescript-project-reader",
+      "name": "project-reader-typescript",
       "bins": [],
-      "title": "TypeScript project reader",
+      "title": "Project reader · TypeScript",
       "kind": "effect",
       "concern": "Obtains project observations from a TypeScript project.",
-      "surface": "Illustrative implementation of Project observations. It would report the selected project’s surfaces, references, value handoffs, source locations and collection gaps through the same contract as the Rust reader.",
+      "surface": "Illustrative implementation of Project reader. It would report the selected project’s surfaces, references, value handoffs, source locations and collection gaps through the same contract as the Rust reader.",
       "ownership": "Owns TypeScript compiler access and translation into project observations.",
       "illustrative": true,
-      "layer": "platform"
+      "layer": "platform",
+      "previousName": "typescript-project-reader"
+    },
+    {
+      "name": "project-grapher",
+      "bins": [],
+      "title": "Project grapher",
+      "kind": "logic",
+      "concern": "Connects observed surfaces and handoffs into routes between project packages.",
+      "surface": "Builds a DependencyGraph from ProjectObservations. Modules, imports, uses and routes can be cited individually. Each hop retains its source and any uncertainty.",
+      "ownership": "Requires a reader through Project reader and owns the rules that connect its observations into source-backed routes.",
+      "alias": "evidence",
+      "layer": "core"
     },
     {
       "name": "dependency-evidence",
       "bins": [],
       "title": "Dependency evidence",
-      "kind": "logic",
-      "concern": "Connects observed surfaces and handoffs into routes between project packages.",
-      "surface": "Builds a DependencyGraph from ProjectObservations. Modules, imports, uses and routes can be cited individually. Each hop retains its source and any uncertainty.",
-      "ownership": "Requires a reader through Project observations and owns the rules that connect its observations into source-backed routes.",
-      "alias": "evidence",
-      "layer": "core"
-    },
-    {
-      "name": "dependency-graph",
-      "bins": [],
-      "title": "Dependency graph",
       "kind": "contract",
       "concern": "Defines the evidence graph used by analysis, review and map construction.",
       "surface": "DependencyGraph describes modules, dependencies, routes and the observations that support them, including uncertain or unresolved hops.",
-      "ownership": "Owns the graph representation and the identities used to cite its contents. Dependency evidence owns the rules for deriving these facts from source.",
-      "layer": "core"
+      "ownership": "Owns the graph representation and the identities used to cite its contents. Project grapher owns the rules for deriving these facts from source.",
+      "layer": "core",
+      "previousName": "dependency-graph"
     },
     {
       "name": "map-builder",
@@ -528,7 +532,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "logic",
       "concern": "Builds a map by attaching architectural judgments to the dependency graph.",
       "surface": "DependencyGraph + ArchitectureJudgments → ProjectMap.",
-      "ownership": "Receives a completed DependencyGraph and ArchitectureJudgments from Mapper command. Matches judgments to subjects, preserves uncertain and unreviewed routes, and reports references to missing subjects.",
+      "ownership": "Receives a completed DependencyGraph and ArchitectureJudgments from Mapper. Matches judgments to subjects, preserves uncertain and unreviewed routes, and reports references to missing subjects.",
       "layer": "core"
     },
     {
@@ -536,82 +540,88 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "bins": [],
       "title": "Project map",
       "kind": "contract",
-      "concern": "Defines the map that Map files saves and Map viewer displays.",
+      "concern": "Defines the map that Map persist saves and Map web displays.",
       "surface": "ProjectMap describes the reviewed modules and routes, their judgments and supporting evidence, including unresolved hops and subjects still awaiting review.",
-      "ownership": "Owns the shared ProjectMap type. Map builder produces values of this type, Map files saves and loads them, and Map viewer displays them.",
+      "ownership": "Owns the shared ProjectMap type. Map builder produces values of this type, Map persist saves and loads them, and Map web displays them.",
       "layer": "core"
     },
     {
-      "name": "architecture-review",
+      "name": "graph-evaluator",
       "bins": [],
-      "title": "Architecture review",
+      "title": "Graph evaluator",
       "kind": "contract",
       "concern": "Defines how to ask for an architectural decision about a module or a dependency route.",
       "surface": "Accepts a DependencyGraph and a module or route to review. Returns ArchitectureJudgments that cite the subject and its supporting evidence in that graph. The subject may remain undecided.",
       "ownership": "Defines the review request and the returned judgments. The selected reviewer reads the supplied graph to assess the subject.",
       "alias": "review",
-      "layer": "reviewers"
+      "layer": "evaluators",
+      "previousName": "architecture-review"
     },
     {
-      "name": "map-viewer",
+      "name": "map-web",
       "bins": [],
-      "title": "Map viewer",
+      "title": "Map web",
       "kind": "effect",
       "concern": "Lets a reader explore a reviewed architecture in the browser.",
       "surface": "Accepts a ProjectMap and presents its modules, routes, judgments and supporting evidence.",
       "ownership": "Owns browser layout, navigation, selection and evidence drill-down. The map representation belongs to Project map.",
       "alias": "viewer",
-      "layer": "surfaces"
+      "layer": "surfaces",
+      "previousName": "map-viewer"
     },
     {
-      "name": "map-files",
+      "name": "map-persist",
       "bins": [],
-      "title": "Map files",
+      "title": "Map persist",
       "kind": "effect",
       "concern": "Saves and loads a ProjectMap.",
       "surface": "Write a ProjectMap to storage or read one back.",
       "ownership": "Owns the on-disk encoding, compatibility when reading saved maps, and storage errors.",
       "alias": "files",
-      "layer": "platform"
+      "layer": "platform",
+      "previousName": "map-files"
     },
     {
-      "name": "mapper-command",
+      "name": "mapper",
       "bins": [
-        "mapper-command"
+        "mapper"
       ],
-      "title": "Mapper command",
+      "title": "Mapper",
       "kind": "composition",
       "concern": "Coordinates collection, review, map construction and publication.",
-      "surface": "Collect evidence for a build, request decisions from the selected reviewer, and publish an explorable map.",
-      "ownership": "Calls Dependency evidence to build the graph using the selected reader. Obtains judgments through Architecture review. Calls Map builder with that graph and those judgments, then supplies the resulting ProjectMap to Map files and Map viewer.",
+      "surface": "Collect evidence for a build, request architectural judgments, and present the resulting map through Map web.",
+      "ownership": "Calls Project grapher to build the graph using the selected reader. Obtains judgments through Graph evaluator. Calls Map builder with that graph and those judgments, then supplies the resulting ProjectMap to Map persist and Map web.",
       "alias": "program",
-      "layer": "programs"
+      "layer": "programs",
+      "previousName": "mapper-command"
     },
     {
-      "name": "architecture-review-llm",
+      "name": "graph-evaluator-llm",
       "bins": [],
-      "title": "Architecture review · LLM",
+      "title": "Graph evaluator · LLM",
       "kind": "effect",
       "concern": "Obtains an architectural judgment from a language model.",
-      "surface": "Implements Architecture review. Presents the subject and its supporting evidence to an LLM API and returns its decision through the review contract.",
+      "surface": "Implements Graph evaluator. Presents the subject and its supporting evidence to an LLM API and returns its decision through the review contract.",
       "ownership": "Owns model interaction and interpretation of the API response. Provider-specific requests and responses stay inside this module.",
-      "layer": "reviewers"
+      "layer": "evaluators",
+      "previousName": "architecture-review-llm"
     },
     {
-      "name": "architecture-review-terminal",
+      "name": "graph-evaluator-manual",
       "bins": [],
-      "title": "Architecture review · terminal",
+      "title": "Graph evaluator · manual",
       "kind": "effect",
       "concern": "Asks a human to make an architectural judgment in the terminal.",
-      "surface": "Implements Architecture review. Shows the subject and supporting evidence, prompts the reviewer, and returns their decision or explicit deferral.",
+      "surface": "Implements Graph evaluator. Shows the subject and supporting evidence, prompts the reviewer, and returns their decision or explicit deferral.",
       "ownership": "Owns the terminal conversation. The human chooses the label. Other user interfaces can implement the same review contract.",
-      "layer": "reviewers"
+      "layer": "evaluators",
+      "previousName": "architecture-review-terminal"
     }
   ],
   "edges": [
     {
-      "to": "project-observations",
-      "from": "rust-project-reader",
+      "to": "project-reader",
+      "from": "project-reader-rust",
       "kind": "normal",
       "roles": [
         {
@@ -621,8 +631,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "detail": "Implements the observation contract for Cargo and rustc."
     },
     {
-      "to": "project-observations",
-      "from": "typescript-project-reader",
+      "to": "project-reader",
+      "from": "project-reader-typescript",
       "kind": "normal",
       "roles": [
         {
@@ -632,8 +642,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "detail": "Illustrates implementing the same observation contract with the TypeScript compiler."
     },
     {
-      "to": "project-observations",
-      "from": "dependency-evidence",
+      "to": "project-reader",
+      "from": "project-grapher",
       "kind": "normal",
       "roles": [
         {
@@ -643,8 +653,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "detail": "Requires the reader contract to obtain observations for a selected build."
     },
     {
-      "to": "rust-project-reader",
-      "from": "mapper-command",
+      "to": "project-reader-rust",
+      "from": "mapper",
       "kind": "normal",
       "roles": [
         {
@@ -654,41 +664,41 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "detail": "Selects and supplies the Rust reader for a Rust build."
     },
     {
-      "to": "typescript-project-reader",
-      "from": "mapper-command",
+      "to": "project-reader-typescript",
+      "from": "mapper",
       "kind": "normal",
       "roles": [
         {
           "role": "wires"
         }
       ],
-      "detail": "For a TypeScript project, the command would select this reader and supply it through Project observations."
+      "detail": "For a TypeScript project, the command would select this reader and supply it through Project reader."
     },
     {
-      "to": "dependency-evidence",
-      "from": "mapper-command",
+      "to": "project-grapher",
+      "from": "mapper",
       "kind": "normal",
       "roles": [
         {
           "role": "uses"
         }
       ],
-      "detail": "Calls Dependency evidence with the selected reader and receives the completed graph."
+      "detail": "Calls Project grapher with the selected reader and receives the completed graph."
     },
     {
-      "to": "map-viewer",
-      "from": "mapper-command",
+      "to": "map-web",
+      "from": "mapper",
       "kind": "normal",
       "roles": [
         {
           "role": "uses"
         }
       ],
-      "detail": "Supplies the finished ProjectMap for display."
+      "detail": "Provides the program’s web surface by supplying the finished ProjectMap to Map web."
     },
     {
-      "to": "architecture-review",
-      "from": "mapper-command",
+      "to": "graph-evaluator",
+      "from": "mapper",
       "kind": "normal",
       "roles": [
         {
@@ -698,8 +708,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "detail": "Passes the completed DependencyGraph and review subject to the chosen reviewer."
     },
     {
-      "to": "architecture-review",
-      "from": "architecture-review-llm",
+      "to": "graph-evaluator",
+      "from": "graph-evaluator-llm",
       "kind": "normal",
       "roles": [
         {
@@ -709,8 +719,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "detail": "Implements the review decision contract for the LLM workflow."
     },
     {
-      "to": "architecture-review-llm",
-      "from": "mapper-command",
+      "to": "graph-evaluator-llm",
+      "from": "mapper",
       "kind": "normal",
       "roles": [
         {
@@ -720,30 +730,30 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "detail": "Constructs this reviewer when the LLM workflow is selected."
     },
     {
-      "to": "architecture-review",
-      "from": "architecture-review-terminal",
+      "to": "graph-evaluator",
+      "from": "graph-evaluator-manual",
       "kind": "normal",
       "roles": [
         {
           "role": "implements"
         }
       ],
-      "detail": "Implements the review decision contract for the terminal workflow."
+      "detail": "Implements the review decision contract for the manual workflow."
     },
     {
-      "to": "architecture-review-terminal",
-      "from": "mapper-command",
+      "to": "graph-evaluator-manual",
+      "from": "mapper",
       "kind": "normal",
       "roles": [
         {
           "role": "wires"
         }
       ],
-      "detail": "Constructs this reviewer when the terminal workflow is selected."
+      "detail": "Constructs this reviewer when the manual workflow is selected."
     },
     {
-      "to": "map-files",
-      "from": "mapper-command",
+      "to": "map-persist",
+      "from": "mapper",
       "kind": "normal",
       "roles": [
         {
@@ -753,7 +763,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "detail": "Saves or loads the finished ProjectMap."
     },
     {
-      "to": "dependency-graph",
+      "to": "dependency-evidence",
       "from": "map-builder",
       "kind": "normal",
       "roles": [
@@ -764,7 +774,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "detail": "Reads a completed DependencyGraph through its shared data contract."
     },
     {
-      "to": "architecture-review",
+      "to": "graph-evaluator",
       "from": "map-builder",
       "kind": "normal",
       "roles": [
@@ -787,18 +797,18 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     },
     {
       "to": "map-builder",
-      "from": "mapper-command",
+      "from": "mapper",
       "kind": "normal",
       "roles": [
         {
           "role": "uses"
         }
       ],
-      "detail": "Calls Map builder with the graph returned by Dependency evidence and the judgments returned by the reviewer."
+      "detail": "Calls Map builder with the graph returned by Project grapher and the judgments returned by the reviewer."
     },
     {
       "to": "project-map",
-      "from": "map-files",
+      "from": "map-persist",
       "kind": "normal",
       "roles": [
         {
@@ -809,7 +819,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     },
     {
       "to": "project-map",
-      "from": "map-viewer",
+      "from": "map-web",
       "kind": "normal",
       "roles": [
         {
@@ -819,8 +829,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "detail": "Uses the public ProjectMap representation for display."
     },
     {
-      "to": "dependency-graph",
-      "from": "dependency-evidence",
+      "to": "dependency-evidence",
+      "from": "project-grapher",
       "kind": "normal",
       "roles": [
         {
@@ -830,8 +840,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "detail": "Builds and returns a DependencyGraph conforming to the shared graph contract."
     },
     {
-      "to": "dependency-graph",
-      "from": "mapper-command",
+      "to": "dependency-evidence",
+      "from": "mapper",
       "kind": "normal",
       "roles": [
         {
@@ -841,8 +851,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "detail": "Reads graph subjects and supporting evidence to prepare review requests."
     },
     {
-      "to": "dependency-graph",
-      "from": "architecture-review",
+      "to": "dependency-evidence",
+      "from": "graph-evaluator",
       "kind": "normal",
       "roles": [
         {
@@ -853,16 +863,16 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     }
   ],
   "groups": {
-    "project-observations": [
-      "rust-project-reader",
-      "typescript-project-reader"
+    "project-reader": [
+      "project-reader-rust",
+      "project-reader-typescript"
     ]
   },
   "layers": [
     {
       "id": "programs",
       "title": "Programs",
-      "about": "The command that assembles the reader, review and viewer."
+      "about": "Mapper assembles the reader, evaluator, persistence and web surface."
     },
     {
       "id": "surfaces",
@@ -875,8 +885,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "about": "Builds the evidence graph and combines it with judgments to form the project map."
     },
     {
-      "id": "reviewers",
-      "title": "Architectural review",
+      "id": "evaluators",
+      "title": "Graph evaluation",
       "about": "The decision contract and its alternative human and LLM implementations."
     },
     {
@@ -911,106 +921,106 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     {
       "title": "Read a Rust project",
       "kind": "Shared-contract injection",
-      "supplier": "rust-project-reader",
-      "program": "mapper-command",
-      "receiver": "dependency-evidence",
-      "note": "For a Rust build, Mapper command supplies the Rust reader. Dependency evidence calls it through Project observations.",
+      "supplier": "project-reader-rust",
+      "program": "mapper",
+      "receiver": "project-grapher",
+      "note": "For a Rust build, Mapper supplies the Rust reader. Project grapher calls it through Project reader.",
       "carry": "Project reader",
       "document": false,
       "firstRole": "wires",
-      "contract": "project-observations"
+      "contract": "project-reader"
     },
     {
       "title": "Read a TypeScript project (illustrative)",
       "kind": "Shared-contract injection",
-      "supplier": "typescript-project-reader",
-      "program": "mapper-command",
-      "receiver": "dependency-evidence",
-      "note": "For a TypeScript project, Mapper command would supply the TypeScript reader. Dependency evidence uses the same Project observations contract.",
+      "supplier": "project-reader-typescript",
+      "program": "mapper",
+      "receiver": "project-grapher",
+      "note": "For a TypeScript project, Mapper would supply the TypeScript reader. Project grapher uses the same Project reader contract.",
       "carry": "Project reader",
       "document": false,
       "firstRole": "wires",
-      "contract": "project-observations"
+      "contract": "project-reader"
     },
     {
-      "title": "Wire the LLM reviewer",
+      "title": "Wire the LLM evaluator",
       "kind": "Shared-contract injection",
-      "supplier": "architecture-review-llm",
-      "program": "mapper-command",
-      "receiver": "architecture-review",
-      "note": "Mapper command binds the LLM reviewer to the Architecture review contract and calls it through that contract.",
-      "carry": "Architecture reviewer",
+      "supplier": "graph-evaluator-llm",
+      "program": "mapper",
+      "receiver": "graph-evaluator",
+      "note": "Mapper binds the LLM evaluator to the Graph evaluator contract and calls it through that contract.",
+      "carry": "Graph evaluator",
       "document": false,
       "firstRole": "wires",
-      "contract": "architecture-review"
+      "contract": "graph-evaluator"
     },
     {
-      "title": "Wire the terminal reviewer",
+      "title": "Wire the manual evaluator",
       "kind": "Shared-contract injection",
-      "supplier": "architecture-review-terminal",
-      "program": "mapper-command",
-      "receiver": "architecture-review",
-      "note": "Mapper command binds the terminal reviewer to the Architecture review contract and calls it through that contract.",
-      "carry": "Architecture reviewer",
+      "supplier": "graph-evaluator-manual",
+      "program": "mapper",
+      "receiver": "graph-evaluator",
+      "note": "Mapper binds the manual evaluator to the Graph evaluator contract and calls it through that contract.",
+      "carry": "Graph evaluator",
       "document": false,
       "firstRole": "wires",
-      "contract": "architecture-review"
+      "contract": "graph-evaluator"
     },
     {
       "title": "Evidence for LLM review",
       "kind": "Data handoff",
-      "supplier": "dependency-evidence",
-      "program": "mapper-command",
-      "receiver": "architecture-review-llm",
-      "note": "Mapper command passes the completed DependencyGraph and the subject for review through Architecture review. The LLM reviewer presents the relevant evidence to the model.",
+      "supplier": "project-grapher",
+      "program": "mapper",
+      "receiver": "graph-evaluator-llm",
+      "note": "Mapper passes the completed DependencyGraph and the subject for review through Graph evaluator. The LLM evaluator presents the relevant evidence to the model.",
       "carry": "Review request",
       "document": true,
       "firstRole": "uses",
-      "contract": "architecture-review"
+      "contract": "graph-evaluator"
     },
     {
       "title": "Apply the LLM judgments",
       "kind": "Data handoff",
-      "supplier": "architecture-review-llm",
-      "program": "mapper-command",
+      "supplier": "graph-evaluator-llm",
+      "program": "mapper",
       "receiver": "map-builder",
-      "note": "Mapper command calls the LLM reviewer through the review contract, then passes its judgments and the DependencyGraph to Map builder.",
+      "note": "Mapper calls the LLM evaluator through the review contract, then passes its judgments and the DependencyGraph to Map builder.",
       "carry": "ArchitectureJudgments",
       "document": true,
       "firstRole": "wires",
-      "contract": "architecture-review"
+      "contract": "graph-evaluator"
     },
     {
-      "title": "Evidence for terminal review",
+      "title": "Evidence for manual evaluation",
       "kind": "Data handoff",
-      "supplier": "dependency-evidence",
-      "program": "mapper-command",
-      "receiver": "architecture-review-terminal",
-      "note": "Mapper command passes the completed DependencyGraph and the subject for review through Architecture review. The terminal reviewer presents the relevant evidence to the human.",
+      "supplier": "project-grapher",
+      "program": "mapper",
+      "receiver": "graph-evaluator-manual",
+      "note": "Mapper passes the completed DependencyGraph and the subject for review through Graph evaluator. The manual evaluator presents the relevant evidence to the human.",
       "carry": "Review request",
       "document": true,
       "firstRole": "uses",
-      "contract": "architecture-review"
+      "contract": "graph-evaluator"
     },
     {
-      "title": "Apply the terminal judgments",
+      "title": "Apply the human judgments",
       "kind": "Data handoff",
-      "supplier": "architecture-review-terminal",
-      "program": "mapper-command",
+      "supplier": "graph-evaluator-manual",
+      "program": "mapper",
       "receiver": "map-builder",
-      "note": "Mapper command calls the terminal reviewer through the review contract, then passes its judgments and the DependencyGraph to Map builder.",
+      "note": "Mapper calls the manual evaluator through the review contract, then passes its judgments and the DependencyGraph to Map builder.",
       "carry": "ArchitectureJudgments",
       "document": true,
       "firstRole": "wires",
-      "contract": "architecture-review"
+      "contract": "graph-evaluator"
     },
     {
       "title": "Supply the dependency graph",
       "kind": "Data handoff",
-      "supplier": "dependency-evidence",
-      "program": "mapper-command",
+      "supplier": "project-grapher",
+      "program": "mapper",
       "receiver": "map-builder",
-      "note": "Mapper command passes the original graph to Map builder so its routes and evidence can be matched to the review decisions.",
+      "note": "Mapper passes the original graph to Map builder so its routes and evidence can be matched to the review decisions.",
       "carry": "DependencyGraph",
       "document": true,
       "firstRole": "uses"
@@ -1019,9 +1029,9 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "title": "Save the project map",
       "kind": "Data handoff",
       "supplier": "map-builder",
-      "program": "mapper-command",
-      "receiver": "map-files",
-      "note": "Mapper command passes the completed ProjectMap to Map files for storage.",
+      "program": "mapper",
+      "receiver": "map-persist",
+      "note": "Mapper passes the completed ProjectMap to Map persist for storage.",
       "carry": "ProjectMap",
       "document": true,
       "firstRole": "uses",
@@ -1031,9 +1041,9 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "title": "Present the project map",
       "kind": "Data handoff",
       "supplier": "map-builder",
-      "program": "mapper-command",
-      "receiver": "map-viewer",
-      "note": "Mapper command supplies a completed ProjectMap to the browser viewer for display.",
+      "program": "mapper",
+      "receiver": "map-web",
+      "note": "Mapper supplies a completed ProjectMap to the browser viewer for display.",
       "carry": "ProjectMap",
       "document": true,
       "firstRole": "uses",
@@ -1963,9 +1973,9 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     const panel=$("panel"), n=state.selected, highlighted=selectionList();
     if (!n) {
       panel.replaceChildren(...[highlighted,el("h2",{},"The proposed architecture"),
-        el("p",{},"Mapper command collects the graph and requests architectural judgments. Map builder combines them into a ProjectMap that Map files can save and Map viewer can display."),
+        el("p",{},"Mapper collects the graph and requests architectural judgments. Map builder combines them into a ProjectMap that Map persist can save and Map web can display."),
         el("ul",{class:"overview"},graph.layers.map(l=>el("li",{},el("strong",{},l.title+". "),l.about))),
-        el("p",{}, "Select a module for its public contract. Tick its corner to highlight its dependencies. The panel describes how Mapper command uses the selected reviewer.")].filter(Boolean));
+        el("p",{}, "Select a module for its public contract. Tick its corner to highlight its dependencies. The panel describes how Mapper uses the selected reviewer.")].filter(Boolean));
       return;
     }
     const c=crates.get(n), routes=graph.routes.filter(r=>routeNames(r).includes(n) || r.contract===n);
@@ -2161,7 +2171,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     const name = resolveHash();
     if (crates.has(name) && name !== state.selected) select(name);
   });
-  function resolveHash() { const key=decodeURIComponent(location.hash.slice(1)); return crates.has(key)?key:graph.crates.find(c=>c.alias===key)?.name; }
+  function resolveHash() { const key=decodeURIComponent(location.hash.slice(1)); return crates.has(key)?key:graph.crates.find(c=>(c.alias===key || c.previousName===key))?.name; }
   const initial = resolveHash();
   draw();
   window.matchMedia("(max-width: 600px)").addEventListener("change",()=>{ placed=null; draw(); });
