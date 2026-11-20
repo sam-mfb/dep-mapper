@@ -222,6 +222,11 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
   :root:not([data-theme="light"]) { --implements: #4fd1a8; --uses: #9a9aa3; --wires: #f0b54a; --adapts: #e3e15a; }
 }
 :root[data-theme="dark"] { --implements: #4fd1a8; --uses: #9a9aa3; --wires: #f0b54a; --adapts: #e3e15a; }
+.edge.role-types { stroke: var(--uses); stroke-dasharray: 3 3; }
+.role-key.role-types { border-top-style: dashed; }
+.edge.role-supplies { stroke: var(--accent); }
+.head-supplies, .delivery-label.input-label { fill: var(--accent); }
+.role-key.role-supplies { border-top-color: var(--accent); }
 .edge.role-uses { stroke: var(--uses); }
 .edge.role-implements { stroke: var(--implements); stroke-width: 1.6; }
 .edge.role-wires { stroke: var(--wires); }
@@ -456,7 +461,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
   <section class="canvas" aria-label="Module graph">
     <div class="layers-all" role="group" aria-label="Every layer at once">Layers: <button type="button" id="layers-show" class="linkish-button">Show all</button><span aria-hidden="true">|</span><button type="button" id="layers-hide" class="linkish-button">Hide all</button></div>
     <svg id="graph" role="img" aria-labelledby="graph-title">
-      <title id="graph-title">Proposed modules by layer, with arrows from each dependency to its consumer</title>
+      <title id="graph-title">Proposed modules, their dependencies and the inputs supplied by Mapper</title>
     </svg>
     <div class="legend key-legend" id="key" aria-label="Key"></div>
     <p class="hint muted">Click a module for details. Tick its corner to trace its arrows.</p>
@@ -691,10 +696,11 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "normal",
       "roles": [
         {
-          "role": "uses"
+          "role": "supplies"
         }
       ],
-      "detail": "Provides the program’s web surface by supplying the finished ProjectMap to Map web."
+      "detail": "Mapper passes the ProjectMap returned by Map builder to Map web for display.",
+      "input": "ProjectMap"
     },
     {
       "to": "graph-evaluator",
@@ -757,10 +763,11 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "normal",
       "roles": [
         {
-          "role": "uses"
+          "role": "supplies"
         }
       ],
-      "detail": "Saves or loads the finished ProjectMap."
+      "detail": "Mapper passes the ProjectMap returned by Map builder to Map persist for storage.",
+      "input": "ProjectMap"
     },
     {
       "to": "dependency-evidence",
@@ -768,7 +775,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "normal",
       "roles": [
         {
-          "role": "uses"
+          "role": "types"
         }
       ],
       "detail": "Reads a completed DependencyGraph through its shared data contract."
@@ -779,10 +786,10 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "normal",
       "roles": [
         {
-          "role": "uses"
+          "role": "types"
         }
       ],
-      "detail": "Uses ArchitectureJudgments as labels tied to subjects in the graph."
+      "detail": "Map builder imports the ArchitectureJudgments type from Graph evaluator. Mapper supplies the judgment values when it calls Map builder."
     },
     {
       "to": "project-map",
@@ -790,7 +797,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "normal",
       "roles": [
         {
-          "role": "uses"
+          "role": "types"
         }
       ],
       "detail": "Returns the completed map using the ProjectMap type defined by Project map."
@@ -801,10 +808,11 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "normal",
       "roles": [
         {
-          "role": "uses"
+          "role": "supplies"
         }
       ],
-      "detail": "Calls Map builder with the graph returned by Project grapher and the judgments returned by the reviewer."
+      "detail": "Mapper passes the graph it received from Project grapher and the judgments it received from Graph evaluator to Map builder. Map builder returns a ProjectMap to Mapper.",
+      "input": "DependencyGraph + ArchitectureJudgments"
     },
     {
       "to": "project-map",
@@ -812,7 +820,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "normal",
       "roles": [
         {
-          "role": "uses"
+          "role": "types"
         }
       ],
       "detail": "Uses the public ProjectMap representation for persistence."
@@ -823,7 +831,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "normal",
       "roles": [
         {
-          "role": "uses"
+          "role": "types"
         }
       ],
       "detail": "Uses the public ProjectMap representation for display."
@@ -834,7 +842,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "normal",
       "roles": [
         {
-          "role": "uses"
+          "role": "types"
         }
       ],
       "detail": "Builds and returns a DependencyGraph conforming to the shared graph contract."
@@ -845,7 +853,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "normal",
       "roles": [
         {
-          "role": "uses"
+          "role": "types"
         }
       ],
       "detail": "Reads graph subjects and supporting evidence to prepare review requests."
@@ -856,7 +864,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "kind": "normal",
       "roles": [
         {
-          "role": "uses"
+          "role": "types"
         }
       ],
       "detail": "Uses DependencyGraph as the review input and its subject identities to anchor the returned judgments."
@@ -1023,7 +1031,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "note": "Mapper passes the original graph to Map builder so its routes and evidence can be matched to the review decisions.",
       "carry": "DependencyGraph",
       "document": true,
-      "firstRole": "uses"
+      "firstRole": "uses",
+      "contract": "dependency-evidence"
     },
     {
       "title": "Save the project map",
@@ -1034,7 +1043,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "note": "Mapper passes the completed ProjectMap to Map persist for storage.",
       "carry": "ProjectMap",
       "document": true,
-      "firstRole": "uses",
+      "firstRole": "supplies",
       "contract": "project-map"
     },
     {
@@ -1046,7 +1055,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       "note": "Mapper supplies a completed ProjectMap to the browser viewer for display.",
       "carry": "ProjectMap",
       "document": true,
-      "firstRole": "uses",
+      "firstRole": "supplies",
       "contract": "project-map"
     }
   ]
@@ -1058,29 +1067,25 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
 (function () {
   const graph = JSON.parse(document.getElementById("proposal").textContent);
   const concerns = {layers:graph.layers, kinds:graph.kinds, crates:Object.fromEntries(graph.crates.map(c=>[c.name,c]))};
-  // The roles an arrow can play, worded in the direction the arrow is
-  // drawn: every arrow runs from the crate that is depended on to the
-  // crate that depends on it, with its head on the dependant. A used or built crate goes into what uses or builds
-  // it; a contract goes into its implementer, which needs the contract to
-  // know what to build. The data keeps Cargo's sense: an edge's `from` is
-  // always the crate that depends on `to`.
+  // Edge records point from the importing crate to its dependency.
+  // Input arrows point from the caller to the crate receiving the value.
   const ROLES = {
     implements: "implemented by",
     adapts: "adapted by",
     uses: "used by",
+    types: "type used by",
+    supplies: "supplies input to",
     wires: "built by",
   };
-  // The short words, for the filters and the tooltip.
-  const ROLE_SHORT = { implements: "implemented by", adapts: "adapted by", uses: "used by", wires: "built by" };
   const ROLE_ABOUT = {
     implements: "the crate at the arrow's head implements a trait the crate at its tail defines",
     adapts: "the crate at the arrow's head, a program or other composition, has a type of its own that meets a trait the crate at its tail declares, and injects it: an adapter over another crate's work, or its own work. Not an implementation of a contract",
+    types: "the crate at the head imports a type defined by the crate at the tail",
+    supplies: "Mapper calls the crate at the arrowhead with the labeled input",
     uses: "the crate at the arrow's head calls or reads items of the crate at its tail",
     wires: "the crate at the arrow's head builds implementations or holders from the crate at its tail, to hand on",
   };
-  // The ends an arrow is drawn between, in the drawn direction: from the
-  // dependency to the dependant.
-  const drawnEnds = (e) => [e.to, e.from];
+  const drawnEnds = (e) => e.input ? [e.from, e.to] : [e.to, e.from];
   // How far apart the parallel strokes of an arrow with several roles are.
   const STROKE_GAP = 3.2;
   // How many straight pieces an offset stroke is drawn with.
@@ -1291,7 +1296,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
             draw();
             renderPanel();
           } }),
-        el("span", { class: `role-key role-${role}` }), ROLE_SHORT[role])));
+        el("span", { class: `role-key role-${role}` }), ROLES[role])));
   }
 
   // A layer's name on the map is its toggle: a hidden layer's crates are
@@ -1359,7 +1364,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       el("span", {}, el("strong", {}, "Roles: "), Object.entries(ROLES).map(([role, words]) =>
         el("span", { class: "key-item", title: ROLE_ABOUT[role] }, el("span", { class: `role-key role-${role}` }), words))),
       el("span", { class:"key-item" }, el("span",{class:"route-key"}), "Injected capability"),
-      el("span", { class:"muted" }, "Dependency arrows point toward the consumer. Tick a module to highlight dependencies and injected capabilities."));
+      el("span", { class:"muted" }, "Tick Mapper to see the inputs it supplies. Gray dashed arrows identify imported types."));
   }
 
   function draw() { keepFocus(drawNow); }
@@ -1435,8 +1440,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     for (const [e, [a, b]] of arrowEnds) {
       // One stroke per shown role, side by side, each in its role's colour.
       // One head, on the middle stroke, in the first role's shape: a head
-      // per stroke crowds where arrows meet a box. The path runs from `from`
-      // to `to`, so the head, on `from`, is at its start. An arrow that
+      // per stroke crowds where arrows meet a box. The path starts at the arrowhead. An arrow that
       // shares its end with others leading its run has no head of its own.
       // The stroke with the head runs through the end's point itself, so
       // heads keep the spacing of the ends.
@@ -1448,7 +1452,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
           class: `edge kind-${e.kind} role-${role}`,
           "data-edge": `${e.from}>${e.to}>${e.kind}`,
           ...(i === mid
-            ? (a.lead ? { "marker-start": `url(#head-${roles[0]})`, "data-head": e.from } : { "data-shared": e.from }) : {}),
+            ? (a.lead ? { "marker-start": `url(#head-${roles[0]})`, "data-head": drawnEnds(e)[1] } : { "data-shared": drawnEnds(e)[1] }) : {}),
         });
         edgeLayer.append(path);
         view.edgeNodes.push({ edge: e, path });
@@ -1578,7 +1582,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
   // the program's eye, which sit on the right-hand corners.
   const MARGIN = { top: 16, bottom: 16, left: 9, right: 9 };
   const faceLength = (face) => (face === "top" || face === "bottom" ? BOX_W : BOX_H);
-  const ROLE_ORDER = ["uses", "wires", "implements", "adapts"];
+  const ROLE_ORDER = ["uses", "wires", "implements", "adapts", "types", "supplies"];
 
   // `ends`: [{ order, run }]; gives each its place along the face (0 to
   // 1) and whether it leads its run, in `t` and `lead`.
@@ -1631,7 +1635,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
   }
 
   // Every drawn arrow's two ends: each face's arrows spread along it.
-  // Returns a map from the edge to [its end at `from`, its end at `to`],
+  // Returns a map from the edge to [its head, its tail],
   // each with `lead`, and keeps each face's points for the delivery lines.
   function placeArrowEnds(edges) {
     const byFace = new Map();
@@ -1642,20 +1646,20 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     };
     const placed = new Map();
     for (const e of edges) {
-      const f = facesOf(e.from, e.to);
+      const [source, target] = drawnEnds(e);
+      const f = facesOf(target, source);
       if (!f) continue;
-      // The head is on `from`, the crate that depends on the other.
-      const head = { order: orderOf(f.fa, e.to), run: 1 + ROLE_ORDER.indexOf(shownRoles(e)[0]) };
-      const tail = { order: orderOf(f.fb, e.from), run: 0 };
-      add(e.from, f.fa, head);
-      add(e.to, f.fb, tail);
-      placed.set(e, { f, head, tail });
+      const head = { order: orderOf(f.fa, source), run: 1 + ROLE_ORDER.indexOf(shownRoles(e)[0]) };
+      const tail = { order: orderOf(f.fb, target), run: 0 };
+      add(target, f.fa, head);
+      add(source, f.fb, tail);
+      placed.set(e, { f, head, tail, target, source });
     }
     for (const { face, ends } of byFace.values()) spreadOn(face, ends);
     view.faceArrows = new Map([...byFace].map(([key, v]) => [key, v.ends.map((x) => x.t).sort((a, b) => a - b)]));
     const out = new Map();
-    for (const [e, { f, head, tail }] of placed) {
-      const ends = joinEnds(pointOn(e.from, f.fa, head.t), pointOn(e.to, f.fb, tail.t), f.arc);
+    for (const [e, { f, head, tail, target, source }] of placed) {
+      const ends = joinEnds(pointOn(target, f.fa, head.t), pointOn(source, f.fb, tail.t), f.arc);
       ends[0].lead = head.lead;
       out.set(e, ends);
     }
@@ -1706,6 +1710,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
   function markers() {
     const defs = svg("defs");
     const shapes = {
+      types: ["M0,0 L8,4 L0,8 z", "head-uses"],
+      supplies: ["M0,0 L8,4 L0,8 z", "head-supplies"],
       uses: ["M0,0 L8,4 L0,8 z", "head-uses"],
       implements: ["M0.5,0.5 L8,4 L0.5,7.5 z", "head-implements"],
       adapts: ["M0.5,4 a3.5,3.5 0 1,0 7,0 a3.5,3.5 0 1,0 -7,0 z", "head-adapts"],
@@ -1891,10 +1897,9 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     // above the line, then just below. Where every stretch crosses a box,
     // it sits mid-line on a backing of the page's colour, so it reads
     // over the box.
-    const labelOn = (path, line, words, extra, suffix = "") => {
-      const tip = (ev) => showRouteTip(ev, line.routes);
-      const label = svg("text", { class: "delivery-label" + extra, "data-from": line.program, "data-to": line.receiver });
-      label.textContent = words.join(", ") + suffix;
+    const labelOn = (path, from, to, words, extra, tip) => {
+      const label = svg("text", { class: "delivery-label" + extra, "data-from": from, "data-to": to });
+      label.textContent = words;
       label.addEventListener("mousemove", tip);
       label.addEventListener("mouseleave", hideTip);
       labelLayer.append(label);
@@ -1921,13 +1926,18 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
       }
     };
 
+    for (const {edge, path} of view.edgeNodes) {
+      if (edge.input && path.classList.contains("focus")) {
+        labelOn(path, edge.from, edge.to, edge.input, " input-label", ev => showTip(ev, edge));
+      }
+    }
     for (const {line,ends:[a,b]} of placeDeliveryEnds([...active.values()])) {
       const r=line.routes[0];
       const path=svg("path",{d:edgePath(a,b),class:"delivery","data-from":line.program,"data-to":line.receiver,"marker-end":"url(#head-wires)"});
       path.addEventListener("mousemove",ev=>showRouteTip(ev,line.routes));
       path.addEventListener("mouseleave",hideTip);
       layer.append(path);
-      labelOn(path,line,[r.carry],"");
+      labelOn(path,line.program,line.receiver,r.carry,"",ev=>showRouteTip(ev,line.routes));
     }
   }
   function tooltip(ev, ...content) {
@@ -1973,7 +1983,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
     const panel=$("panel"), n=state.selected, highlighted=selectionList();
     if (!n) {
       panel.replaceChildren(...[highlighted,el("h2",{},"The proposed architecture"),
-        el("p",{},"Mapper collects the graph and requests architectural judgments. Map builder combines them into a ProjectMap that Map persist can save and Map web can display."),
+        el("p",{},"Mapper passes the dependency graph and the evaluator’s judgments to Map builder. Mapper then sends the returned ProjectMap to Map persist for storage and Map web for display."),
         el("ul",{class:"overview"},graph.layers.map(l=>el("li",{},el("strong",{},l.title+". "),l.about))),
         el("p",{}, "Select a module for its public contract. Tick its corner to highlight its dependencies. The panel describes how Mapper uses the selected reviewer.")].filter(Boolean));
       return;
