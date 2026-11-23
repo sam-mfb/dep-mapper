@@ -1,0 +1,11 @@
+[package]
+name = "console"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+port = { path = "../port" }
+instrument = { package = "sensor", path = "../sensor" }
+
+[features]
+calibration = []

@@ -1,0 +1,53 @@
+#!/bin/sh
+# Compile the selected Cargo target set and analyze one fresh collection of facts.
+set -eu
+scope=workspace
+case "${1:-}" in
+    --include-dependencies) scope=all; shift ;;
+    --dispatch-bounds) scope=dispatch; shift ;;
+esac
+if [ "$#" -lt 2 ]; then
+    echo 'usage: run [--include-dependencies|--dispatch-bounds] WORKSPACE NEW-OUTPUT-DIRECTORY [Cargo build selection flags]' >&2
+    exit 2
+fi
+tool=$(dirname "$(realpath "$0")")
+subject=$(realpath "$1")
+mkdir "$2"
+report=$(realpath "$2")
+shift 2
+if [ "$#" -eq 0 ]; then set -- --workspace; fi
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+mkdir "$report/facts"
+"$tool/driver" "$tool/collect.rs" "$scratch/collect"
+cd "$subject"
+rustc +1.98.1 -vV > "$report/compiler.txt"
+node --input-type=module - "$report" "$scope" "$@" <<'JS'
+import { execFileSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const [dir, scope, ...selection] = process.argv.slice(2);
+let revision = null;
+try { revision = execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(); } catch {}
+writeFileSync(join(dir,'build.json'), JSON.stringify({checkout:process.cwd(),revision,scope,selection},null,2));
+JS
+export CARGO_INCREMENTAL=0 CARGO_TARGET_DIR="$scratch/target" MAPPER_FACTS="$report/facts"
+if [ "$scope" = dispatch ]; then
+    export MAPPER_DISPATCH=1
+    MAPPER_SOURCE_DIRS=$(cargo +1.98.1 metadata --locked --no-deps --format-version 1 | python3 -c 'import json,sys,pathlib; print("\n".join(str(pathlib.Path(p["manifest_path"]).parent) for p in json.load(sys.stdin)["packages"]))')
+    MAPPER_TRAIT_CRATES=$(cargo +1.98.1 metadata --locked --no-deps --format-version 1 | python3 -c 'import json,sys; print("\n".join(t["name"].replace("-","_") for p in json.load(sys.stdin)["packages"] for t in p["targets"]))')
+    export MAPPER_SOURCE_DIRS MAPPER_TRAIT_CRATES
+fi
+if [ "$scope" != workspace ]; then
+    export RUSTC_WRAPPER="$scratch/collect"
+    unset RUSTC_WORKSPACE_WRAPPER
+else
+    export RUSTC_WORKSPACE_WRAPPER="$scratch/collect"
+fi
+RUSTC_BOOTSTRAP=1 cargo +1.98.1 build --locked -Z unstable-options --unit-graph "$@" > "$report/units.json"
+cargo +1.98.1 build --locked "$@"
+node "$tool/report.ts" "$report"
+if [ "$scope" = dispatch ]; then
+    node "$tool/structural.ts" "$report"
+    python3 "$tool/limits.py" "$report"
+fi

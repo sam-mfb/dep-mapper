@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+root=$(rustc +1.98.1 --print sysroot)
+RUSTC_BOOTSTRAP=1 rustc +1.98.1 --edition 2024 -D warnings "$1" -o "$2" -C "link-arg=-Wl,-rpath,$root/lib" -L "$root/lib"

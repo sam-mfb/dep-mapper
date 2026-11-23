@@ -1,0 +1,22 @@
+#!/bin/sh
+# Cargo invokes this wrapper for workspace members. Keep each target's bodies separate.
+set -eu
+compiler=$1
+shift
+previous=''
+name=''
+kind=''
+for arg do
+    case "$previous" in
+        --crate-name) name=$arg ;;
+        --crate-type) kind=$arg ;;
+    esac
+    previous=$arg
+done
+case "$name:$kind" in
+    build_script_build:*|:*) exec "$compiler" "$@" ;;
+    *:lib|*:bin)
+        exec "$compiler" "$@" -Zdump-mir=built -Zmir-include-spans=yes \
+            -Ztrim-diagnostic-paths=no "-Zdump-mir-dir=$PROOF_DUMPS/$name-$kind" ;;
+    *) exec "$compiler" "$@" ;;
+esac
