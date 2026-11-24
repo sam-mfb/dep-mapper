@@ -1,6 +1,7 @@
 //! dep-mapper's own proposed architecture as a `ProjectMap`, for consumers
-//! that need a realistic map to display or store. It records the module map
-//! in `docs/architecture/map.html` as it stood when this example was written.
+//! that need a realistic map to display or store. This is the project's
+//! module map: update it as the architecture changes, and view it with
+//! `cargo run -p map-web --example preview`.
 //! No source was analyzed, so evidence entries describe the proposal and
 //! carry no source locations.
 
@@ -26,7 +27,8 @@ struct DependencyRow {
     detail: &'static str,
 }
 
-/// A route from a supplier, through the program, to a receiver.
+/// A route from a supplier to the program, and on to a receiver when the
+/// program passes the value along.
 struct RouteRow {
     key: &'static str,
     supplier: &'static str,
@@ -35,7 +37,9 @@ struct RouteRow {
     program: &'static str,
     /// The role of the program's use of the supplier.
     first_role: UseRole,
-    receiver: &'static str,
+    /// The module the program passes the value into; `None` when the
+    /// program uses the value itself.
+    receiver: Option<&'static str>,
     role: UseRole,
     /// Present when the route applies only under this condition.
     condition: Option<&'static str>,
@@ -152,27 +156,34 @@ pub fn dep_mapper() -> ProjectMap {
                 None => HopSupport::Established,
             };
             let obtained = dependency_citation(row.program, row.supplier);
-            let delivered = dependency_citation(row.program, row.receiver);
+            let mut hops = vec![MapHop {
+                to: hop_target(row.program, HopLink::ReceiverUsesSender),
+                evidence: obtained.clone(),
+                support: support.clone(),
+                role: Some(row.first_role),
+            }];
+            // The route reaches its use where the value is delivered, or where
+            // the program uses it when it keeps the value.
+            let (used, supporting) = match row.receiver {
+                Some(receiver) => {
+                    let delivered = dependency_citation(row.program, receiver);
+                    hops.push(MapHop {
+                        to: hop_target(receiver, HopLink::SenderUsesReceiver),
+                        evidence: delivered.clone(),
+                        support,
+                        role: Some(UseRole::SuppliesInput),
+                    });
+                    (delivered, vec![obtained])
+                }
+                None => (obtained, vec![]),
+            };
             let route = MapRoute {
-                use_site: Some(delivered.clone()),
+                use_site: Some(used.clone()),
                 origin: RoutePoint::Project(ProjectPoint {
                     module: ModuleId(row.supplier.into()),
                     item: Some(row.carries.into()),
                 }),
-                hops: vec![
-                    MapHop {
-                        to: hop_target(row.program, HopLink::ReceiverUsesSender),
-                        evidence: obtained.clone(),
-                        support: support.clone(),
-                        role: Some(row.first_role),
-                    },
-                    MapHop {
-                        to: hop_target(row.receiver, HopLink::SenderUsesReceiver),
-                        evidence: delivered.clone(),
-                        support,
-                        role: Some(UseRole::SuppliesInput),
-                    },
-                ],
+                hops,
                 end: MapRouteEnd::ReachedUse,
                 description: judged(
                     RouteDescription {
@@ -180,8 +191,8 @@ pub fn dep_mapper() -> ProjectMap {
                         other_roles: vec![],
                     },
                     row.note,
-                    delivered,
-                    vec![obtained],
+                    used,
+                    supporting,
                 ),
             };
             (RouteId(row.key.into()), route)

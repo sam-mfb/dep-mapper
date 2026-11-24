@@ -167,8 +167,6 @@ fn only_judged_injections_through_three_modules_are_drawn() {
         [
             "read-a-rust-project",
             "read-a-typescript-project-illustrative",
-            "wire-the-llm-evaluator",
-            "wire-the-manual-evaluator",
         ]
     );
     let route = view
