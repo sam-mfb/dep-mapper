@@ -43,7 +43,7 @@ The module boundaries, dependency arrangements and review workflow for dep-mappe
 
 A `GraphEvaluation` names the particular graph snapshot it reviews. Its module and route judgments use that snapshot’s identifiers. Two paths through different wiring sites can have the same endpoints and different judgments. Each judgment includes its reason and supporting citations. A deferred subject records a reason, while a subject omitted from the evaluation remains unreviewed.
 
-A `ProjectGraph` records receiver bounds separately from witnessed handoffs. A route can cite a known use site and end at an unresolved handoff. A `ProjectMap` carries the resulting route, review status and source citations in its own representation so it can be opened independently. The snapshot and reference checks belong to the producer and to `map-builder` when it joins the two inputs.
+A `ProjectGraph` records receiver bounds separately from witnessed handoffs. A route can cite a known use site and end at an unresolved handoff. A `ProjectMap` carries the resulting route, review status and source citations in its own representation so it can be opened independently. It also lists the dependencies between modules for the overview, keyed by the pair of modules each joins, with its evidence and review. A route explains a particular path, while a dependency summarizes every way one module uses another. Each hop into a project module says how it got there: the receiver uses the sender, the sender uses the receiver, it stayed in one module, or it came from outside the project. The first two name the dependency the hop travels along. The snapshot and reference checks belong to the producer and to `map-builder` when it joins the two inputs.
 
 ## Composition and effects
 

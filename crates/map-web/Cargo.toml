@@ -1,0 +1,16 @@
+[package]
+name = "map-web"
+description = "Presents a ProjectMap as an interactive page in the browser"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+project-map.workspace = true
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+
+[dev-dependencies]
+project-map = { workspace = true, features = ["example"] }
