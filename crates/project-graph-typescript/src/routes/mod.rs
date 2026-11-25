@@ -59,6 +59,9 @@ pub struct ValueMoves<'a> {
     pub links: &'a BTreeMap<FactId, MoveLink>,
     /// The condition of each move that happens on only one branch.
     pub conditions: &'a BTreeMap<FactId, String>,
+    /// Moves the collector marked as joining instances, such as those into
+    /// and out of a callback's argument slots.
+    pub joining: &'a BTreeSet<FactId>,
 }
 
 /// Value routes for each receiver use. `joins_instances` says which
@@ -79,7 +82,8 @@ pub fn trace_values(
     // is matched to its own call: first the return, without a fact, then the
     // argument, with the move's fact as its hop.
     let mut add = |id: &FactId, fact: &Fact, to: Endpoint, link: &MoveLink| {
-        let joins = joins_instances(&fact.subject) || joins_instances(&to);
+        let joins =
+            moves.joining.contains(id) || joins_instances(&fact.subject) || joins_instances(&to);
         let mut from = fact.subject.clone();
         let mut call = link.returned.clone().map(CallLink::Returned);
         if let (Some(returned), Some(argument)) = (&link.returned, &link.argument) {
