@@ -61,7 +61,7 @@ fn output_without_a_project_record_is_refused() {
 
 #[test]
 fn a_fact_in_an_unlisted_module_is_refused() {
-    let fact = r#"{"record":"fact","id":"f","module":"ghost","subject":{"module":"ghost"},"fact":{"kind":"declared_dependency"},"object":{"external":"x"},"site":null,"condition":null}"#;
+    let fact = r#"{"record":"fact","id":"f","module":"ghost","subject":{"module":"ghost"},"fact":{"kind":"declared_dependency"},"object":{"external":"x"},"site":null,"condition":null,"link":null,"joins_instances":false}"#;
     let error = assemble(
         &selected(),
         records(&[PROJECT, MODULE, fact, END]),
@@ -78,9 +78,9 @@ fn facts_join_their_package_unit_and_conditions_mark_hops_possible() {
         MODULE,
         r#"{"record":"item","id":"app/a.ts#C","module":"app","name":"C","kind":"type","parent":null,"visibility":"internal","signature":"class C","declaration":{"file":"packages/app/a.ts","start":0,"end":9}}"#,
         r#"{"record":"item","id":"app/a.ts#C.go","module":"app","name":"C.go","kind":"method","parent":"app/a.ts#C","visibility":"internal","signature":null,"declaration":null}"#,
-        r#"{"record":"fact","id":"new","module":"app","subject":{"item":"app/a.ts#C"},"fact":{"kind":"construct"},"object":{"place":{"owner":"app/a.ts#f","projection":"c"}},"site":{"file":"packages/app/a.ts","start":20,"end":27},"condition":"flag"}"#,
-        r#"{"record":"fact","id":"recv","module":"app","subject":{"place":{"owner":"app/a.ts#f","projection":"c"}},"fact":{"kind":"pass"},"object":{"place":{"owner":"app/a.ts#C.go","projection":"self"}},"site":null,"condition":null}"#,
-        r#"{"record":"fact","id":"call","module":"app","subject":{"item":"app/a.ts#f"},"fact":{"kind":"call","dispatch":"direct"},"object":{"item":"app/a.ts#C.go"},"site":null,"condition":null}"#,
+        r#"{"record":"fact","id":"new","module":"app","subject":{"item":"app/a.ts#C"},"fact":{"kind":"construct"},"object":{"place":{"owner":"app/a.ts#f","projection":"c"}},"site":{"file":"packages/app/a.ts","start":20,"end":27},"condition":"flag","link":null,"joins_instances":false}"#,
+        r#"{"record":"fact","id":"recv","module":"app","subject":{"place":{"owner":"app/a.ts#f","projection":"c"}},"fact":{"kind":"pass"},"object":{"place":{"owner":"app/a.ts#C.go","projection":"self"}},"site":null,"condition":null,"link":null,"joins_instances":false}"#,
+        r#"{"record":"fact","id":"call","module":"app","subject":{"item":"app/a.ts#f"},"fact":{"kind":"call","dispatch":"direct"},"object":{"item":"app/a.ts#C.go"},"site":null,"condition":null,"link":null,"joins_instances":false}"#,
         r#"{"record":"receiver","call":"call","moves":["recv"]}"#,
         r#"{"record":"gap","module":"app","site":null,"reason":"TypeScript error: oops"}"#,
         END,
