@@ -662,9 +662,13 @@ class FileFacts {
     const destination = this.placeOf(element, name.text);
     const pattern = element.parent;
     if (ts.isArrayBindingPattern(pattern)) {
-      if (arrayLiteralOf(pattern) || !element.initializer) return;
+      // A pattern over an array literal is followed element by element in `arrayPattern`.
+      if (arrayLiteralOf(pattern) || element.dotDotDotToken) return;
       const index = pattern.elements.indexOf(element);
-      this.flow(element.initializer, destination, "store", `[${index}] === undefined`);
+      const elements = this.elementPlace(this.checker.typeAt(pattern));
+      const read = element.initializer ? `[${index}] !== undefined` : null;
+      if (elements) this.write(elements, { kind: "read" }, destination, element, read);
+      if (element.initializer) this.flow(element.initializer, destination, "store", `[${index}] === undefined`);
       return;
     }
     const property = element.propertyName
