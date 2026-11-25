@@ -1,0 +1,4 @@
+{
+  "name": "@sample/backup-api",
+  "types": "src/index.ts"
+}
