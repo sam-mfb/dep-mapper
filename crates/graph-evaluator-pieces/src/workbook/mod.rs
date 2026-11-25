@@ -75,8 +75,9 @@ pub struct Presentation<'a> {
     /// The most routes listed on one page of a piece.
     pub page_size: usize,
     pub source: &'a dyn SourceLines,
-    /// How a reader invokes the answer commands, such as `srs eval`.
-    pub command: &'a str,
+    /// How a reader invokes the answer commands, such as `srs eval`. With
+    /// `None`, pieces hold the evidence and the request without command lines.
+    pub command: Option<&'a str>,
 }
 
 impl PieceId {

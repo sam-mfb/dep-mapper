@@ -95,7 +95,7 @@ impl GraphEvaluator for ManualEvaluator {
         let presentation = Presentation {
             page_size: self.settings.page_size,
             source: self.source.as_ref(),
-            command: &self.settings.command,
+            command: Some(&self.settings.command),
         };
         let workbook = workbook::present(graph, &presentation);
         let location = self.store.location();

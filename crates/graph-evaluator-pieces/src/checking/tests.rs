@@ -1,15 +1,15 @@
 use super::*;
 use crate::answers::PieceAnswers;
-use crate::fixture;
+use crate::testing;
 use crate::workbook::{ByteOffsets, Presentation, present};
 
 fn workbook() -> Workbook {
     present(
-        &fixture::graph(),
+        &testing::graph(),
         &Presentation {
             page_size: 10,
             source: &ByteOffsets,
-            command: "srs eval",
+            command: Some("srs eval"),
         },
     )
 }
@@ -111,7 +111,7 @@ fn complete_answers_assemble_into_the_evaluation_with_graph_references() {
         }
     );
     assert_eq!(evaluation.relationships.len(), 2);
-    let graph = fixture::graph();
+    let graph = testing::graph();
     let cited = evaluation.relationships.iter().flat_map(|r| &r.evidence);
     assert!(cited.into_iter().all(|r| graph.resolve(r).is_some()));
 }
