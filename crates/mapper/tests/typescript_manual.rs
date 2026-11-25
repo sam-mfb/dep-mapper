@@ -152,10 +152,21 @@ fn a_typescript_project_is_mapped_after_its_workbook_is_answered() {
         panic!("the installer is judged")
     };
     assert_eq!(judgment.layer.as_ref().map(|l| l.0.as_str()), Some("Core"));
-    assert!(
-        std::fs::read_to_string(&page)
-            .expect("the page is written")
-            .contains("backup-sample")
+    let written = std::fs::read_to_string(&page).expect("the page is written");
+    assert!(written.contains("backup-sample"));
+
+    // The saved map reopens without analysis and shows the same page.
+    let reopened = dir.join("reopened.html");
+    let shown = srs(&[
+        "show".to_string(),
+        out.display().to_string(),
+        "--page".into(),
+        reopened.display().to_string(),
+    ]);
+    assert!(shown.status.success(), "{}", text(&shown.stderr));
+    assert_eq!(
+        std::fs::read_to_string(&reopened).expect("the page is written again"),
+        written
     );
 }
 

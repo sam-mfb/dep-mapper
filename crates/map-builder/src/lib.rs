@@ -45,7 +45,9 @@ mod routes;
 use citations::Citations;
 use graph_evaluator::{ClusterName, GraphEvaluation};
 use project_graph::{GraphId, GraphRef, ModuleId, ProjectGraph};
-use project_map::{Layers, MapEvidence, MapSource, ProjectMap, SourceRevision};
+use project_map::{
+    DuplicateLayer, LayerName, Layers, MapEvidence, MapSource, ProjectMap, SourceRevision,
+};
 use thiserror::Error;
 
 /// The map built from a graph and its evaluation, and what did not fit.
@@ -80,6 +82,9 @@ pub enum BuildProblem {
     },
     /// A relationship applies to no route, hop or dependency on the map.
     UnplacedRelationship { relationship: usize },
+    /// The evaluation lists a cluster more than once. The map keeps its
+    /// first place in the reading order.
+    DuplicateCluster(ClusterName),
     /// The graph refers to something it does not hold: `cited_by` names the
     /// route or fact holding the reference.
     IncompleteGraph {
@@ -121,14 +126,7 @@ pub fn build_map(
     );
     let dependencies = dependencies.into_map(&routes, &reviews);
     problems.extend(reviews.unplaced(&routes, &dependencies));
-    let layers = Layers::new(
-        evaluation
-            .clusters
-            .iter()
-            .map(|cluster| project_map::LayerName(cluster.0.clone()))
-            .collect(),
-    )
-    .expect("the evaluation's clusters are listed once each");
+    let layers = layers(evaluation.clusters.iter(), &mut problems);
     let coverage_gaps = graph
         .gaps
         .iter()
@@ -155,6 +153,31 @@ pub fn build_map(
         coverage_gaps,
     };
     Ok(MapBuild { map, problems })
+}
+
+/// The map's layers: the clusters in reading order, each once.
+fn layers<'a>(
+    clusters: impl Iterator<Item = &'a ClusterName>,
+    problems: &mut Vec<BuildProblem>,
+) -> Layers {
+    let mut names: Vec<LayerName> = vec![];
+    for cluster in clusters {
+        let name = LayerName(cluster.0.clone());
+        if names.contains(&name) {
+            problems.push(BuildProblem::DuplicateCluster(cluster.clone()));
+        } else {
+            names.push(name);
+        }
+    }
+    match Layers::new(names) {
+        Ok(layers) => layers,
+        // Each name was added once above, so this is not expected; the map
+        // is still built, without layers, and the problem is reported.
+        Err(DuplicateLayer(layer)) => {
+            problems.push(BuildProblem::DuplicateCluster(ClusterName(layer.0)));
+            Layers::empty()
+        }
+    }
 }
 
 #[cfg(test)]
