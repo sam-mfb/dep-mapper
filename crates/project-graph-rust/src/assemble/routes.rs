@@ -14,8 +14,9 @@
 //! - a type being constructed or made a trait object is the origin.
 //!
 //! Moves the reader does not need, such as copies between temporaries, are
-//! traced through but are not hops. Moves into or out of the toolchain's
-//! own crates are not traced.
+//! traced through but are not hops. A call into the standard library is
+//! assumed to pass its arguments to its result; a hop that relies on that,
+//! or on a place standing for every instance, is possible, not established.
 //!
 //! A traced route is kept when its origin lies in another module than the
 //! call. A call whose trait lies in another module, with no origin found,
@@ -24,6 +25,7 @@
 use super::{Ordered, Resolver, Unit, Units, site};
 use project_graph::{Dispatch, Endpoint, Fact, FactKind, ModuleId};
 use project_graph_rust_records as r;
+use std::collections::HashMap;
 use value_routes::{CallLink, Flow, Limits, Trace, Use};
 
 const LIMITS: Limits = Limits {
@@ -45,6 +47,43 @@ struct Receiver {
     receiver: Endpoint,
     owner_module: Option<ModuleId>,
     contract_module: Option<ModuleId>,
+    /// The trait the call goes through, as the key of `Implementors`.
+    contract_trait: (String, String),
+}
+
+/// For each trait implemented in the build, keyed by crate and path: the
+/// implementing types, or `None` when a blanket implementation means any
+/// type may implement it.
+type Implementors = HashMap<(String, String), Option<Vec<Endpoint>>>;
+
+fn trait_key(def: &r::Def) -> (String, String) {
+    (def.crate_id.clone(), def.path.clone())
+}
+
+fn implementors(resolve: &Resolver, units: &Units, crates: &[Vec<r::Record>]) -> Implementors {
+    let mut found: Implementors = HashMap::new();
+    for (_, records) in units.iter(crates) {
+        for record in records {
+            let r::Record::Impl(implementation) = record else {
+                continue;
+            };
+            let entry = found
+                .entry(trait_key(&implementation.contract))
+                .or_insert_with(|| Some(Vec::new()));
+            let provider = implementation
+                .self_type
+                .as_ref()
+                .and_then(|def| resolve.endpoint(def))
+                .map(|(endpoint, _)| endpoint);
+            match (entry.as_mut(), provider) {
+                (Some(types), Some(provider)) => types.push(provider),
+                // A blanket or structural implementation: any type may.
+                (Some(_), None) => *entry = None,
+                (None, _) => {}
+            }
+        }
+    }
+    found
 }
 
 pub(super) fn traced(
@@ -69,12 +108,23 @@ pub(super) fn traced(
             receiver: r.receiver.clone(),
         })
         .collect();
+    let implementors = implementors(resolve, units, crates);
     let traces = value_routes::trace(&flows, &uses, LIMITS);
     let mut routes = Vec::new();
     for (receiver, traces) in receivers.iter().zip(traces) {
         for trace in traces {
             match trace {
                 Trace::Reached { origin, path, .. } => {
+                    // A type that does not implement the trait cannot be
+                    // the receiver, however the approximate moves joined it.
+                    let implements = match implementors.get(&receiver.contract_trait) {
+                        Some(Some(types)) => types.contains(&origin),
+                        Some(None) => true,
+                        None => false,
+                    };
+                    if !implements {
+                        continue;
+                    }
                     if resolve
                         .module(&origin)
                         .is_none_or(|m| Some(m) == receiver.owner_module)
@@ -84,12 +134,7 @@ pub(super) fn traced(
                     routes.push(TracedRoute {
                         call: receiver.call.clone(),
                         origin,
-                        hops: path
-                            .iter()
-                            .filter_map(|&i| {
-                                Some((flows[i].fact.clone()?, flows[i].joins_instances))
-                            })
-                            .collect(),
+                        hops: hops(&flows, &path),
                         stopped: None,
                     });
                 }
@@ -115,6 +160,26 @@ pub(super) fn traced(
             .then_with(|| format!("{:?}", a.origin).cmp(&format!("{:?}", b.origin)))
     });
     routes
+}
+
+/// The reported moves of a path, in order. A hop is possible when its own
+/// move, or an unreported move since the previous hop, is an approximation:
+/// a place standing for many instances, or a pass through the standard
+/// library.
+fn hops(flows: &[Flow], path: &[usize]) -> Vec<(Fact, bool)> {
+    let mut hops: Vec<(Fact, bool)> = Vec::new();
+    let mut approximate = false;
+    for &index in path {
+        approximate |= flows[index].joins_instances;
+        if let Some(fact) = &flows[index].fact {
+            hops.push((fact.clone(), approximate));
+            approximate = false;
+        }
+    }
+    if approximate && let Some(last) = hops.last_mut() {
+        last.1 = true;
+    }
+    hops
 }
 
 impl Resolver<'_> {
@@ -182,11 +247,12 @@ impl Resolver<'_> {
     fn flow(&self, unit: &Unit, flow: &r::FlowRecord) -> Option<Flow> {
         let from = self.node(&flow.from)?;
         let to = self.node(&flow.to)?;
-        let joins_instances = [&flow.from, &flow.to]
-            .iter()
-            .any(|n| matches!(n, r::Node::Field { .. } | r::Node::Capture { .. }));
+        let joins_instances = flow.kind == r::FlowKind::Through
+            || [&flow.from, &flow.to]
+                .iter()
+                .any(|n| matches!(n, r::Node::Field { .. } | r::Node::Capture { .. }));
         let kind = match flow.kind {
-            r::FlowKind::Copy => None,
+            r::FlowKind::Copy | r::FlowKind::Through => None,
             r::FlowKind::Construct => Some(FactKind::Construct),
             r::FlowKind::Coerce => Some(FactKind::Coerce),
             r::FlowKind::Store => Some(FactKind::Store),
@@ -231,6 +297,7 @@ impl Resolver<'_> {
                 site: Some(site(&receiver.span, &self.workspace.root)),
             },
             receiver: self.node(&receiver.receiver)?,
+            contract_trait: trait_key(&receiver.contract_trait),
             owner_module,
             contract_module,
         })

@@ -6,7 +6,8 @@ fn main() {
         backups: Box::new(OsBackups),
     };
     let direct = OsBackups.write();
+    let wrapped = consumer::write_some(Some(Box::new(OsBackups)));
     let _later = consumer::write_later(Box::new(OsBackups));
     let run = |p: &Parts| consume(p);
-    println!("{} {} {}", run(&parts), direct, consumer::file_name());
+    println!("{} {} {} {}", run(&parts), direct, wrapped, consumer::file_name());
 }

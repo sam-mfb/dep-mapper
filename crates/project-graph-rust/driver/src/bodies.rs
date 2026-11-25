@@ -143,14 +143,36 @@ impl<'tcx> BodyReader<'tcx> {
     fn in_std(&self, ty: Ty) -> bool {
         match ty.kind() {
             TyKind::RigidTy(RigidTy::Adt(adt, _)) => {
-                let krate = internal(self.tcx, adt.def_id()).krate;
-                matches!(
-                    self.tcx.crate_name(krate).as_str(),
-                    "core" | "alloc" | "std"
-                )
+                is_std(self.tcx, internal(self.tcx, adt.def_id()))
             }
             _ => false,
         }
+    }
+
+    fn mentions_place(
+        &self,
+        place: &Place,
+    ) -> std::collections::HashSet<rustc_span::def_id::DefId> {
+        place
+            .ty(self.body.locals())
+            .map(|ty| self.mentions(ty))
+            .unwrap_or_default()
+    }
+
+    /// The named types and traits outside the standard library that `ty`
+    /// mentions, at any depth: `Option<Box<dyn Backups>>` mentions `Backups`.
+    fn mentions(&self, ty: Ty) -> std::collections::HashSet<rustc_span::def_id::DefId> {
+        let ty = internal(self.tcx, ty);
+        ty.walk()
+            .filter_map(|arg| arg.as_type())
+            .filter_map(|ty| match *ty.kind() {
+                rustc_middle::ty::Adt(adt, _) => Some(adt.did()),
+                rustc_middle::ty::Dynamic(predicates, ..) => predicates.principal_def_id(),
+                rustc_middle::ty::Closure(id, _) | rustc_middle::ty::Coroutine(id, _) => Some(id),
+                _ => None,
+            })
+            .filter(|id| !is_std(self.tcx, *id))
+            .collect()
     }
 
     fn local(&self, local: usize) -> r::Node {
@@ -294,6 +316,15 @@ impl<'tcx> BodyReader<'tcx> {
                         }
                     }
                 }
+                // An enum variant, such as `Some(x)`, holds its values in
+                // the place it builds; its fields are not followed one by one.
+                if adt.kind() != AdtKind::Struct {
+                    for operand in operands {
+                        if let Some((from, r::FlowKind::Copy)) = self.operand(operand) {
+                            self.flow(from, to.clone(), r::FlowKind::Copy, None, at.clone());
+                        }
+                    }
+                }
                 self.flow(r::Node::Type(adt_def), to, r::FlowKind::Construct, None, at);
             }
             AggregateKind::Closure(..)
@@ -370,21 +401,47 @@ impl<'tcx> BodyReader<'tcx> {
                     r::Node::Returned {
                         function: callee_def.clone(),
                     },
-                    to,
+                    to.clone(),
                     r::FlowKind::Return,
                     Some(call_site.clone()),
                     Some(at.clone()),
                 );
+                // The standard library's bodies are not read: assume each
+                // argument may come back in its result.
+                if is_std(self.tcx, callee) {
+                    let result = self.mentions_place(destination);
+                    for arg in args {
+                        // Only when the result's type could hold what the
+                        // argument holds: they name a type or trait in common.
+                        let shared = arg
+                            .ty(self.body.locals())
+                            .is_ok_and(|ty| !self.mentions(ty).is_disjoint(&result));
+                        if !shared {
+                            continue;
+                        }
+                        if let Some((from, r::FlowKind::Copy)) = self.operand(arg) {
+                            self.flow(
+                                from,
+                                to.clone(),
+                                r::FlowKind::Through,
+                                None,
+                                Some(at.clone()),
+                            );
+                        }
+                    }
+                }
                 // Only a method's first argument is its receiver; a trait
                 // function without `self`, such as `T::build(n)`, has none.
                 if dispatch == r::Dispatch::Contract
                     && self.tcx.associated_item(callee).is_method()
+                    && let Some(contract_trait) = self.tcx.trait_of_assoc(callee)
                     && let Some(Operand::Copy(place) | Operand::Move(place)) = args.first()
                 {
                     let receiver = self.node(place);
                     self.records.push(r::Record::Receiver(r::ReceiverRecord {
                         owner: self.owner.clone(),
                         contract: callee_def,
+                        contract_trait: def(self.tcx, contract_trait),
                         receiver,
                         span: at.clone(),
                     }));
@@ -429,6 +486,11 @@ impl<'tcx> BodyReader<'tcx> {
             _ => (None, r::Dispatch::Indirect),
         }
     }
+}
+
+/// Whether `id` is defined in the standard library's own crates.
+fn is_std(tcx: TyCtxt<'_>, id: rustc_span::def_id::DefId) -> bool {
+    matches!(tcx.crate_name(id.krate).as_str(), "core" | "alloc" | "std")
 }
 
 /// The type a reference, raw pointer or box points to.

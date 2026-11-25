@@ -300,3 +300,34 @@ fn an_implementation_passed_into_an_async_fn_is_traced_through_its_coroutine() {
     assert!(kinds.contains(&&FactKind::Pass), "{kinds:?}");
     assert!(kinds.contains(&&FactKind::Capture), "{kinds:?}");
 }
+
+#[test]
+fn a_value_passed_through_the_standard_library_is_followed_as_a_possible_route() {
+    let graph = graph();
+    let call = find(
+        &item("consumer/lib:consumer::write_some"),
+        &FactKind::Call(Dispatch::Contract),
+        &item("supplier/lib:supplier::Backups::write"),
+    );
+    assert_eq!(call.len(), 1);
+    let call_id = graph
+        .facts
+        .iter()
+        .find(|(_, f)| *f == call[0])
+        .map(|(id, _)| id.clone())
+        .unwrap();
+    let reached: Vec<_> = graph
+        .routes
+        .values()
+        .filter(|r| r.use_site.as_ref() == Some(&call_id))
+        .filter(|r| r.origin == item("supplier/lib:supplier::OsBackups"))
+        .collect();
+    assert_eq!(reached.len(), 1, "{reached:#?}");
+    assert_eq!(reached[0].end, project_graph::RouteEnd::ReachedUse);
+    let last = reached[0].hops.last().unwrap();
+    assert!(
+        matches!(last.support, project_graph::Support::Possible { .. }),
+        "Option::unwrap is assumed, not read: {:?}",
+        last.support
+    );
+}

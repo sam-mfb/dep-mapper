@@ -38,3 +38,9 @@ const _: () = {
 pub async fn write_later(backups: Box<dyn Backups>) -> u32 {
     backups.write()
 }
+
+/// Receives the supplier wrapped in an `Option`, and takes it out through
+/// the standard library.
+pub fn write_some(backups: Option<Box<dyn Backups>>) -> u32 {
+    backups.unwrap().write()
+}
