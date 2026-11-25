@@ -1,0 +1,10 @@
+{
+  "name": "@sample/app",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@sample/backup-api": "*",
+    "@sample/backup-os": "*",
+    "@sample/installer": "*",
+    "clock": "1.0.0"
+  }
+}
