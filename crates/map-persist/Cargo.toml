@@ -1,0 +1,16 @@
+[package]
+name = "map-persist"
+description = "Saves and loads project maps and drafts as TOML text"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+project-map.workspace = true
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.2.3"
+
+[dev-dependencies]
+project-map = { workspace = true, features = ["example"] }
