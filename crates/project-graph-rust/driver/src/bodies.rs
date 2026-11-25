@@ -110,6 +110,20 @@ impl<'tcx> BodyReader<'tcx> {
                             closure: self.def(closure.def_id()),
                             index: *index as u32,
                         }),
+                        // An async block or `async fn` body holds what it
+                        // captured as fields of its coroutine.
+                        TyKind::RigidTy(RigidTy::Coroutine(coroutine, _)) => {
+                            Some(r::Node::Capture {
+                                closure: self.def(coroutine.def_id()),
+                                index: *index as u32,
+                            })
+                        }
+                        TyKind::RigidTy(RigidTy::CoroutineClosure(closure, _)) => {
+                            Some(r::Node::Capture {
+                                closure: self.def(closure.def_id()),
+                                index: *index as u32,
+                            })
+                        }
                         _ => None,
                     };
                     ty = *field_ty;
@@ -282,8 +296,15 @@ impl<'tcx> BodyReader<'tcx> {
                 }
                 self.flow(r::Node::Type(adt_def), to, r::FlowKind::Construct, None, at);
             }
-            AggregateKind::Closure(closure, _) => {
-                let closure_def = self.def(closure.def_id());
+            AggregateKind::Closure(..)
+            | AggregateKind::Coroutine(..)
+            | AggregateKind::CoroutineClosure(..) => {
+                let closure_def = match kind {
+                    AggregateKind::Closure(closure, _) => self.def(closure.def_id()),
+                    AggregateKind::Coroutine(coroutine, _) => self.def(coroutine.def_id()),
+                    AggregateKind::CoroutineClosure(closure, _) => self.def(closure.def_id()),
+                    _ => unreachable!("matched above"),
+                };
                 for (index, operand) in operands.iter().enumerate() {
                     if let Some((from, kind)) = self.operand(operand) {
                         let capture = r::Node::Capture {
