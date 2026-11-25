@@ -1,7 +1,7 @@
 //! A realistic `ProjectMap`, taken from sharsheret's proposed architecture,
 //! for tests and previews. It is a fixture: the project's architecture map
-//! is the draft `docs/architecture/sharsheret.toml`, which `srs draft
-//! preview` shows.
+//! is `docs/architecture/sharsheret-map.toml`, produced by `srs map`, with
+//! planned changes in the draft `docs/architecture/sharsheret.toml`.
 //! No source was analyzed, so evidence entries describe the proposal and
 //! carry no source locations. Every part is marked observed except one
 //! proposed route, `PROPOSED_ROUTE`, until the map becomes a draft file.
