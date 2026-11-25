@@ -29,7 +29,7 @@ The module boundaries, dependency arrangements and review workflow for sharshere
 | Level | Packages |
 | --- | --- |
 | Program | `mapper` |
-| Map | `project-map`, `map-builder`, `map-web`, `map-persist` |
+| Map | `project-map`, `map-builder`, `map-web`, `map-persist`, `map-draft`, `map-preview` |
 | Evaluation | `graph-evaluator`, `graph-evaluator-pieces`, `graph-evaluator-llm`, `graph-evaluator-manual` |
 | Evidence | `project-graph`, `project-graph-rust`, `project-graph-typescript` |
 
@@ -56,5 +56,17 @@ Analysis is not split into a language reader and a shared grapher. If some route
 `mapper` passes the resulting `ProjectGraph` to the selected `graph-evaluator`. The manual implementation writes the graph into a workbook of pieces and hands it, through an injected runner, to an agent harness such as Claude Code or to a person. They read the pieces and record answers with `srs eval` commands, which check each answer and its citations as it is recorded. The evaluator checks every answer again before it returns the evaluation. The LLM implementation calls the Claude API itself, one piece of the graph at a time. It reaches the model through its own `ModelClient` contract and sends HTTP through an injected `HttpTransport`, so the provider and the HTTP library stay behind contracts this project defines. Both return a `GraphEvaluation` through the same contract. Both cut the graph into the same pieces, cite evidence by the same written handles, and check answers by the same rules, all from `graph-evaluator-pieces`.
 
 `mapper` retains the original graph and calls `map-builder` with both values. The transformation `ProjectGraph + GraphEvaluation → ProjectMap` is pure. `mapper` sends the returned map to `map-persist` for storage and `map-web` for display. A saved map can be reopened without rerunning analysis or evaluation.
+
+## Drafts: planning with the map
+
+A map can also describe a plan. Each module, dependency and route in a `ProjectMap` has a status. It is observed in code, or it is a proposed addition, update or removal. An update keeps the review found in code and carries the proposed review beside it. A part in code cannot rest on an addition or cite a proposal note. A proposal can rest on parts in code, but not on one proposed for removal. `ProjectMap::problems` checks these rules.
+
+A draft is a file of proposals. It is laid over a saved base map, or it stands alone as a map made only of proposals. It lists new parts, partial updates of base parts and base parts to remove. An update gives only the fields it changes; the rest come from the base. Removing a module also removes the dependencies and routes in code that touch it. When analysis runs again and the base map is saved again, the draft still applies to it. `map-persist` reads and writes drafts and saved maps in one versioned TOML format. `map-draft` lays a draft over its base and reports what does not fit. Drafts are edited only as files; there is no editing in the browser.
+
+`map-web` draws proposals distinctly and offers three views. Current shows what is in code. Planned shows the code after the proposals. Changes shows both, with every proposal marked. The page keeps the selected module, route and view in its address.
+
+`srs draft check` reports a draft's problems with file, line and column. `srs draft render` writes its page. `srs draft preview` serves the page through `map-preview` and reloads the browser when the draft or its base changes. A draft with problems leaves the last good page shown, with the problems listed above it.
+
+sharsheret's own architecture map is the draft `docs/architecture/sharsheret.toml`, made only of proposals. Edit it when the architecture changes, and check it with `srs draft check`. The Rust map in `project_map::example` is a fixture for tests.
 
 On the architecture map, a solid gray “used by” arrow covers use of a type, value or operation. The dashed wiring arrow shows where `mapper` binds the selected implementation. “Supplies input to” identifies the caller and recipient.
