@@ -60,11 +60,11 @@ jobs:
       - name: Cache the build
         uses: Swatinem/rust-cache@v2
 
-      # project-graph-typescript is not on main yet. When it lands, its
-      # tests drive the TypeScript collector through Node, so install
-      # Node and the collector's pinned dependencies first.
+      # The TypeScript grapher's tests drive its collector through
+      # Node, so install Node and the collector's pinned dependencies
+      # first. The pinned toolchain already carries rustc-dev and
+      # llvm-tools for the Rust grapher's driver (rust-toolchain.toml).
       - name: Install Node for the TypeScript grapher
-        if: hashFiles('crates/project-graph-typescript/collector/package.json') != ''
         uses: actions/setup-node@v5
         with:
           node-version: "22"
@@ -72,16 +72,43 @@ jobs:
           cache-dependency-path: crates/project-graph-typescript/collector/package-lock.json
 
       - name: Install the TypeScript collector dependencies
-        if: hashFiles('crates/project-graph-typescript/collector/package.json') != ''
         working-directory: crates/project-graph-typescript/collector
         run: npm ci
 
-      # project-graph-rust is not on main yet. When it lands, its tests
-      # build a rustc driver, which needs the rustc-dev component of
-      # the pinned toolchain.
-      - name: Install rustc-dev for the Rust grapher
-        if: hashFiles('crates/project-graph-rust/Cargo.toml') != ''
-        run: rustup component add rustc-dev
+      # The Rust tests only exercise the collector paths the sample
+      # hits, so type-check the collector itself as well.
+      - name: Type-check the TypeScript collector
+        working-directory: crates/project-graph-typescript/collector
+        run: npx tsc -p .
 
       - name: Run all workspace tests
         run: cargo test --workspace --locked
+
+  driver:
+    name: Rust grapher driver
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      # The driver links the compiler, so it is its own workspace
+      # outside the main one and is checked separately. It builds
+      # with the pinned toolchain, whose rustc-dev component
+      # rust-toolchain.toml already lists.
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+
+      - name: Cache the build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/project-graph-rust/driver
+
+      - name: Check formatting
+        working-directory: crates/project-graph-rust/driver
+        run: cargo fmt --check
+
+      - name: Lint with warnings denied
+        working-directory: crates/project-graph-rust/driver
+        env:
+          RUSTC_BOOTSTRAP: "1"
+        run: cargo clippy --all-targets --locked -- -D warnings

@@ -13,6 +13,9 @@ dependencies = [
 [[package]]
 name = "clock"
 version = "0.1.0"
+dependencies = [
+ "tick",
+]
 
 [[package]]
 name = "consumer"
@@ -24,4 +27,8 @@ dependencies = [
 
 [[package]]
 name = "supplier"
+version = "0.1.0"
+
+[[package]]
+name = "tick"
 version = "0.1.0"
