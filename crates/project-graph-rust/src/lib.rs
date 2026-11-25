@@ -7,8 +7,12 @@
 //! module to another or into a third-party crate. The standard library is
 //! left out.
 //!
-//! Every fact is also a route of one hop, from the thing used to its user.
-//! Multi-hop routes need value-move facts, which come later.
+//! Every such fact is also a route of one hop, from the thing used to its
+//! user. A call through a trait object or generic receiver also gets traced
+//! routes: the driver records value moves in each body (constructions,
+//! conversions to trait objects, stores and reads of struct fields,
+//! arguments and returned values), and the `value-routes` tracer follows the
+//! receiver back to the types supplied for it.
 //!
 //! The driver links the compiler, so it only works with the toolchain named
 //! by [`PINNED_TOOLCHAIN`], and the analyzed project must build with it.

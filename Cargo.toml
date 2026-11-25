@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/project-graph", "crates/graph-evaluator", "crates/project-map", "crates/map-web", "crates/project-graph-rust", "crates/project-graph-rust/records"]
+members = ["crates/project-graph", "crates/graph-evaluator", "crates/project-map", "crates/map-web", "crates/project-graph-rust", "crates/project-graph-rust/records", "crates/value-routes"]
 exclude = ["crates/project-graph-rust/driver", "crates/project-graph-rust/tests/fixture"]
 resolver = "3"
 

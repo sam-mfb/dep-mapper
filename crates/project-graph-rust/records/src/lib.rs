@@ -24,6 +24,8 @@ pub enum Record {
     Reference(ReferenceRecord),
     Impl(ImplRecord),
     Call(CallRecord),
+    Flow(FlowRecord),
+    Receiver(ReceiverRecord),
     /// A body or item the driver could not describe.
     Gap(GapRecord),
 }
@@ -147,6 +149,68 @@ pub struct CallRecord {
     /// selected. Absent for indirect calls.
     pub callee: Option<Def>,
     pub dispatch: Dispatch,
+    pub span: Span,
+}
+
+/// Where a value is held, as the compiler sees it in a function body.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(tag = "node", rename_all = "kebab-case")]
+pub enum Node {
+    /// A local variable or temporary of `function`.
+    Local {
+        function: Def,
+        local: u32,
+        name: Option<String>,
+    },
+    /// The argument at `index`, from zero, of `function`.
+    Param { function: Def, index: u32 },
+    /// The value `function` returns.
+    Returned { function: Def },
+    /// A named field of a struct, standing for that field in every instance.
+    Field { owner: Def, field: String },
+    /// A value a closure captured, standing for every instance of the closure.
+    Capture { closure: Def, index: u32 },
+    /// A type whose value is created or converted here.
+    Type(Def),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FlowKind {
+    /// A copy, move or borrow between places in one body.
+    Copy,
+    /// A value of the type is created, such as a struct literal.
+    Construct,
+    /// A value of the type becomes a trait object.
+    Coerce,
+    Store,
+    Read,
+    /// An argument to a call.
+    Pass,
+    /// The value a call returns, at the call.
+    Return,
+    Capture,
+}
+
+/// One move of a value in a function body.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FlowRecord {
+    pub from: Node,
+    pub to: Node,
+    pub kind: FlowKind,
+    /// For `Pass` and `Return`, an identity of the call, unique in the build.
+    pub call_site: Option<String>,
+    pub span: Option<Span>,
+}
+
+/// A call through a trait whose receiver the compiler did not resolve: the
+/// receiver to explain.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReceiverRecord {
+    pub owner: Def,
+    /// The trait method, as in the matching `CallRecord`.
+    pub contract: Def,
+    pub receiver: Node,
     pub span: Span,
 }
 

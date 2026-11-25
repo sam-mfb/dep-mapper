@@ -10,5 +10,6 @@ publish = false
 [dependencies]
 project-graph.workspace = true
 project-graph-rust-records = { path = "records" }
+value-routes = { path = "../value-routes" }
 serde_json = "1.0.154"
 thiserror.workspace = true

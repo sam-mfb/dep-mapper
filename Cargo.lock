@@ -55,6 +55,7 @@ dependencies = [
  "project-graph-rust-records",
  "serde_json",
  "thiserror",
+ "value-routes",
 ]
 
 [[package]]
@@ -157,6 +158,13 @@ name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
+
+[[package]]
+name = "value-routes"
+version = "0.1.0"
+dependencies = [
+ "project-graph",
+]
 
 [[package]]
 name = "zmij"

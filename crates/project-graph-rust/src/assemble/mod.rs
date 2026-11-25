@@ -8,8 +8,11 @@
 //!   toolchain's own crates, such as `std`, are left out.
 //! - A fact is kept when its object lies in another module or outside the
 //!   project. Identical facts are kept once.
-//! - Each fact is a route of one hop: from the thing used (the fact's object)
-//!   to its user (the fact's subject).
+//! - Each such fact is a route of one hop: from the thing used (the fact's
+//!   object) to its user (the fact's subject).
+//! - Calls left at a trait get traced routes as well: see `routes`.
+
+mod routes;
 
 use crate::metadata::Workspace;
 use project_graph::{
@@ -89,24 +92,67 @@ pub fn graph(workspace: &Workspace, crates: &[Vec<r::Record>], snapshot: Snapsho
             }
         }
     }
-    for (index, ordered) in facts.into_iter().enumerate() {
-        let id = FactId(format!("fact:{index}"));
-        let fact = ordered.0;
+    let traced = routes::traced(&resolve, &units, crates);
+    let mut all: BTreeSet<Ordered> = facts.iter().map(|f| Ordered(f.0.clone())).collect();
+    for route in &traced {
+        all.insert(Ordered(route.call.clone()));
+        all.extend(route.hops.iter().map(|(fact, _)| Ordered(fact.clone())));
+    }
+    let ids: BTreeMap<_, _> = all
+        .iter()
+        .enumerate()
+        .map(|(index, fact)| (key(&fact.0), FactId(format!("fact:{index}"))))
+        .collect();
+    let id = |fact: &Fact| ids[&key(fact)].clone();
+    for (index, Ordered(fact)) in facts.iter().enumerate() {
         graph.routes.insert(
             RouteId(format!("route:{index}")),
             Route {
-                use_site: Some(id.clone()),
+                use_site: Some(id(fact)),
                 origin: fact.object.clone(),
                 hops: vec![Hop {
                     to: fact.subject.clone(),
-                    fact: id.clone(),
+                    fact: id(fact),
                     support: Support::Established,
                 }],
                 end: RouteEnd::ReachedUse,
             },
         );
-        graph.facts.insert(id, fact);
     }
+    for (index, route) in traced.iter().enumerate() {
+        let use_site = id(&route.call);
+        graph.routes.insert(
+            RouteId(format!("route:traced:{index}")),
+            Route {
+                use_site: Some(use_site.clone()),
+                origin: route.origin.clone(),
+                hops: route
+                    .hops
+                    .iter()
+                    .map(|(fact, possible)| Hop {
+                        to: fact.object.clone(),
+                        fact: id(fact),
+                        support: if *possible {
+                            Support::Possible { condition: None }
+                        } else {
+                            Support::Established
+                        },
+                    })
+                    .collect(),
+                end: match &route.stopped {
+                    None => RouteEnd::ReachedUse,
+                    Some(reason) => RouteEnd::Stopped {
+                        at: use_site,
+                        reason: reason.clone(),
+                    },
+                },
+            },
+        );
+    }
+    graph.facts = all
+        .into_iter()
+        .map(|Ordered(fact)| (id(&fact), fact))
+        .collect();
     graph
 }
 
@@ -349,7 +395,11 @@ fn fact(resolve: &Resolver, unit: &Unit, record: &r::Record) -> Option<Ordered> 
             },
             &call.span,
         ),
-        r::Record::Unit(_) | r::Record::Item(_) | r::Record::Gap(_) => return None,
+        r::Record::Unit(_)
+        | r::Record::Item(_)
+        | r::Record::Gap(_)
+        | r::Record::Flow(_)
+        | r::Record::Receiver(_) => return None,
     };
     let ((subject, subject_module), (object, object_module)) = (subject, object);
     // Uses inside one module are that module's own business.

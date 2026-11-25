@@ -157,3 +157,50 @@ fn an_implementation_in_the_same_package_as_its_trait_is_not_a_fact() {
             .any(|f| f.kind == FactKind::Implements)
     );
 }
+
+#[test]
+fn the_implementation_behind_a_trait_object_call_is_traced_back_to_where_it_was_supplied() {
+    let graph = graph();
+    let call = find(
+        &item("consumer/lib:consumer::consume"),
+        &FactKind::Call(Dispatch::Contract),
+        &item("supplier/lib:supplier::Backups::write"),
+    )[0];
+    let call_id = graph
+        .facts
+        .iter()
+        .find(|(_, f)| *f == call)
+        .map(|(id, _)| id.clone())
+        .unwrap();
+    let routes: Vec<_> = graph
+        .routes
+        .values()
+        .filter(|r| r.use_site.as_ref() == Some(&call_id) && r.hops.len() > 1)
+        .collect();
+    assert_eq!(routes.len(), 1, "{routes:#?}");
+    let route = routes[0];
+    assert_eq!(route.origin, item("supplier/lib:supplier::OsBackups"));
+    assert_eq!(route.end, project_graph::RouteEnd::ReachedUse);
+    let kinds: Vec<_> = route
+        .hops
+        .iter()
+        .map(|h| &graph.facts[&h.fact].kind)
+        .collect();
+    assert_eq!(
+        kinds,
+        [&FactKind::Coerce, &FactKind::Store, &FactKind::Read]
+    );
+    let coerce = &graph.facts[&route.hops[0].fact];
+    assert_eq!(text(coerce), "Box::new(OsBackups)");
+    assert_eq!(
+        route.hops[1].to,
+        Endpoint::Place {
+            owner: ItemId("consumer/lib:consumer::Parts".into()),
+            projection: "backups".into(),
+        }
+    );
+    assert!(matches!(
+        route.hops[1].support,
+        project_graph::Support::Possible { .. }
+    ));
+}
