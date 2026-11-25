@@ -963,7 +963,7 @@
       r.hops.map((h) => el("li", {},
         el("strong", {}, h.to.label),
         h.role ? el("span", { class: "muted" }, ` · ${ROLE_NAMES[h.role] || h.role}`) : null,
-        h.established ? null : el("span", { class: "badge possible" }, h.condition ? `possible: ${h.condition}` : "possible"),
+        h.support === "established" ? null : el("span", { class: `badge ${h.support}` }, h.condition ? `${h.support}: ${h.condition}` : h.support),
         el("ul", { class: "evidence" }, evidenceEntry(h.evidence, null)))),
       r.end.reached ? null : el("li", { class: "stopped" }, el("strong", {}, "Stopped. "), r.end.reason,
         el("ul", { class: "evidence" }, evidenceEntry(r.end.at, null))));
@@ -988,10 +988,12 @@
       panel.replaceChildren(...[highlighted,el("h2",{},graph.meta.project),
         el("p",{class:"muted"},`${plural(graph.crates.length,"module")}, ${graph.edges.length} ${graph.edges.length===1?"dependency":"dependencies"} and ${plural(graph.routes.length,"route")}.`),
         el("ul",{class:"overview"},
-          el("li",{},el("strong",{},"Source revision. "),el("span",{class:"mono"},graph.meta.revision)),
-          el("li",{},el("strong",{},"Target. "),graph.meta.target),
-          el("li",{},el("strong",{},"Configuration. "),graph.meta.configuration),
-          el("li",{},el("strong",{},"Graph. "),el("span",{class:"mono"},graph.meta.graph_id))),
+          graph.meta.source?[
+            el("li",{},el("strong",{},"Source revision. "),el("span",{class:"mono"},graph.meta.source.revision)),
+            el("li",{},el("strong",{},"Target. "),graph.meta.source.target),
+            el("li",{},el("strong",{},"Configuration. "),graph.meta.source.configuration),
+            el("li",{},el("strong",{},"Graph. "),el("span",{class:"mono"},graph.meta.source.graph_id))]
+          :el("li",{},"Draft: no source analyzed.")),
         open.length?el("p",{},"Awaiting review: ",open.map(([s,k],i)=>[i?", ":"",`${k} ${REVIEW_WORDS[s].toLowerCase()}`]),"."):null,
         el("ul",{class:"overview"},concerns.layers.map(l=>el("li",{},el("strong",{},l.title+". "),
           plural(graph.crates.filter(c=>c.layer===l.id).length,"module")))),
@@ -1100,7 +1102,8 @@
 
   document.title = `${graph.meta.project} module map`;
   $("map-title").textContent = document.title;
-  $("meta").textContent = [graph.meta.revision, graph.meta.target, graph.meta.configuration].join(" · ");
+  const source = graph.meta.source;
+  $("meta").textContent = source ? [source.revision, source.target, source.configuration].join(" · ") : "Draft: no source analyzed";
 
   $("search").addEventListener("input", (ev) => {
     state.query = ev.target.value.trim().toLowerCase();

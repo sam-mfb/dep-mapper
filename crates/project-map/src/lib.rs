@@ -2,22 +2,27 @@
 //! follow a particular route and read its evidence using this contract alone.
 //! The builder resolves graph and evaluation references into this view.
 //! Layout, file encoding and the rules for matching judgments belong to consumers.
+//!
+//! A map can also hold proposals. Each module, dependency and route has a
+//! `Status`: observed in code, or a proposed addition, update or removal.
+//! A map made only of proposals has no `source`.
+//! `ProjectMap::problems` checks that the parts of a map fit together.
 
 mod layers;
+mod problems;
 mod route;
 
 pub use layers::{DuplicateLayer, Layers};
+pub use problems::{MapPart, MapProblem};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProjectMap {
-    /// Identifies the graph snapshot from which all subjects and citations came.
-    pub graph_id: GraphId,
     /// The project's name, for people to read.
     pub project: String,
-    pub source_revision: SourceRevision,
-    pub target: String,
-    pub configuration: String,
+    /// The analyzed build the observed parts came from. `None` when the map
+    /// holds only proposals.
+    pub source: Option<MapSource>,
     pub layers: Layers,
     /// Keys retain the identity of modules and routes in the source snapshot.
     pub modules: BTreeMap<ModuleId, MapModule>,
@@ -28,8 +33,52 @@ pub struct ProjectMap {
     pub coverage_gaps: Vec<MapEvidence>,
 }
 
+/// The analyzed build behind a map's observed parts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MapSource {
+    /// Identifies the graph snapshot from which the observed subjects and
+    /// source citations came.
+    pub graph_id: GraphId,
+    pub source_revision: SourceRevision,
+    pub target: String,
+    pub configuration: String,
+}
+
+/// Whether a part of the map exists in code, and what is proposed for it.
+/// `D` is the part's description: `ModuleDescription` for a module,
+/// `RouteDescription` for a dependency or route. For a part in code, the
+/// part's own `description` is the review of the part as it is in code.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Status<D> {
+    Observed,
+    /// Not in code: proposed as a new part. Its `description` is proposed too.
+    ProposedAddition,
+    /// In code, with `proposed` as its new review.
+    ProposedUpdate {
+        proposed: Review<D>,
+    },
+    /// In code and proposed for removal.
+    ProposedRemoval,
+}
+
+impl<D> Status<D> {
+    /// Whether the part exists in code: every status but an addition.
+    pub fn in_code(&self) -> bool {
+        !self.is_addition()
+    }
+
+    pub fn is_addition(&self) -> bool {
+        matches!(self, Status::ProposedAddition)
+    }
+
+    pub fn is_removal(&self) -> bool {
+        matches!(self, Status::ProposedRemoval)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MapModule {
+    pub status: Status<ModuleDescription>,
     pub name: String,
     pub surface: Vec<SurfaceItem>,
     pub description: Review<ModuleDescription>,
@@ -55,6 +104,7 @@ pub struct ModuleDescription {
 /// Its modules are given by its key in `ProjectMap::dependencies`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MapDependency {
+    pub status: Status<RouteDescription>,
     /// Facts behind the dependency, such as imports, references and calls.
     pub evidence: Vec<CitationId>,
     /// The architectural uses assigned to the dependency as a whole.
@@ -63,6 +113,8 @@ pub struct MapDependency {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MapRoute {
+    /// A proposed addition has only proposed hops; a route in code has none.
+    pub status: Status<RouteDescription>,
     /// Identifies the same use across alternate or incomplete routes.
     pub use_site: Option<CitationId>,
     pub origin: RoutePoint,
@@ -165,7 +217,11 @@ pub enum HopLink {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HopSupport {
     Established,
-    Possible { condition: Option<String> },
+    Possible {
+        condition: Option<String>,
+    },
+    /// Part of a proposed route; nothing in code supports it yet.
+    Proposed,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -232,10 +288,20 @@ pub struct CitationId(pub String);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MapEvidence {
+    pub kind: EvidenceKind,
     pub build_unit: Option<UnitId>,
     pub summary: String,
     /// Build facts and missing coverage may have no source text.
     pub location: Option<Location>,
+}
+
+/// Where a piece of evidence comes from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EvidenceKind {
+    /// Found by analyzing the source.
+    Source,
+    /// An author's reasoning for a proposal. Only proposed parts may cite it.
+    Proposal,
 }
 
 /// A project-relative source span in the map's source revision.

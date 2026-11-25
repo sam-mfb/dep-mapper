@@ -4,6 +4,7 @@ use project_map::*;
 
 fn module(review: Review<ModuleDescription>) -> MapModule {
     MapModule {
+        status: Status::Observed,
         name: "ignored".into(),
         surface: vec![],
         description: review,
@@ -29,11 +30,13 @@ fn judged_module(kind: ModuleKind, layer: &str) -> MapModule {
 fn mixed_map() -> ProjectMap {
     let fact = CitationId("fact".into());
     ProjectMap {
-        graph_id: GraphId("g".into()),
         project: "p".into(),
-        source_revision: SourceRevision("r".into()),
-        target: "t".into(),
-        configuration: "c".into(),
+        source: Some(MapSource {
+            graph_id: GraphId("g".into()),
+            source_revision: SourceRevision("r".into()),
+            target: "t".into(),
+            configuration: "c".into(),
+        }),
         layers: Layers::new(vec![LayerName("Core".into())]).unwrap(),
         modules: BTreeMap::from([
             (
@@ -53,6 +56,7 @@ fn mixed_map() -> ProjectMap {
                     to: ModuleId("core".into()),
                 },
                 MapDependency {
+                    status: Status::Observed,
                     evidence: vec![fact.clone()],
                     description: Review::Unreviewed,
                 },
@@ -63,6 +67,7 @@ fn mixed_map() -> ProjectMap {
                     to: ModuleId("core".into()),
                 },
                 MapDependency {
+                    status: Status::Observed,
                     evidence: vec![fact.clone()],
                     description: Review::Judged {
                         judgment: RouteDescription {
@@ -79,6 +84,7 @@ fn mixed_map() -> ProjectMap {
         routes: BTreeMap::from([(
             RouteId("open".into()),
             MapRoute {
+                status: Status::Observed,
                 use_site: None,
                 origin: RoutePoint::Project(ProjectPoint {
                     module: ModuleId("core".into()),
@@ -118,6 +124,7 @@ fn mixed_map() -> ProjectMap {
         evidence: BTreeMap::from([(
             fact,
             MapEvidence {
+                kind: EvidenceKind::Source,
                 build_unit: Some(UnitId("core/lib".into())),
                 summary: "core defines Store.".into(),
                 location: Some(Location {
@@ -180,6 +187,7 @@ fn route_through(modules: &[&str], description: Review<RouteDescription>) -> Map
         })
         .collect();
     MapRoute {
+        status: Status::Observed,
         use_site: Some(fact.clone()),
         origin: RoutePoint::Project(ProjectPoint {
             module: ModuleId("a".into()),
@@ -304,9 +312,9 @@ fn a_deferred_route_keeps_its_possible_hop_external_point_and_stop() {
     assert_eq!(route.first_role, "unreviewed");
     assert_eq!(route.hops[0].to.module, None);
     assert_eq!(route.hops[0].to.label, "tokio (external)");
-    assert!(!route.hops[0].established);
+    assert_eq!(route.hops[0].support, "possible");
     assert_eq!(route.hops[0].condition.as_deref(), Some("async build"));
-    assert!(route.hops[1].established);
+    assert_eq!(route.hops[1].support, "established");
     assert!(!route.end.reached);
     assert_eq!(route.end.at.as_deref(), Some("fact"));
     assert_eq!(route.end.reason.as_deref(), Some("Unknown receiver."));
@@ -324,4 +332,33 @@ fn evidence_keeps_its_build_unit_and_location() {
         (location.file.as_str(), location.start, location.end),
         ("src/lib.rs", 10, 20)
     );
+}
+
+#[test]
+fn a_proposed_hop_is_marked_proposed() {
+    let view = view(&sharsheret());
+    let route = view
+        .routes
+        .iter()
+        .find(|r| r.id == project_map::example::PROPOSED_ROUTE)
+        .unwrap();
+    assert!(route.hops.iter().all(|hop| hop.support == "proposed"));
+    assert!(route.hops.iter().all(|hop| hop.condition.is_none()));
+}
+
+#[test]
+fn the_source_build_is_kept_and_a_map_without_one_has_none() {
+    let mut map = mixed_map();
+    let source = view(&map).meta.source.expect("the fixture has a source");
+    assert_eq!(
+        [
+            source.graph_id,
+            source.revision,
+            source.target,
+            source.configuration
+        ],
+        ["g", "r", "t", "c"]
+    );
+    map.source = None;
+    assert!(view(&map).meta.source.is_none());
 }

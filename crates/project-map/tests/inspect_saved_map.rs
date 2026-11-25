@@ -29,6 +29,7 @@ fn follow_a_reviewed_handoff_to_source_and_distinguish_a_deferred_route() {
     );
     let used = CitationId("kkt:backup call".into());
     let route = MapRoute {
+        status: Status::Observed,
         origin: origin("kkt-backup-os", "OsBackups"),
         use_site: Some(used.clone()),
         hops: vec![
@@ -61,6 +62,7 @@ fn follow_a_reviewed_handoff_to_source_and_distinguish_a_deferred_route() {
         },
     };
     let another = MapRoute {
+        status: Status::Observed,
         origin: origin("kkt-backup-os", "OsBackups"),
         use_site: None,
         hops: vec![],
@@ -78,6 +80,7 @@ fn follow_a_reviewed_handoff_to_source_and_distinguish_a_deferred_route() {
             (
                 ModuleId(name.into()),
                 MapModule {
+                    status: Status::Observed,
                     name: name.into(),
                     surface: vec![],
                     description: Review::Unreviewed,
@@ -86,11 +89,13 @@ fn follow_a_reviewed_handoff_to_source_and_distinguish_a_deferred_route() {
         })
         .collect();
     let map = ProjectMap {
-        graph_id: GraphId("kkt-backup/linux:fixture".into()),
         project: "kashkeshet".into(),
-        source_revision: SourceRevision("41fbc289".into()),
-        target: "kkt".into(),
-        configuration: "default features".into(),
+        source: Some(MapSource {
+            graph_id: GraphId("kkt-backup/linux:fixture".into()),
+            source_revision: SourceRevision("41fbc289".into()),
+            target: "kkt".into(),
+            configuration: "default features".into(),
+        }),
         layers: Layers::empty(),
         modules,
         dependencies: BTreeMap::new(),
@@ -102,6 +107,7 @@ fn follow_a_reviewed_handoff_to_source_and_distinguish_a_deferred_route() {
             (
                 supply,
                 MapEvidence {
+                    kind: EvidenceKind::Source,
                     summary: "NativeParts supplies the BACKUPS static.".into(),
                     build_unit: Some(UnitId("kkt".into())),
                     location: Some(Location {
@@ -113,6 +119,7 @@ fn follow_a_reviewed_handoff_to_source_and_distinguish_a_deferred_route() {
             (
                 used.clone(),
                 MapEvidence {
+                    kind: EvidenceKind::Source,
                     summary: "local_backup calls write through parts.backups.".into(),
                     build_unit: Some(UnitId("kkt-install-commands/lib".into())),
                     location: Some(Location {

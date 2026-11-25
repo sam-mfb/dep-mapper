@@ -1,6 +1,6 @@
 # What sharsheret maps
 
-Sharsheret (shrsh) helps a developer answer “What does this package expose, who has a way to use it, and how does its work reach them?” Its overview is a map of packages. A reader can follow an individual arrow down to the project code that explains it.
+Sharsheret (srs) helps a developer answer “What does this package expose, who has a way to use it, and how does its work reach them?” Its overview is a map of packages. A reader can follow an individual arrow down to the project code that explains it.
 
 ## Agreed scope
 
