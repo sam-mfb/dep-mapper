@@ -29,6 +29,7 @@ fn dependency(from: &str, to: &str) -> Option<DependencyId> {
 /// supplier -> program -> receiver -> receiver -> tokio -> receiver
 fn route() -> MapRoute {
     MapRoute {
+        status: Status::Observed,
         use_site: None,
         origin: RoutePoint::Project(ProjectPoint {
             module: ModuleId("supplier".into()),
