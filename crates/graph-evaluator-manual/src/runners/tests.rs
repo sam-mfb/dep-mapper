@@ -57,7 +57,8 @@ fn waiting(
         Box::new(pauses),
         Duration::from_secs(5),
         Duration::from_secs(60),
-    );
+    )
+    .unwrap();
     (runner, count)
 }
 
@@ -142,4 +143,18 @@ fn claude_code_failures_are_run_errors() {
         missing.run(&task()).unwrap_err().message,
         "could not start claude: not found"
     );
+}
+
+#[test]
+fn a_zero_interval_is_refused_because_the_wait_would_never_end() {
+    // Regression: a zero interval never used up the limit, so waiting spun forever.
+    let scratch = Scratch::new();
+    let refused = WaitForSubmission::new(
+        Box::new(DirStore::new(&scratch.0)),
+        Box::new(Shared::default()),
+        Box::new(SystemPause),
+        Duration::ZERO,
+        Duration::from_secs(60),
+    );
+    assert_eq!(refused.err(), Some(ZeroInterval));
 }

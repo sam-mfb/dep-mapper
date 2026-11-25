@@ -40,6 +40,11 @@ pub struct WaitForSubmission {
     limit: Duration,
 }
 
+/// A zero interval would never use up the limit, so it is refused.
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+#[error("the interval between checks for a submission must be longer than zero")]
+pub struct ZeroInterval;
+
 impl WaitForSubmission {
     /// `store` must be the store the evaluator uses. The limit counts the
     /// intervals waited, so time spent checking is not included.
@@ -49,14 +54,17 @@ impl WaitForSubmission {
         pause: Box<dyn Pause>,
         interval: Duration,
         limit: Duration,
-    ) -> WaitForSubmission {
-        WaitForSubmission {
+    ) -> Result<WaitForSubmission, ZeroInterval> {
+        if interval.is_zero() {
+            return Err(ZeroInterval);
+        }
+        Ok(WaitForSubmission {
             store,
             out: RefCell::new(out),
             pause,
             interval,
             limit,
-        }
+        })
     }
 }
 
