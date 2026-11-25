@@ -419,3 +419,30 @@ fn a_cross_module_call_with_no_origin_found_stops_at_the_call() {
     assert!(reason.contains("no flow"));
     assert!(stopped[0].hops.is_empty());
 }
+
+#[test]
+fn shadowed_variables_with_one_name_stay_apart() {
+    let named = |local| r::Node::Local {
+        function: def("consumer", CONSUMER, "::consume"),
+        local,
+        name: Some("backups".into()),
+    };
+    let mut crates = crates();
+    crates[0].push(item("supplier", SUPPLIER, "::OsBackups", r::ItemKind::Type));
+    crates[1].extend([
+        flow(
+            r::Node::Type(def("supplier", SUPPLIER, "::OsBackups")),
+            named(2),
+            r::FlowKind::Coerce,
+        ),
+        // A second `let backups` whose value nobody supplies.
+        receiver(named(7), 80),
+    ]);
+    let graph = graph(&workspace(), &crates, snapshot());
+    let traced = traced_routes(&graph);
+    assert_eq!(traced.len(), 1);
+    assert!(
+        matches!(traced[0].end, RouteEnd::Stopped { .. }),
+        "{traced:#?}"
+    );
+}

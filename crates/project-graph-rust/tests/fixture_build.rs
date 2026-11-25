@@ -221,3 +221,21 @@ fn a_pub_use_other_crates_cannot_reach_is_an_import() {
         FactKind::Reexport { exported_name } if exported_name == "inner_helper"
     )));
 }
+
+#[test]
+fn a_trait_function_without_self_has_no_receiver_to_trace() {
+    let graph = graph();
+    let build = item("supplier/lib:supplier::Build::build");
+    let calls = find(
+        &item("consumer/lib:consumer::make"),
+        &FactKind::Call(Dispatch::Contract),
+        &build,
+    );
+    assert_eq!(calls.len(), 1, "the call itself is a fact");
+    let traced = graph.routes.values().filter(|r| {
+        r.use_site
+            .as_ref()
+            .is_some_and(|id| graph.facts[id].object == build && r.hops.len() != 1)
+    });
+    assert_eq!(traced.count(), 0, "its argument is not a receiver");
+}

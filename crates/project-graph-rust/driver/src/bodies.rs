@@ -354,7 +354,10 @@ impl<'tcx> BodyReader<'tcx> {
                     Some(call_site.clone()),
                     Some(at.clone()),
                 );
+                // Only a method's first argument is its receiver; a trait
+                // function without `self`, such as `T::build(n)`, has none.
                 if dispatch == r::Dispatch::Contract
+                    && self.tcx.associated_item(callee).is_method()
                     && let Some(Operand::Copy(place) | Operand::Move(place)) = args.first()
                 {
                     let receiver = self.node(place);
