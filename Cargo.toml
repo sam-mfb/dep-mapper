@@ -6,7 +6,7 @@ resolver = "3"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/sam-mfb/dep-mapper"
+repository = "https://github.com/sam-mfb/sharsheret"
 
 [workspace.dependencies]
 project-graph = { path = "crates/project-graph" }

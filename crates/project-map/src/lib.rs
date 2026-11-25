@@ -246,6 +246,6 @@ pub struct Location {
     pub bytes: std::ops::Range<usize>,
 }
 
-/// dep-mapper's own architecture as a sample map for consumers' previews and tests.
+/// sharsheret's own architecture as a sample map for consumers' previews and tests.
 #[cfg(any(test, feature = "example"))]
 pub mod example;

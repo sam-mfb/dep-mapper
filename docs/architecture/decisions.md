@@ -1,6 +1,6 @@
-# What dep-mapper maps
+# What sharsheret maps
 
-Dep-mapper helps a developer answer “What does this package expose, who has a way to use it, and how does its work reach them?” Its overview is a map of packages. A reader can follow an individual arrow down to the project code that explains it.
+Sharsheret (shrsh) helps a developer answer “What does this package expose, who has a way to use it, and how does its work reach them?” Its overview is a map of packages. A reader can follow an individual arrow down to the project code that explains it.
 
 ## Agreed scope
 
@@ -22,7 +22,7 @@ For example, kashkeshet calls the backup implementation itself and also passes i
 
 Keep source-supported handoffs, possible connections, and the place a trace stops distinguishable. A missing route can mean incomplete evidence. The reviewer’s confidence in a label cannot supply a missing handoff.
 
-The module boundaries, dependency arrangements and review workflow for dep-mapper itself are proposals for design review.
+The module boundaries, dependency arrangements and review workflow for sharsheret itself are proposals for design review.
 
 ## Map levels
 

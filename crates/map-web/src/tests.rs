@@ -1,5 +1,5 @@
 use super::*;
-use project_map::example::dep_mapper;
+use project_map::example::sharsheret;
 
 /// The map data embedded in a page, parsed back from the page text.
 fn embedded(page: &str) -> serde_json::Value {
@@ -13,15 +13,15 @@ fn embedded(page: &str) -> serde_json::Value {
 
 #[test]
 fn the_page_embeds_the_map_and_the_viewer_once() {
-    let page = page(&dep_mapper());
-    assert_eq!(embedded(&page)["meta"]["project"], "dep-mapper");
+    let page = page(&sharsheret());
+    assert_eq!(embedded(&page)["meta"]["project"], "sharsheret");
     assert_eq!(page.matches(SCRIPT).count(), 1);
     assert!(!page.contains(DATA_SLOT) && !page.contains(SCRIPT_SLOT));
 }
 
 #[test]
 fn markup_in_map_text_cannot_close_the_data_element() {
-    let mut map = dep_mapper();
+    let mut map = sharsheret();
     map.project = "</script><script>alert(1)</script> & co".into();
     let page = page(&map);
     assert!(!page.contains("<script>alert(1)"));
@@ -30,7 +30,7 @@ fn markup_in_map_text_cannot_close_the_data_element() {
 
 #[test]
 fn slot_names_in_map_text_are_kept_as_data() {
-    let mut map = dep_mapper();
+    let mut map = sharsheret();
     map.project = format!("{SCRIPT_SLOT} {DATA_SLOT}");
     let page = page(&map);
     assert_eq!(page.matches(SCRIPT).count(), 1);

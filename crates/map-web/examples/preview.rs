@@ -1,5 +1,5 @@
-//! Previews map-web with dep-mapper's own architecture, taken entirely from
-//! `project_map::example::dep_mapper`.
+//! Previews map-web with sharsheret's own architecture, taken entirely from
+//! `project_map::example::sharsheret`.
 //!
 //!     cargo run -p map-web --example preview -- --serve 127.0.0.1:8000
 //!     cargo run -p map-web --example preview -- --out /path/to/map.html
@@ -35,7 +35,7 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let page = map_web::page(&project_map::example::dep_mapper());
+    let page = map_web::page(&project_map::example::sharsheret());
     let result = match output {
         Output::File(path) => std::fs::write(&path, &page).map(|()| println!("Wrote {path}")),
         Output::Serve(address) => serve(&address, &page),
@@ -52,7 +52,7 @@ fn main() -> ExitCode {
 fn serve(address: &str, page: &str) -> std::io::Result<()> {
     let listener = TcpListener::bind(address)?;
     println!(
-        "Serving the dep-mapper example map at http://{}/",
+        "Serving the sharsheret example map at http://{}/",
         listener.local_addr()?
     );
     for stream in listener.incoming() {

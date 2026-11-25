@@ -1025,7 +1025,7 @@
   // viewer's choice is kept per section, in this browser only, and the
   // page works the same without it. `body` is built only when shown.
   const SECTION_OPEN_MAX = 5;
-  const SECTION_KEY = "dep-mapper-section:";
+  const SECTION_KEY = "sharsheret-section:";
   function sectionChoice(id) {
     try { return localStorage.getItem(SECTION_KEY + id); } catch (_) { return null; }
   }
