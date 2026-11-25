@@ -87,7 +87,7 @@ fn proposal_evidence(summary: String) -> MapEvidence {
 }
 
 /// The sharsheret module map. Every route reaches its use; the TypeScript
-/// reader's hops are possible only for a TypeScript project.
+/// grapher's hops are possible only for a TypeScript project.
 pub fn sharsheret() -> ProjectMap {
     let mut evidence = BTreeMap::new();
     let mut modules = BTreeMap::new();

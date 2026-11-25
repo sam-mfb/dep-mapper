@@ -31,13 +31,13 @@ The module boundaries, dependency arrangements and review workflow for sharshere
 | Program | `mapper` |
 | Map | `project-map`, `map-builder`, `map-web`, `map-persist` |
 | Evaluation | `graph-evaluator`, `graph-evaluator-llm`, `graph-evaluator-manual` |
-| Evidence | `project-graph`, `project-grapher`, `project-reader`, `project-reader-rust`, `project-reader-typescript` |
+| Evidence | `project-graph`, `project-graph-rust`, `project-graph-typescript` |
 
 ## Three core types
 
 | Step | Type | Defined by | Produced by |
 | --- | --- | --- | --- |
-| Analyze the project | `ProjectGraph` | `project-graph` | `project-grapher` builds the graph from the selected reader’s observations. Routes group the facts; a direct use is a route of one hop. Each route retains its supporting evidence and gaps. |
+| Analyze the project | `ProjectGraph` | `project-graph` | The selected language implementation of `ProjectGrapher` builds the graph for the selected build and traces its routes. Routes group the facts; a direct use is a route of one hop. Each route retains its supporting evidence and gaps. |
 | Evaluate the graph | `GraphEvaluation` | `graph-evaluator` | The selected evaluator obtains human or LLM judgments about the modules in the supplied graph, and relationships that interpret the graph's evidence. Each judgment cites the evidence it rests on. A subject may remain undecided. |
 | Build the map | `ProjectMap` | `project-map` | `map-builder` combines the original `ProjectGraph` and its `GraphEvaluation`. It matches judgments to their subjects, preserves unreviewed routes and uncertain hops, and reports judgments whose subjects are missing. |
 
@@ -47,7 +47,9 @@ A `ProjectGraph` records receiver bounds separately from witnessed handoffs. A r
 
 ## Composition and effects
 
-`mapper` owns the composition. It supplies the chosen `project-reader` implementation to `project-grapher`. The language reader returns build-scoped `ProjectObservations` for analysis. `project-reader-rust` serves the initial investigation, and `project-reader-typescript` illustrates the same contract for another language.
+`mapper` owns the composition. It constructs the grapher for the project’s language and calls it through the `ProjectGrapher` contract in `project-graph` with the selected build. Each language crate builds the `ProjectGraph` end to end: it reads the source and traces its own routes. `project-graph-rust` serves the initial investigation, and `project-graph-typescript` illustrates the same contract for another language.
+
+Analysis is not split into a language reader and a shared grapher. If some route logic turns out to be the same across languages, it goes in a library the language crates call, not in a separate stage of the pipeline.
 
 `mapper` passes the resulting `ProjectGraph` to the selected `graph-evaluator`. The manual implementation presents evidence in the terminal and asks a human to decide. The LLM implementation submits the evidence to a model API. Both return a `GraphEvaluation` through the same contract.
 

@@ -43,6 +43,9 @@ dependencies = [
 [[package]]
 name = "project-graph"
 version = "0.1.0"
+dependencies = [
+ "thiserror",
+]
 
 [[package]]
 name = "project-map"
