@@ -6,13 +6,18 @@
 //! it with map-persist, and shows it: written as a page, served to a
 //! browser, or both.
 //!
-//! - [`run`] runs a command against injected implementations and outputs.
+//! `srs eval` runs the manual evaluator's answer commands on a workbook that
+//! `srs map --evaluator manual` wrote.
+//!
+//! - [`run`] runs `srs map` against injected implementations and outputs.
+//! - [`eval`] runs `srs eval`.
 //! - [`implementations`] names the graphers and evaluators a command can
 //!   select, and the contract for supplying them.
 //! - [`serve`] serves one page over HTTP.
 //! - [`cli`] turns command-line arguments into commands.
 
 pub mod cli;
+pub mod eval;
 pub mod implementations;
 pub mod run;
 pub mod serve;

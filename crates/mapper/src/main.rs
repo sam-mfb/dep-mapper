@@ -1,7 +1,9 @@
 //! The `srs` binary: parses the command line and runs the command with the
 //! installed implementations, the file system, the terminal and the network.
 
+use graph_evaluator_manual::commands::Outcome;
 use mapper::cli::{self, Command};
+use mapper::eval;
 use mapper::implementations::Installed;
 use mapper::run::{self, MapOutputs};
 use mapper::serve::PageServer;
@@ -48,14 +50,23 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let result = match command {
-        Command::Map(command) => run::map(&command, &Installed, &mut Terminal),
-    };
-    match result {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            eprintln!("srs: {error}");
-            ExitCode::FAILURE
-        }
+    match command {
+        Command::Map(command) => match run::map(&command, &Installed, &mut Terminal) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("srs: {error}");
+                ExitCode::FAILURE
+            }
+        },
+        // A refused answer is reported in the output; a usage or store
+        // failure is not an answer at all.
+        Command::Eval(command) => match eval::eval(&command, &mut std::io::stdout()) {
+            Ok(Outcome::Done) => ExitCode::SUCCESS,
+            Ok(Outcome::Refused) => ExitCode::FAILURE,
+            Err(error) => {
+                eprintln!("srs eval: {error}");
+                ExitCode::from(2)
+            }
+        },
     }
 }

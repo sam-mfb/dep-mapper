@@ -52,3 +52,76 @@ fn help_is_a_request() {
     assert!(outcome.requested);
     assert!(outcome.text.contains("map"));
 }
+
+fn map_args(extra: &[&str]) -> Vec<String> {
+    let base = [
+        "srs",
+        "map",
+        ".",
+        "--language",
+        "rust",
+        "--target",
+        "lib",
+        "--configuration",
+        "default features",
+        "--out",
+        "map.toml",
+    ];
+    base.iter()
+        .chain(extra)
+        .map(|arg| arg.to_string())
+        .collect()
+}
+
+#[test]
+fn the_manual_evaluator_takes_its_workbook() {
+    let Command::Map(command) =
+        parse(map_args(&["--evaluator", "manual", "--workbook", "wb"])).unwrap()
+    else {
+        panic!("a map command")
+    };
+    assert_eq!(
+        command.evaluator,
+        EvaluatorChoice::Manual {
+            workbook: "wb".into()
+        }
+    );
+}
+
+#[test]
+fn the_manual_evaluator_without_a_workbook_is_a_mistake() {
+    let outcome = parse(map_args(&["--evaluator", "manual"])).unwrap_err();
+    assert!(!outcome.requested);
+    assert!(outcome.text.contains("--workbook"));
+}
+
+#[test]
+fn a_workbook_for_another_evaluator_is_a_mistake() {
+    let outcome = parse(map_args(&["--evaluator", "llm", "--workbook", "wb"])).unwrap_err();
+    assert!(!outcome.requested);
+    assert!(outcome.text.contains("--workbook applies only"));
+}
+
+#[test]
+fn eval_passes_its_arguments_through_unchanged() {
+    let command = parse([
+        "srs",
+        "eval",
+        "--workbook",
+        "wb",
+        "judge",
+        "module:core",
+        "--kind",
+        "logic",
+    ])
+    .unwrap();
+    assert_eq!(
+        command,
+        Command::Eval(EvalCommand {
+            workbook: "wb".into(),
+            arguments: ["judge", "module:core", "--kind", "logic"]
+                .map(String::from)
+                .to_vec(),
+        })
+    );
+}

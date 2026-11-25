@@ -116,7 +116,7 @@ pub(super) fn modules() -> Vec<ModuleRow> {
                 "srs map",
                 ItemKind::Function,
                 Some(
-                    "srs map <root> --language <rust|typescript> --target <target> --configuration <settings> --evaluator <manual|llm> --out <file> [--page <file>] [--serve <address>]",
+                    "srs map <root> --language <rust|typescript> --target <target> --configuration <settings> --evaluator <manual|llm> [--workbook <dir>] --out <file> [--page <file>] [--serve <address>]",
                 ),
             )],
         },

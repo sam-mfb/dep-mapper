@@ -1,9 +1,11 @@
 //! The command line: `srs <command> ...`. Each subcommand parses into one of
 //! the program's own commands; the argument parser stays inside this module.
 
+use crate::eval::EvalCommand;
 use crate::implementations::{EvaluatorChoice, Language};
 use crate::run::MapCommand;
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::error::ErrorKind;
+use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use project_graph::BuildSelection;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -12,6 +14,7 @@ use std::path::PathBuf;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
     Map(MapCommand),
+    Eval(EvalCommand),
 }
 
 /// Why the arguments could not be parsed, or a request for help or the
@@ -30,12 +33,17 @@ where
     I: IntoIterator<Item = T>,
     T: Into<std::ffi::OsString> + Clone,
 {
-    let cli = Cli::try_parse_from(args).map_err(|error| ParseOutcome {
+    let outcome = |error: clap::Error| ParseOutcome {
         text: error.render().to_string(),
         requested: !error.use_stderr(),
-    })?;
+    };
+    let cli = Cli::try_parse_from(args).map_err(outcome)?;
     Ok(match cli.command {
-        CliCommand::Map(args) => Command::Map(args.into()),
+        CliCommand::Map(args) => Command::Map(args.into_command().map_err(outcome)?),
+        CliCommand::Eval(args) => Command::Eval(EvalCommand {
+            workbook: args.workbook,
+            arguments: args.arguments,
+        }),
     })
 }
 
@@ -51,6 +59,19 @@ struct Cli {
 enum CliCommand {
     /// Analyze a project build, evaluate it and show its map.
     Map(MapArgs),
+    /// Read a manual evaluation's workbook and record answers. Run
+    /// `srs eval --workbook <dir> help` for its commands.
+    Eval(EvalArgs),
+}
+
+#[derive(Args)]
+struct EvalArgs {
+    /// The workbook directory given to `srs map --workbook`.
+    #[arg(long)]
+    workbook: PathBuf,
+    /// The answer command and its arguments.
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    arguments: Vec<String>,
 }
 
 #[derive(Args)]
@@ -69,6 +90,10 @@ struct MapArgs {
     /// Who judges the graph.
     #[arg(long, value_enum)]
     evaluator: EvaluatorArg,
+    /// For the manual evaluator: the directory for the workbook and its
+    /// answers. Running again with the same directory resumes it.
+    #[arg(long)]
+    workbook: Option<PathBuf>,
     /// Save the map to this file, to reopen without analysis.
     #[arg(long)]
     out: PathBuf,
@@ -92,26 +117,39 @@ enum EvaluatorArg {
     Llm,
 }
 
-impl From<MapArgs> for MapCommand {
-    fn from(args: MapArgs) -> Self {
-        MapCommand {
+impl MapArgs {
+    fn into_command(self) -> Result<MapCommand, clap::Error> {
+        let evaluator = match (self.evaluator, self.workbook) {
+            (EvaluatorArg::Manual, Some(workbook)) => EvaluatorChoice::Manual { workbook },
+            (EvaluatorArg::Manual, None) => {
+                return Err(Cli::command().error(
+                    ErrorKind::MissingRequiredArgument,
+                    "--evaluator manual needs --workbook <dir>",
+                ));
+            }
+            (EvaluatorArg::Llm, None) => EvaluatorChoice::Llm,
+            (EvaluatorArg::Llm, Some(_)) => {
+                return Err(Cli::command().error(
+                    ErrorKind::ArgumentConflict,
+                    "--workbook applies only to --evaluator manual",
+                ));
+            }
+        };
+        Ok(MapCommand {
             selection: BuildSelection {
-                root: args.root,
-                target: args.target,
-                configuration: args.configuration,
+                root: self.root,
+                target: self.target,
+                configuration: self.configuration,
             },
-            language: match args.language {
+            language: match self.language {
                 LanguageArg::Rust => Language::Rust,
                 LanguageArg::Typescript => Language::TypeScript,
             },
-            evaluator: match args.evaluator {
-                EvaluatorArg::Manual => EvaluatorChoice::Manual,
-                EvaluatorArg::Llm => EvaluatorChoice::Llm,
-            },
-            out: args.out,
-            page: args.page,
-            serve: args.serve,
-        }
+            evaluator,
+            out: self.out,
+            page: self.page,
+            serve: self.serve,
+        })
     }
 }
 

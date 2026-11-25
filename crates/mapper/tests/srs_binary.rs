@@ -34,7 +34,7 @@ fn map_says_which_piece_is_missing() {
         "--configuration",
         "default",
         "--evaluator",
-        "manual",
+        "llm",
         "--out",
         "unused.toml",
     ]);
