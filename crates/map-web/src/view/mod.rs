@@ -19,11 +19,21 @@ pub struct View {
     pub layers: Vec<String>,
     pub crates: Vec<Crate>,
     pub edges: Vec<Edge>,
-    /// Contract modules keyed to the implementations drawn beneath them.
-    pub groups: BTreeMap<String, Vec<String>>,
+    /// Contract modules keyed to the implementations drawn beneath them,
+    /// in each view.
+    pub groups: Groups,
     pub routes: Vec<Route>,
     pub evidence: BTreeMap<String, Evidence>,
     pub gaps: Vec<Evidence>,
+}
+
+/// The groups each view draws. A view shows some statuses, and takes an
+/// update's new judgment except in `current`, so its groups can differ.
+#[derive(Debug, Serialize)]
+pub struct Groups {
+    pub current: BTreeMap<String, Vec<String>>,
+    pub planned: BTreeMap<String, Vec<String>>,
+    pub changes: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -231,7 +241,11 @@ pub fn view(map: &ProjectMap) -> View {
             }),
         },
         layers,
-        groups: groups(&crates, &edges),
+        groups: Groups {
+            current: groups(&crates, &edges, Show::Current),
+            planned: groups(&crates, &edges, Show::Planned),
+            changes: groups(&crates, &edges, Show::Changes),
+        },
         crates,
         edges,
         routes: map
@@ -360,34 +374,70 @@ fn state_change<T>(before: &Review<T>, after: &Review<T>) -> Option<Change> {
     })
 }
 
-/// A contract groups the implementations in its own layer that implement it.
-/// Each implementation joins at most one group, and a group head is never a partner.
-fn groups(crates: &[Crate], edges: &[Edge]) -> BTreeMap<String, Vec<String>> {
-    let by_name: BTreeMap<&str, &Crate> = crates.iter().map(|c| (c.name.as_str(), c)).collect();
+/// The page's views, as the browser script names them.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Show {
+    /// What is in code: no additions, and updates as found in code.
+    Current,
+    /// The code after the proposals: no removals, and updates as proposed.
+    Planned,
+    /// Everything, with updates as proposed.
+    Changes,
+}
+
+impl Show {
+    fn shows(self, status: &str) -> bool {
+        match self {
+            Show::Current => status != "addition",
+            Show::Planned => status != "removal",
+            Show::Changes => true,
+        }
+    }
+}
+
+/// A contract groups the implementations in its own layer that implement it,
+/// as `show` draws them. Each implementation joins at most one group, and a
+/// group head is never a partner.
+fn groups(crates: &[Crate], edges: &[Edge], show: Show) -> BTreeMap<String, Vec<String>> {
+    // A module's kind and layer, and an edge's roles, as the view shows them.
+    let facets = |c: &'_ Crate| match (&c.update, show) {
+        (Some(update), Show::Planned | Show::Changes) => {
+            (update.kind.clone(), update.layer.clone())
+        }
+        _ => (c.kind.clone(), c.layer.clone()),
+    };
+    let roles = |e: &'_ Edge| match (&e.update, show) {
+        (Some(update), Show::Planned | Show::Changes) => update.roles.clone(),
+        _ => e.roles.clone(),
+    };
+    let by_name: BTreeMap<&str, (String, String)> = crates
+        .iter()
+        .filter(|c| show.shows(c.status))
+        .map(|c| (c.name.as_str(), facets(c)))
+        .collect();
     let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut placed: Vec<&str> = vec![];
     for edge in edges
         .iter()
-        .filter(|e| e.roles.iter().any(|r| r == "implements"))
+        .filter(|e| show.shows(e.status) && roles(e).iter().any(|r| r == "implements"))
     {
-        let (Some(head), Some(partner)) = (
+        let (Some((head_kind, head_layer)), Some((_, partner_layer))) = (
             by_name.get(edge.to.as_str()),
             by_name.get(edge.from.as_str()),
         ) else {
             continue;
         };
-        let contract = kind_slug(&ModuleKind::Contract);
-        if head.kind != contract
-            || head.layer != partner.layer
-            || placed.contains(&partner.name.as_str())
+        if head_kind != kind_slug(&ModuleKind::Contract)
+            || head_layer != partner_layer
+            || placed.contains(&edge.from.as_str())
         {
             continue;
         }
-        placed.push(&partner.name);
+        placed.push(&edge.from);
         groups
-            .entry(head.name.clone())
+            .entry(edge.to.clone())
             .or_default()
-            .push(partner.name.clone());
+            .push(edge.from.clone());
     }
     groups.retain(|head, _| !placed.contains(&head.as_str()));
     for partners in groups.values_mut() {

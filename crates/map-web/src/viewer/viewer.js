@@ -109,11 +109,9 @@
       : { ...part, changes: part.update ? part.update.changes : [] });
     graph = { ...source, crates: source.crates.map(take), edges: source.edges.map(take), routes: source.routes.map(take) };
     crates = new Map(graph.crates.map((c) => [c.name, c]));
-    // A group keeps only the partners in its head's layer in this view.
-    groupsOf = new Map(Object.entries(graph.groups || {})
-      .filter(([head]) => crates.has(head))
-      .map(([head, partners]) => [head, partners.filter((n) => crates.has(n) && crates.get(n).layer === crates.get(head).layer)])
-      .filter(([, partners]) => partners.length));
+    // The view's groups, worked out by map-web from what this view shows.
+    groupsOf = new Map(Object.entries((source.groups || {})[state.show] || {})
+      .filter(([head, partners]) => crates.has(head) && partners.every((n) => crates.has(n))));
     headOf = new Map([...groupsOf].flatMap(([head, partners]) => partners.map((n) => [n, head])));
     placed = null;
   }
@@ -1085,6 +1083,15 @@
     return el("ul", { class: "changes" }, part.changes.map((c) => el("li", {},
       el("strong", {}, `${c.field}: `), prose(c.before || "none"), " → ", prose(c.after || "none"))));
   }
+  // A dependency's review and evidence, folded: the review found in code (or
+  // an addition's own), then any proposed update with its rationale.
+  function reviewDetails(e) {
+    const review = codeReview(e);
+    if (review.status === "unreviewed" && e.status !== "update") return null;
+    return el("details", { class: "route-detail" }, el("summary", {}, "Review and evidence"),
+      reviewBody(review),
+      e.status === "update" ? el("div", {}, el("h4", {}, "Proposed update"), updateBody(e)) : null);
+  }
   // A part's proposed update: what changes, and the update's own review.
   function updateBody(part) {
     return el("div", {}, changeList(part), reviewBody(proposedReview(part)));
@@ -1114,7 +1121,8 @@
       r.review.status==="judged"?el("p",{},r.review.reason):el("p",{class:"muted"},reviewWords(r.review)),
       changeList(r),
       el("details",{class:"route-detail",...(r.id===state.route?{open:""}:{}),ontoggle:toggled(r)},el("summary",{},`Hops and evidence (${r.hops.length})`),hopList(r),
-        r.review.status==="judged"?el("div",{},el("h4",{},"Review evidence"),reviewBody(r.review)):null))));
+        codeReview(r).status==="judged"?el("div",{},el("h4",{},"Review evidence"),reviewBody(codeReview(r))):null,
+        r.status==="update"?el("div",{},el("h4",{},"Proposed update"),updateBody(r)):null))));
   }
   // How many parts each kind of proposal touches, for the overview.
   function proposalCounts() {
@@ -1150,7 +1158,7 @@
     const c=crates.get(n), routes=graph.routes.filter(r=>statusShown(r.status)&&routeNames(r).includes(n));
     const neighbors=(edges,other)=>el("ul",{class:"flows"},edges.map(e=>el("li",{},
       el("div",{class:"item-head"},moduleLink(e[other]),el("span",{class:"muted"},roleWords(e)),statusBadge(e),reviewBadge(e.review)),
-      el("div",{},e.detail),changeList(e))));
+      el("div",{},e.detail),changeList(e),reviewDetails(e))));
     const includes=graph.edges.filter(e=>statusShown(e.status)&&e.from===n), users=graph.edges.filter(e=>statusShown(e.status)&&e.to===n);
     const surface=()=>el("ul",{class:"items"},c.surface.map(item=>el("li",{},
       el("div",{class:"item-head"},el("span",{class:"kind"},item.kind),el("code",{},item.name)),

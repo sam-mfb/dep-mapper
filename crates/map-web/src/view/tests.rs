@@ -255,8 +255,9 @@ fn only_judged_injections_through_three_modules_are_drawn() {
 #[test]
 fn a_contract_groups_its_implementations_in_the_same_layer() {
     let view = view(&sharsheret());
+    assert_eq!(view.groups.current, view.groups.planned);
     assert_eq!(
-        view.groups,
+        view.groups.current,
         BTreeMap::from([
             (
                 "graph-evaluator".to_string(),
@@ -461,5 +462,89 @@ fn an_update_keeps_the_part_in_code_and_lists_what_changes() {
             ("roles", "direct use, other: logs through", ""),
             ("review", "judged", "deferred")
         ]
+    );
+}
+
+/// A contract `port` and an `adapter` in one layer, the adapter's dependency
+/// on the port judged with `role` and marked with `status`.
+fn port_and_adapter(role: UseRole, status: Status<RouteDescription>) -> ProjectMap {
+    let mut map = mixed_map();
+    map.layers = Layers::new(vec![LayerName("Core".into())]).unwrap();
+    map.modules = BTreeMap::from([
+        (
+            ModuleId("port".into()),
+            judged_module(ModuleKind::Contract, "Core"),
+        ),
+        (
+            ModuleId("adapter".into()),
+            judged_module(ModuleKind::Effect, "Core"),
+        ),
+    ]);
+    map.dependencies = BTreeMap::from([(
+        DependencyId {
+            from: ModuleId("adapter".into()),
+            to: ModuleId("port".into()),
+        },
+        MapDependency {
+            status,
+            evidence: vec![CitationId("fact".into())],
+            description: Review::Judged {
+                judgment: RouteDescription {
+                    role,
+                    other_roles: vec![],
+                },
+                reason: "Because.".into(),
+                primary: CitationId("fact".into()),
+                supporting: vec![],
+            },
+        },
+    )]);
+    map.routes = BTreeMap::new();
+    map
+}
+
+#[test]
+fn each_view_groups_by_what_it_shows() {
+    let grouped = BTreeMap::from([("port".to_string(), vec!["adapter".to_string()])]);
+    let none = BTreeMap::new();
+    let groups = |map: &ProjectMap| {
+        let view = view(map);
+        [
+            view.groups.current,
+            view.groups.planned,
+            view.groups.changes,
+        ]
+    };
+    // An update turns "implements" into direct use: only Current groups them.
+    let update = Status::ProposedUpdate {
+        proposed: Review::Judged {
+            judgment: RouteDescription {
+                role: UseRole::DirectUse,
+                other_roles: vec![],
+            },
+            reason: "No longer implements it.".into(),
+            primary: CitationId("fact".into()),
+            supporting: vec![],
+        },
+    };
+    assert_eq!(
+        groups(&port_and_adapter(UseRole::Implements, update)),
+        [grouped.clone(), none.clone(), none.clone()]
+    );
+    // A removal: Planned leaves the dependency out; Changes still draws it.
+    assert_eq!(
+        groups(&port_and_adapter(
+            UseRole::Implements,
+            Status::ProposedRemoval
+        )),
+        [grouped.clone(), none.clone(), grouped.clone()]
+    );
+    // An addition: Current leaves it out.
+    assert_eq!(
+        groups(&port_and_adapter(
+            UseRole::Implements,
+            Status::ProposedAddition
+        )),
+        [none, grouped.clone(), grouped]
     );
 }
