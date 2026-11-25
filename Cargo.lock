@@ -69,6 +69,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "map-preview"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "map-web"
 version = "0.1.0"
 dependencies = [
