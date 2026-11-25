@@ -96,7 +96,59 @@ fn an_unreadable_answers_file_is_an_error_naming_the_file() {
 }
 
 #[test]
-fn piece_file_names_differ_for_pieces_that_differ_only_in_punctuation() {
-    assert_ne!(file_name("routes/a+b"), file_name("routes/a_b"));
+fn piece_file_names_differ_for_any_two_distinct_pieces() {
+    let names = [
+        "routes/a+b",
+        "routes/a_b",
+        "module/_a",
+        "module/\u{05fa}",
+        "module/A",
+        "module/a",
+    ];
+    let encoded: std::collections::BTreeSet<String> = names.iter().map(|n| file_name(n)).collect();
+    assert_eq!(encoded.len(), names.len());
     assert_eq!(file_name("routes/a+b"), "routes_2fa_2bb");
+    assert_eq!(file_name("module/A"), "module_2f_41");
+}
+
+#[test]
+fn answers_for_pieces_with_similar_names_are_both_kept() {
+    // Regression: "_a" and "\u{05fa}" once shared a file name, and the second save replaced the first.
+    let scratch = Scratch::new();
+    let store = DirStore::new(&scratch.0);
+    let mut answers = Answers::new();
+    for module in ["_a", "\u{05fa}", "A", "a"] {
+        let mut piece = PieceAnswers::default();
+        piece.modules.insert(
+            module.into(),
+            ModuleAnswer::Deferred {
+                reason: format!("{module} later"),
+            },
+        );
+        store
+            .save_answers(&PieceId::module(module), &piece)
+            .unwrap();
+        answers.insert(PieceId::module(module), piece);
+    }
+    assert_eq!(store.load_answers().unwrap(), answers);
+}
+
+#[test]
+fn saving_refuses_to_replace_a_file_that_holds_another_piece() {
+    let scratch = Scratch::new();
+    let store = DirStore::new(&scratch.0);
+    let other = AnswersFile {
+        piece: PieceId::module("other"),
+        answers: PieceAnswers::default(),
+    };
+    fs::create_dir_all(scratch.0.join("answers")).unwrap();
+    let path = scratch
+        .0
+        .join("answers")
+        .join(format!("{}.json", file_name("module/disk")));
+    fs::write(&path, serde_json::to_string(&other).unwrap()).unwrap();
+    let error = store
+        .save_answers(&PieceId::module("disk"), &PieceAnswers::default())
+        .unwrap_err();
+    assert!(error.cause.contains("holds module/other"));
 }

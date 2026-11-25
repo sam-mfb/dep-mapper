@@ -123,6 +123,14 @@ impl WorkbookStore for DirStore {
 
     fn save_answers(&self, piece: &PieceId, answers: &PieceAnswers) -> Result<(), StoreError> {
         let path = self.path(&["answers", &format!("{}.json", file_name(&piece.0))]);
+        if path.exists() {
+            let existing: AnswersFile =
+                serde_json::from_str(&read(&path)?).map_err(|e| error("read", &path, e))?;
+            if &existing.piece != piece {
+                let cause = format!("the file holds {}, not {}", existing.piece.0, piece.0);
+                return Err(error("write", &path, cause));
+            }
+        }
         let file = AnswersFile {
             piece: piece.clone(),
             answers: answers.clone(),
@@ -145,14 +153,17 @@ impl WorkbookStore for DirStore {
     }
 }
 
-/// A file name for a piece: letters, digits, `-` and `.` stay; anything
-/// else becomes `_` and its code in hex, so distinct pieces get distinct names.
+/// A file name for a piece. Lowercase letters, digits, `-` and `.` stay as
+/// they are. Every other byte of the name's UTF-8, including uppercase
+/// letters and `_`, becomes `_` and two hex digits. Each `_` therefore starts
+/// exactly one escape, so distinct pieces get distinct names, even on file
+/// systems that ignore case.
 fn file_name(piece: &str) -> String {
     piece
-        .chars()
-        .map(|c| match c {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '.' => c.to_string(),
-            other => format!("_{:x}", other as u32),
+        .bytes()
+        .map(|b| match b {
+            b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' => (b as char).to_string(),
+            other => format!("_{other:02x}"),
         })
         .collect()
 }
