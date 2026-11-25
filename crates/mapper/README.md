@@ -1,0 +1,68 @@
+# mapper: the `srs` program
+
+`srs map` analyzes one build of a project, has it evaluated, and saves and shows the resulting map. `srs eval` is how a person or an agent answers the manual evaluator's questions.
+
+## `srs map`
+
+```sh
+srs map <root> --language <rust|typescript> [--cache <dir>] --target <target> --configuration <settings> \
+    --evaluator <manual|llm> [--workbook <dir>] [--agent <none|wait|claude>] \
+    --out <map.toml> [--page <map.html>] [--serve <address>]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `<root>` | The directory holding the project's source. |
+| `--language` | Selects the grapher: project-graph-rust or project-graph-typescript. |
+| `--cache` | For Rust: where the grapher keeps its rustc driver and build output between runs. Without it, `<root>/target/srs`. The first run builds the driver, which takes about a minute. |
+| `--target`, `--configuration` | The build to analyze, in the grapher's terms. For Rust, the target is a package, optionally with one target as `package/bin:name`, and the configuration is `default features` or Cargo flags such as `--features x`. For TypeScript, the target is the tsconfig file, relative to the root, and the configuration is `tsconfig`. |
+| `--evaluator` | Who judges the graph. `manual` needs `--workbook`. The LLM evaluator is not available yet. |
+| `--agent` | For `manual`: who answers while `srs map` runs. `none` (the default when the option is left out) stops after writing the workbook. `wait` shows the request and checks every 5 seconds for a submission, for up to 4 hours. `claude` runs Claude Code in the project directory; `srs` must be on `PATH` for it to run `srs eval`. |
+| `--out` | Where to save the map. map-persist writes it, and it can be reopened without analysis. |
+| `--page` | Also write the map-web page to this file. |
+| `--serve` | Also serve the page at this address, such as `127.0.0.1:8080`, until stopped. |
+
+Problems the map builder finds while joining the evaluation to the graph are printed as notes. The map is built without them.
+
+## The manual evaluator and `srs eval`
+
+The manual evaluator writes a workbook into the `--workbook` directory: instructions, one readable piece per module and per pair of modules, and the answers so far. Someone answers it with `srs eval` and finishes with `srs eval ... submit`. With `--agent wait` or `--agent claude`, one `srs map` run waits for that and then builds the map. With `--agent none`, `srs map` stops after writing the workbook, with a message that the answers are not submitted. Run the same command again after they are: it resumes the workbook and builds the map. A run that stops without a submission keeps the answers recorded so far.
+
+```sh
+srs eval --workbook <dir> help        # the answer commands
+srs eval --workbook <dir> index       # the pieces and how far each has got
+srs eval --workbook <dir> show module/<name>
+srs eval --workbook <dir> judge module:<name> --concern ... --kind ... --cluster ... --reason ... --cite ...
+srs eval --workbook <dir> submit
+```
+
+`srs eval` exits with 0 when the command did its work, 1 when an answer was refused or a check found problems (the output says why), and 2 when the command could not run.
+
+## Example: sharsheret itself
+
+The Rust grapher needs the pinned toolchain from `rust-toolchain.toml`, with its `rustc-dev` component. From the repository root:
+
+```sh
+cargo build -p mapper
+target/debug/srs map . --language rust --target mapper --configuration "default features" \
+    --evaluator manual --workbook target/srs-self/workbook --agent claude \
+    --out target/srs-self/map.toml --page target/srs-self/map.html
+```
+
+The `mapper` package depends on every other crate, so its build covers the whole project. With `--agent claude`, Claude Code answers the workbook. With `--agent none`, answer it yourself with `srs eval` and run the command again. `tests/sharsheret_rust.rs` runs the same steps for the smaller `map-builder` package, with a few answers.
+
+## Example: the TypeScript sample
+
+After `npm ci` in `crates/project-graph-typescript/collector` (the collector needs Node 22.18 or later):
+
+```sh
+cargo build -p mapper
+srs=target/debug/srs
+$srs map crates/project-graph-typescript/sample --language typescript --target tsconfig.json \
+    --configuration tsconfig --evaluator manual --workbook /tmp/srs-sample/workbook \
+    --out /tmp/srs-sample/map.toml --page /tmp/srs-sample/map.html
+# answer with: $srs eval --workbook /tmp/srs-sample/workbook ...; then submit
+# and run the same srs map command again
+```
+
+`tests/typescript_manual.rs` runs these steps with a few answers and checks the saved map, both as two runs and as one run with `--agent wait`.

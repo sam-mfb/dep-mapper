@@ -10,6 +10,8 @@ pub enum Record {
     Project {
         name: String,
         settings: BTreeMap<String, String>,
+        /// SHA-256, in hex, of every file the collector read.
+        sources: String,
     },
     Module {
         id: String,
