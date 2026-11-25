@@ -69,7 +69,7 @@ The `mapper` package depends on every other crate, so its build covers the whole
 target/debug/srs show docs/architecture/sharsheret-map.toml --serve 127.0.0.1:8080
 ```
 
-To refresh it after the code changes, run the command above again with `--out docs/architecture/sharsheret-map.toml` and an empty workbook directory. A workbook for an older commit is refused rather than reused, since its answers cite another graph.
+To refresh it after the code changes, run the command above again with `--out docs/architecture/sharsheret-map.toml` and an empty workbook directory. A workbook for an older commit is refused rather than reused, since its answers cite another graph. `tests/checked_in_map.rs` checks that the checked-in map still loads, fits together and renders with `srs show`, so a change to the saved format or the map's rules that breaks it fails the tests.
 
 ## Example: the TypeScript sample
 

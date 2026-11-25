@@ -26,6 +26,8 @@ pub enum Record {
     Call(CallRecord),
     Flow(FlowRecord),
     Receiver(ReceiverRecord),
+    ClosureBinding(ClosureBindingRecord),
+    ClosureCall(ClosureCallRecord),
     /// A body or item the driver could not describe.
     Gap(GapRecord),
 }
@@ -48,7 +50,7 @@ pub struct UnitRecord {
 }
 
 /// A definition, local or in another crate.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Def {
     pub crate_name: String,
     pub crate_id: String,
@@ -155,7 +157,7 @@ pub struct CallRecord {
 }
 
 /// Where a value is held, as the compiler sees it in a function body.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(tag = "node", rename_all = "kebab-case")]
 pub enum Node {
     /// A local variable or temporary of `function`.
@@ -220,6 +222,38 @@ pub struct ReceiverRecord {
     /// The trait that declares it.
     pub contract_trait: Def,
     pub receiver: Node,
+    pub span: Span,
+}
+
+/// A closure passed to a standard-library function, whose body is not read:
+/// the closure is assumed to be called with `others`, and its result to
+/// reach `destination`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClosureBindingRecord {
+    /// The function called, as in the call's `CallRecord`.
+    pub function: Def,
+    /// The argument position, from zero, that receives the closure.
+    pub index: u32,
+    pub closure: Def,
+    /// For each of the closure's parameters, in order, the call's other
+    /// arguments whose types share a type or trait with that parameter.
+    pub parameters: Vec<Vec<Node>>,
+    pub destination: Node,
+    pub span: Span,
+}
+
+/// A call through a value of a generic closure type, such as `f(x)` for
+/// `f: impl FnOnce(X)`, whose closure the compiler did not select here.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClosureCallRecord {
+    /// Where the called value is held, traced back within the body: often
+    /// a parameter of the function.
+    pub callable: Node,
+    /// The arguments, passed as one tuple; `None` when there are none.
+    pub arguments: Option<Node>,
+    /// How many arguments the tuple holds.
+    pub arity: u32,
+    pub destination: Node,
     pub span: Span,
 }
 

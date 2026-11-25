@@ -440,7 +440,9 @@ fn fact(resolve: &Resolver, unit: &Unit, record: &r::Record) -> Option<Ordered> 
         | r::Record::Item(_)
         | r::Record::Gap(_)
         | r::Record::Flow(_)
-        | r::Record::Receiver(_) => return None,
+        | r::Record::Receiver(_)
+        | r::Record::ClosureBinding(_)
+        | r::Record::ClosureCall(_) => return None,
     };
     let ((subject, subject_module), (object, object_module)) = (subject, object);
     // Uses inside one module are that module's own business.

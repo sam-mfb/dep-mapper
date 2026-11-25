@@ -934,6 +934,45 @@ fn reduce_gives_elements_to_its_second_parameter_not_its_accumulator() {
     );
 }
 
+#[test]
+fn an_array_pattern_over_a_variable_reads_the_element_place() {
+    let origins_of = |call: &str| {
+        let (id, _) = only_fact(|f| {
+            matches!(f.kind, FactKind::Call(_)) && f.site.as_ref().is_some_and(|s| text(s) == call)
+        });
+        let mut origins: Vec<_> = routes_to(id)
+            .iter()
+            .map(|r| format!("{:?}", r.origin))
+            .collect();
+        origins.sort();
+        origins
+    };
+    let mut both = vec![
+        format!("{:?}", item(OS, "OsBackups")),
+        format!("{:?}", item(REGISTRY, "quietBackups")),
+    ];
+    both.sort();
+    assert_eq!(origins_of("primary.write(\"primary\")"), both);
+
+    // `second` has a default, so the element read and the default are each conditional.
+    let into_second: Vec<_> =
+        facts_where(|f| f.object == place(REGISTRY, "writePrimary", "second"));
+    assert_eq!(into_second.len(), 2, "{into_second:#?}");
+    let hops: Vec<_> = graph()
+        .routes
+        .values()
+        .flat_map(|r| &r.hops)
+        .filter(|h| h.to == place(REGISTRY, "writePrimary", "second"))
+        .map(|h| h.support.clone())
+        .collect();
+    assert!(hops.contains(&Support::Possible {
+        condition: Some("[1] !== undefined".into())
+    }));
+    assert!(hops.contains(&Support::Possible {
+        condition: Some("[1] === undefined".into())
+    }));
+}
+
 const CALLBACKS: &str = "@sample/app/src/callbacks.ts";
 
 /// The route from `new OsBackups()` inside withBackups to a write call in

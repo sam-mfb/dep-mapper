@@ -193,6 +193,18 @@ fn an_answer_the_checks_refuse_exits_with_status_1() {
         "route:no-such-route",
     ]);
     assert_eq!(refused.status.code(), Some(1), "{}", text(&refused.stdout));
+    // A reader that goes away, as `| head` does, ends the command quietly.
+    let mut piped = Command::new(env!("CARGO_BIN_EXE_srs"))
+        .args(["eval", "--workbook", &workbook, "index"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("srs starts");
+    drop(piped.stdout.take());
+    let closed = piped.wait_with_output().expect("srs finishes");
+    assert!(closed.status.success(), "{}", text(&closed.stderr));
+    assert_eq!(text(&closed.stderr), "");
+
     let missing = srs(&[
         "eval",
         "--workbook",

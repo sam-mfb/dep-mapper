@@ -150,6 +150,7 @@ fn main() -> ExitCode {
             return match eval::eval(&command, &mut std::io::stdout()) {
                 Ok(Outcome::Done) => ExitCode::SUCCESS,
                 Ok(Outcome::Refused) => ExitCode::FAILURE,
+                Err(error) if eval::reader_left(&error) => ExitCode::SUCCESS,
                 Err(error) => {
                     eprintln!("srs eval: {error}");
                     ExitCode::from(2)
