@@ -1,0 +1,1209 @@
+# sharsheret's own architecture map, as a draft made only of proposals.
+# It is the project's module map: edit it when the architecture changes.
+# Check it with `srs draft check docs/architecture/sharsheret.toml`, and
+# preview it with `srs draft preview docs/architecture/sharsheret.toml`.
+# crates/map-persist/FORMAT.md describes the format.
+
+format = 1
+kind = "draft"
+project = "sharsheret"
+layers = ["Program", "Map", "Evaluation", "Evidence"]
+
+[modules.graph-evaluator]
+status = "proposed-addition"
+name = "graph-evaluator"
+
+[[modules.graph-evaluator.surface]]
+name = "GraphEvaluator"
+kind = "type"
+signature = "pub trait GraphEvaluator"
+
+[[modules.graph-evaluator.surface]]
+name = "GraphEvaluation"
+kind = "type"
+signature = "pub struct GraphEvaluation"
+
+[modules.graph-evaluator.review]
+state = "judged"
+reason = "Defines the GraphEvaluation type and the evaluator contract. The selected implementation obtains judgments from a human or a model."
+concern = "Defines how to evaluate a project graph and record architectural judgments about its modules and routes."
+kind = "contract"
+layer = "Evaluation"
+primary = "module:graph-evaluator"
+supporting = []
+
+[modules.graph-evaluator-llm]
+status = "proposed-addition"
+name = "graph-evaluator-llm"
+
+[[modules.graph-evaluator-llm.surface]]
+name = "LlmEvaluator"
+kind = "type"
+
+[modules.graph-evaluator-llm.review]
+state = "judged"
+reason = "Owns model interaction and interpretation of the API response. Provider-specific requests and responses stay inside this module, behind its own model-client contract; Mapper injects the HTTP transport."
+concern = "Obtains an architectural judgment from a language model."
+kind = "effect"
+layer = "Evaluation"
+primary = "module:graph-evaluator-llm"
+supporting = []
+
+[modules.graph-evaluator-manual]
+status = "proposed-addition"
+name = "graph-evaluator-manual"
+
+[[modules.graph-evaluator-manual.surface]]
+name = "ManualEvaluator"
+kind = "type"
+
+[[modules.graph-evaluator-manual.surface]]
+name = "AgentRunner"
+kind = "type"
+
+[[modules.graph-evaluator-manual.surface]]
+name = "WorkbookStore"
+kind = "type"
+
+[[modules.graph-evaluator-manual.surface]]
+name = "commands::run"
+kind = "function"
+
+[modules.graph-evaluator-manual.review]
+state = "judged"
+reason = "Owns the workbook, the answer commands and the checks on each answer and citation. The worker is reached through an injected agent runner, and the workbook through an injected store."
+concern = "Has an agent harness or a person evaluate a graph through a workbook of pieces and checked answers."
+kind = "effect"
+layer = "Evaluation"
+primary = "module:graph-evaluator-manual"
+supporting = []
+
+[modules.graph-evaluator-pieces]
+status = "proposed-addition"
+name = "graph-evaluator-pieces"
+
+[[modules.graph-evaluator-pieces.surface]]
+name = "present"
+kind = "function"
+signature = "fn present(graph: &ProjectGraph, presentation: &Presentation) -> Workbook"
+
+[[modules.graph-evaluator-pieces.surface]]
+name = "record"
+kind = "function"
+signature = "fn record(workbook: &Workbook, answers: &Answers, edit: Edit) -> Result<Recorded, Refused>"
+
+[[modules.graph-evaluator-pieces.surface]]
+name = "assemble"
+kind = "function"
+signature = "fn assemble(workbook: &Workbook, answers: &Answers) -> Result<Assembled, Vec<Finding>>"
+
+[modules.graph-evaluator-pieces.review]
+state = "judged"
+reason = "Owns the written handles, the cut into module, cluster and module-pair pieces, the rules that refuse or warn about an answer, and assembly. It has no effects; evaluators supply the source lines and keep the answers."
+concern = "Presents a project graph as pieces with citable handles, and checks answers and assembles them into a GraphEvaluation."
+kind = "logic"
+layer = "Evaluation"
+primary = "module:graph-evaluator-pieces"
+supporting = []
+
+[modules.map-builder]
+status = "proposed-addition"
+name = "map-builder"
+
+[[modules.map-builder.surface]]
+name = "build_map"
+kind = "function"
+signature = "fn build_map(graph: &ProjectGraph, evaluation: &GraphEvaluation) -> Result<MapBuild, GraphMismatch>"
+
+[modules.map-builder.review]
+state = "judged"
+reason = "Receives the ProjectGraph and its GraphEvaluation from Mapper. Matches judgments to subjects, preserves uncertain and unreviewed routes, and reports references to missing subjects."
+concern = "Builds a map by attaching architectural judgments to the dependency graph."
+kind = "logic"
+layer = "Map"
+primary = "module:map-builder"
+supporting = []
+
+[modules.map-persist]
+status = "proposed-addition"
+name = "map-persist"
+
+[[modules.map-persist.surface]]
+name = "save"
+kind = "function"
+
+[[modules.map-persist.surface]]
+name = "load"
+kind = "function"
+
+[modules.map-persist.review]
+state = "judged"
+reason = "Owns the file format and its versions, compatibility when reading saved files, and errors with their line and column. Reading and writing files is the caller's job."
+concern = "Saves and loads project maps and drafts as text."
+kind = "effect"
+layer = "Map"
+primary = "module:map-persist"
+supporting = []
+
+[modules.map-web]
+status = "proposed-addition"
+name = "map-web"
+
+[[modules.map-web.surface]]
+name = "page"
+kind = "function"
+signature = "fn page(map: &ProjectMap) -> String"
+
+[modules.map-web.review]
+state = "judged"
+reason = "Owns browser layout, navigation, selection and evidence drill-down. The map representation belongs to Project map."
+concern = "Lets a reader explore a reviewed architecture in the browser."
+kind = "effect"
+layer = "Map"
+primary = "module:map-web"
+supporting = []
+
+[modules.mapper]
+status = "proposed-addition"
+name = "mapper"
+
+[[modules.mapper.surface]]
+name = "srs map"
+kind = "function"
+signature = "srs map <root> --language <rust|typescript> --target <target> --configuration <settings> --evaluator <manual|llm> --out <file> [--page <file>] [--serve <address>]"
+
+[modules.mapper.review]
+state = "judged"
+reason = "Gets a ProjectGraph from the selected language grapher and passes it to Graph evaluator for a GraphEvaluation. Supplies both to Map builder, then sends the resulting ProjectMap to Map persist and Map web."
+concern = "Coordinates collection, review, map construction and publication, and the checking and preview of drafts."
+kind = "composition"
+layer = "Program"
+primary = "module:mapper"
+supporting = []
+
+[modules.project-graph]
+status = "proposed-addition"
+name = "project-graph"
+
+[[modules.project-graph.surface]]
+name = "ProjectGraph"
+kind = "type"
+signature = "pub struct ProjectGraph"
+
+[[modules.project-graph.surface]]
+name = "ProjectGrapher"
+kind = "type"
+signature = "pub trait ProjectGrapher"
+
+[modules.project-graph.review]
+state = "judged"
+reason = "Owns the graph representation, the identities used to cite its contents, and the ProjectGrapher contract. Each language implementation owns the rules for deriving these facts from its source."
+concern = "Records the source evidence for one project build: its modules, their surfaces and the handoffs between them. Defines how a graph is built for a selected build."
+kind = "contract"
+layer = "Evidence"
+primary = "module:project-graph"
+supporting = []
+
+[modules.project-graph-rust]
+status = "proposed-addition"
+name = "project-graph-rust"
+
+[[modules.project-graph-rust.surface]]
+name = "RustGrapher"
+kind = "type"
+
+[modules.project-graph-rust.review]
+state = "judged"
+reason = "Owns Cargo and rustc access and the Rust rules that connect surfaces and handoffs into source-backed routes. Mapper constructs it and calls it through the ProjectGrapher contract."
+concern = "Builds the project graph for a selected Rust build, tracing its routes from compiler evidence."
+kind = "effect"
+layer = "Evidence"
+primary = "module:project-graph-rust"
+supporting = []
+
+[modules.project-graph-typescript]
+status = "proposed-addition"
+name = "project-graph-typescript"
+
+[[modules.project-graph-typescript.surface]]
+name = "TypeScriptGrapher"
+kind = "type"
+
+[modules.project-graph-typescript.review]
+state = "judged"
+reason = "Owns TypeScript compiler access, through a Node child process running the TypeScript checker, and the TypeScript rules that connect surfaces and handoffs into source-backed routes."
+concern = "Builds the project graph for a selected TypeScript build, tracing its routes from compiler evidence."
+kind = "effect"
+layer = "Evidence"
+primary = "module:project-graph-typescript"
+supporting = []
+
+[modules.project-map]
+status = "proposed-addition"
+name = "project-map"
+
+[[modules.project-map.surface]]
+name = "ProjectMap"
+kind = "type"
+signature = "pub struct ProjectMap"
+
+[modules.project-map.review]
+state = "judged"
+reason = "Owns the shared ProjectMap type. Map builder produces values of this type, Map persist saves and loads them, and Map web displays them."
+concern = "Describes a reviewed project's modules, dependencies and routes in language-independent terms that people can read."
+kind = "contract"
+layer = "Map"
+primary = "module:project-map"
+supporting = []
+
+[modules.map-draft]
+status = "proposed-addition"
+name = "map-draft"
+
+[[modules.map-draft.surface]]
+name = "combine"
+kind = "function"
+signature = "fn combine(draft: &Draft, base: Option<&ProjectMap>) -> Result<Combined, BaseMismatch>"
+
+[modules.map-draft.review]
+state = "judged"
+reason = "Pure: it receives the draft and its base as values. Fills partial updates from the base, cascades module removals, and reports what does not fit, including everything ProjectMap::problems finds."
+concern = "Lays a draft's proposals over its base map and reports what does not fit."
+kind = "logic"
+layer = "Map"
+primary = "module:map-draft"
+supporting = []
+
+[modules.map-preview]
+status = "proposed-addition"
+name = "map-preview"
+
+[[modules.map-preview.surface]]
+name = "Preview"
+kind = "type"
+signature = "pub struct Preview"
+
+[[modules.map-preview.surface]]
+name = "Watcher"
+kind = "type"
+signature = "pub trait Watcher"
+
+[modules.map-preview.review]
+state = "judged"
+reason = "Owns serving on a local address, pushing reloads to the browser, keeping the last good page beside a problem list, and noticing file changes. Building pages belongs to the caller."
+concern = "Shows a live preview of a map page in the browser, reloaded when the map changes."
+kind = "effect"
+layer = "Map"
+primary = "module:map-preview"
+supporting = []
+
+[[dependencies]]
+from = "graph-evaluator"
+to = "project-graph"
+status = "proposed-addition"
+evidence = ["dependency:graph-evaluator>project-graph"]
+
+[dependencies.review]
+state = "judged"
+reason = "Uses ProjectGraph as the review input and its subject identities to anchor the returned judgments."
+role = "direct-use"
+other_roles = []
+primary = "dependency:graph-evaluator>project-graph"
+supporting = []
+
+[[dependencies]]
+from = "graph-evaluator-llm"
+to = "graph-evaluator"
+status = "proposed-addition"
+evidence = ["dependency:graph-evaluator-llm>graph-evaluator"]
+
+[dependencies.review]
+state = "judged"
+reason = "Implements the review decision contract for the LLM workflow."
+role = "implements"
+other_roles = []
+primary = "dependency:graph-evaluator-llm>graph-evaluator"
+supporting = []
+
+[[dependencies]]
+from = "graph-evaluator-llm"
+to = "graph-evaluator-pieces"
+status = "proposed-addition"
+evidence = ["dependency:graph-evaluator-llm>graph-evaluator-pieces"]
+
+[dependencies.review]
+state = "judged"
+reason = "Asks the model about one piece at a time and checks its answers with the shared rules."
+role = "direct-use"
+other_roles = []
+primary = "dependency:graph-evaluator-llm>graph-evaluator-pieces"
+supporting = []
+
+[[dependencies]]
+from = "graph-evaluator-manual"
+to = "graph-evaluator"
+status = "proposed-addition"
+evidence = ["dependency:graph-evaluator-manual>graph-evaluator"]
+
+[dependencies.review]
+state = "judged"
+reason = "Implements the review decision contract for the manual workflow."
+role = "implements"
+other_roles = []
+primary = "dependency:graph-evaluator-manual>graph-evaluator"
+supporting = []
+
+[[dependencies]]
+from = "graph-evaluator-manual"
+to = "graph-evaluator-pieces"
+status = "proposed-addition"
+evidence = ["dependency:graph-evaluator-manual>graph-evaluator-pieces"]
+
+[dependencies.review]
+state = "judged"
+reason = "Presents the workbook and checks each recorded answer with the shared pieces."
+role = "direct-use"
+other_roles = []
+primary = "dependency:graph-evaluator-manual>graph-evaluator-pieces"
+supporting = []
+
+[[dependencies]]
+from = "graph-evaluator-pieces"
+to = "graph-evaluator"
+status = "proposed-addition"
+evidence = ["dependency:graph-evaluator-pieces>graph-evaluator"]
+
+[dependencies.review]
+state = "judged"
+reason = "Builds the GraphEvaluation from checked answers."
+role = "direct-use"
+other_roles = []
+primary = "dependency:graph-evaluator-pieces>graph-evaluator"
+supporting = []
+
+[[dependencies]]
+from = "map-builder"
+to = "graph-evaluator"
+status = "proposed-addition"
+evidence = ["dependency:map-builder>graph-evaluator"]
+
+[dependencies.review]
+state = "judged"
+reason = "Map builder imports the GraphEvaluation type from Graph evaluator. Mapper supplies the evaluation when it calls Map builder."
+role = "direct-use"
+other_roles = []
+primary = "dependency:map-builder>graph-evaluator"
+supporting = []
+
+[[dependencies]]
+from = "map-builder"
+to = "project-graph"
+status = "proposed-addition"
+evidence = ["dependency:map-builder>project-graph"]
+
+[dependencies.review]
+state = "judged"
+reason = "Reads a completed ProjectGraph through its shared data contract."
+role = "direct-use"
+other_roles = []
+primary = "dependency:map-builder>project-graph"
+supporting = []
+
+[[dependencies]]
+from = "map-builder"
+to = "project-map"
+status = "proposed-addition"
+evidence = ["dependency:map-builder>project-map"]
+
+[dependencies.review]
+state = "judged"
+reason = "Returns the completed map using the ProjectMap type defined by Project map."
+role = "direct-use"
+other_roles = []
+primary = "dependency:map-builder>project-map"
+supporting = []
+
+[[dependencies]]
+from = "map-persist"
+to = "project-map"
+status = "proposed-addition"
+evidence = ["dependency:map-persist>project-map"]
+
+[dependencies.review]
+state = "judged"
+reason = "Uses the public ProjectMap representation for persistence."
+role = "direct-use"
+other_roles = []
+primary = "dependency:map-persist>project-map"
+supporting = []
+
+[[dependencies]]
+from = "map-web"
+to = "project-map"
+status = "proposed-addition"
+evidence = ["dependency:map-web>project-map"]
+
+[dependencies.review]
+state = "judged"
+reason = "Uses the public ProjectMap representation for display."
+role = "direct-use"
+other_roles = []
+primary = "dependency:map-web>project-map"
+supporting = []
+
+[[dependencies]]
+from = "mapper"
+to = "graph-evaluator"
+status = "proposed-addition"
+evidence = ["dependency:mapper>graph-evaluator"]
+
+[dependencies.review]
+state = "judged"
+reason = "Passes the ProjectGraph to the selected evaluator and receives its GraphEvaluation."
+role = "direct-use"
+other_roles = []
+primary = "dependency:mapper>graph-evaluator"
+supporting = []
+
+[[dependencies]]
+from = "mapper"
+to = "graph-evaluator-llm"
+status = "proposed-addition"
+evidence = ["dependency:mapper>graph-evaluator-llm"]
+
+[dependencies.review]
+state = "judged"
+reason = "Constructs this reviewer when the LLM workflow is selected."
+role = "wires"
+other_roles = []
+primary = "dependency:mapper>graph-evaluator-llm"
+supporting = []
+
+[[dependencies]]
+from = "mapper"
+to = "graph-evaluator-manual"
+status = "proposed-addition"
+evidence = ["dependency:mapper>graph-evaluator-manual"]
+
+[dependencies.review]
+state = "judged"
+reason = "Constructs this reviewer when the manual workflow is selected."
+role = "wires"
+other_roles = []
+primary = "dependency:mapper>graph-evaluator-manual"
+supporting = []
+
+[[dependencies]]
+from = "mapper"
+to = "map-builder"
+status = "proposed-addition"
+evidence = ["dependency:mapper>map-builder"]
+
+[dependencies.review]
+state = "judged"
+reason = "Mapper passes the graph it received from the language grapher and the judgments it received from Graph evaluator to Map builder. Map builder returns a ProjectMap to Mapper."
+role = "supplies-input"
+other_roles = []
+primary = "dependency:mapper>map-builder"
+supporting = []
+
+[[dependencies]]
+from = "mapper"
+to = "map-persist"
+status = "proposed-addition"
+evidence = ["dependency:mapper>map-persist"]
+
+[dependencies.review]
+state = "judged"
+reason = "Mapper passes the ProjectMap returned by Map builder to Map persist for storage."
+role = "supplies-input"
+other_roles = []
+primary = "dependency:mapper>map-persist"
+supporting = []
+
+[[dependencies]]
+from = "mapper"
+to = "map-web"
+status = "proposed-addition"
+evidence = ["dependency:mapper>map-web"]
+
+[dependencies.review]
+state = "judged"
+reason = "Mapper passes the ProjectMap returned by Map builder to Map web for display."
+role = "supplies-input"
+other_roles = []
+primary = "dependency:mapper>map-web"
+supporting = []
+
+[[dependencies]]
+from = "mapper"
+to = "project-graph"
+status = "proposed-addition"
+evidence = ["dependency:mapper>project-graph"]
+
+[dependencies.review]
+state = "judged"
+reason = "Calls the selected grapher through the ProjectGrapher contract and passes the ProjectGraph it returns to review and map building."
+role = "direct-use"
+other_roles = []
+primary = "dependency:mapper>project-graph"
+supporting = []
+
+[[dependencies]]
+from = "mapper"
+to = "project-graph-rust"
+status = "proposed-addition"
+evidence = ["dependency:mapper>project-graph-rust"]
+
+[dependencies.review]
+state = "judged"
+reason = "Constructs the Rust grapher for a Rust build."
+role = "wires"
+other_roles = []
+primary = "dependency:mapper>project-graph-rust"
+supporting = []
+
+[[dependencies]]
+from = "mapper"
+to = "project-graph-typescript"
+status = "proposed-addition"
+evidence = ["dependency:mapper>project-graph-typescript"]
+
+[dependencies.review]
+state = "judged"
+reason = "Constructs the TypeScript grapher for a TypeScript project."
+role = "wires"
+other_roles = []
+primary = "dependency:mapper>project-graph-typescript"
+supporting = []
+
+[[dependencies]]
+from = "mapper"
+to = "project-map"
+status = "proposed-addition"
+evidence = ["dependency:mapper>project-map"]
+
+[dependencies.review]
+state = "judged"
+reason = "Uses the ProjectMap type for the value it receives from Map builder and supplies to Map web and Map persist."
+role = "direct-use"
+other_roles = []
+primary = "dependency:mapper>project-map"
+supporting = []
+
+[[dependencies]]
+from = "project-graph-rust"
+to = "project-graph"
+status = "proposed-addition"
+evidence = ["dependency:project-graph-rust>project-graph"]
+
+[dependencies.review]
+state = "judged"
+reason = "Implements the ProjectGrapher contract for Cargo and rustc and returns a ProjectGraph."
+role = "implements"
+other_roles = []
+primary = "dependency:project-graph-rust>project-graph"
+supporting = []
+
+[[dependencies]]
+from = "project-graph-typescript"
+to = "project-graph"
+status = "proposed-addition"
+evidence = ["dependency:project-graph-typescript>project-graph"]
+
+[dependencies.review]
+state = "judged"
+reason = "Implements the same ProjectGrapher contract for an npm workspace with the TypeScript checker."
+role = "implements"
+other_roles = []
+primary = "dependency:project-graph-typescript>project-graph"
+supporting = []
+
+[[dependencies]]
+from = "map-draft"
+to = "project-map"
+status = "proposed-addition"
+evidence = ["dependency:map-draft>project-map"]
+
+[dependencies.review]
+state = "judged"
+reason = "Takes a Draft and its base ProjectMap and returns the combined ProjectMap with its problems."
+role = "direct-use"
+other_roles = []
+primary = "dependency:map-draft>project-map"
+supporting = []
+
+[[dependencies]]
+from = "mapper"
+to = "map-draft"
+status = "proposed-addition"
+evidence = ["dependency:mapper>map-draft"]
+
+[dependencies.review]
+state = "judged"
+reason = "`srs draft` lays the loaded draft over its base with map-draft."
+role = "direct-use"
+other_roles = []
+primary = "dependency:mapper>map-draft"
+supporting = []
+
+[[dependencies]]
+from = "mapper"
+to = "map-preview"
+status = "proposed-addition"
+evidence = ["dependency:mapper>map-preview"]
+
+[dependencies.review]
+state = "judged"
+reason = "`srs draft preview` shows each build of the draft through a Preview and watches the draft and its base for changes."
+role = "direct-use"
+other_roles = []
+primary = "dependency:mapper>map-preview"
+supporting = []
+
+[routes.apply-the-human-judgments]
+status = "proposed-addition"
+use_site = "dependency:mapper>map-builder"
+
+[routes.apply-the-human-judgments.origin]
+module = "graph-evaluator-manual"
+item = "GraphEvaluation"
+
+[[routes.apply-the-human-judgments.hops]]
+evidence = "dependency:mapper>graph-evaluator-manual"
+support = "proposed"
+role = "wires"
+
+[routes.apply-the-human-judgments.hops.to]
+module = "mapper"
+link = "receiver-uses-sender"
+
+[[routes.apply-the-human-judgments.hops]]
+evidence = "dependency:mapper>map-builder"
+support = "proposed"
+role = "supplies-input"
+
+[routes.apply-the-human-judgments.hops.to]
+module = "map-builder"
+link = "sender-uses-receiver"
+
+[routes.apply-the-human-judgments.end]
+state = "reached"
+
+[routes.apply-the-human-judgments.review]
+state = "judged"
+reason = "Mapper calls the manual evaluator through the review contract, then passes its GraphEvaluation and the original ProjectGraph to Map builder."
+role = "supplies-input"
+other_roles = []
+primary = "dependency:mapper>map-builder"
+supporting = ["dependency:mapper>graph-evaluator-manual"]
+
+[routes.apply-the-llm-judgments]
+status = "proposed-addition"
+use_site = "dependency:mapper>map-builder"
+
+[routes.apply-the-llm-judgments.origin]
+module = "graph-evaluator-llm"
+item = "GraphEvaluation"
+
+[[routes.apply-the-llm-judgments.hops]]
+evidence = "dependency:mapper>graph-evaluator-llm"
+support = "proposed"
+role = "wires"
+
+[routes.apply-the-llm-judgments.hops.to]
+module = "mapper"
+link = "receiver-uses-sender"
+
+[[routes.apply-the-llm-judgments.hops]]
+evidence = "dependency:mapper>map-builder"
+support = "proposed"
+role = "supplies-input"
+
+[routes.apply-the-llm-judgments.hops.to]
+module = "map-builder"
+link = "sender-uses-receiver"
+
+[routes.apply-the-llm-judgments.end]
+state = "reached"
+
+[routes.apply-the-llm-judgments.review]
+state = "judged"
+reason = "Mapper calls the LLM evaluator through the review contract, then passes its GraphEvaluation and the original ProjectGraph to Map builder."
+role = "supplies-input"
+other_roles = []
+primary = "dependency:mapper>map-builder"
+supporting = ["dependency:mapper>graph-evaluator-llm"]
+
+[routes.evidence-for-llm-review]
+status = "proposed-addition"
+use_site = "dependency:mapper>graph-evaluator-llm"
+
+[routes.evidence-for-llm-review.origin]
+module = "project-graph-rust"
+item = "ProjectGraph"
+
+[[routes.evidence-for-llm-review.hops]]
+evidence = "dependency:mapper>project-graph-rust"
+support = "proposed"
+role = "wires"
+
+[routes.evidence-for-llm-review.hops.to]
+module = "mapper"
+link = "receiver-uses-sender"
+
+[[routes.evidence-for-llm-review.hops]]
+evidence = "dependency:mapper>graph-evaluator-llm"
+support = "proposed"
+role = "supplies-input"
+
+[routes.evidence-for-llm-review.hops.to]
+module = "graph-evaluator-llm"
+link = "sender-uses-receiver"
+
+[routes.evidence-for-llm-review.end]
+state = "reached"
+
+[routes.evidence-for-llm-review.review]
+state = "judged"
+reason = "Mapper passes the ProjectGraph from the Rust grapher through the Graph evaluator contract. The LLM evaluator presents the relevant evidence to the model."
+role = "supplies-input"
+other_roles = []
+primary = "dependency:mapper>graph-evaluator-llm"
+supporting = ["dependency:mapper>project-graph-rust"]
+
+[routes.evidence-for-manual-evaluation]
+status = "proposed-addition"
+use_site = "dependency:mapper>graph-evaluator-manual"
+
+[routes.evidence-for-manual-evaluation.origin]
+module = "project-graph-rust"
+item = "ProjectGraph"
+
+[[routes.evidence-for-manual-evaluation.hops]]
+evidence = "dependency:mapper>project-graph-rust"
+support = "proposed"
+role = "wires"
+
+[routes.evidence-for-manual-evaluation.hops.to]
+module = "mapper"
+link = "receiver-uses-sender"
+
+[[routes.evidence-for-manual-evaluation.hops]]
+evidence = "dependency:mapper>graph-evaluator-manual"
+support = "proposed"
+role = "supplies-input"
+
+[routes.evidence-for-manual-evaluation.hops.to]
+module = "graph-evaluator-manual"
+link = "sender-uses-receiver"
+
+[routes.evidence-for-manual-evaluation.end]
+state = "reached"
+
+[routes.evidence-for-manual-evaluation.review]
+state = "judged"
+reason = "Mapper passes the ProjectGraph from the Rust grapher through the Graph evaluator contract. The manual evaluator presents the relevant evidence to the human."
+role = "supplies-input"
+other_roles = []
+primary = "dependency:mapper>graph-evaluator-manual"
+supporting = ["dependency:mapper>project-graph-rust"]
+
+[routes.present-the-project-map]
+status = "proposed-addition"
+use_site = "dependency:mapper>map-web"
+
+[routes.present-the-project-map.origin]
+module = "map-builder"
+item = "ProjectMap"
+
+[[routes.present-the-project-map.hops]]
+evidence = "dependency:mapper>map-builder"
+support = "proposed"
+role = "supplies-input"
+
+[routes.present-the-project-map.hops.to]
+module = "mapper"
+link = "receiver-uses-sender"
+
+[[routes.present-the-project-map.hops]]
+evidence = "dependency:mapper>map-web"
+support = "proposed"
+role = "supplies-input"
+
+[routes.present-the-project-map.hops.to]
+module = "map-web"
+link = "sender-uses-receiver"
+
+[routes.present-the-project-map.end]
+state = "reached"
+
+[routes.present-the-project-map.review]
+state = "judged"
+reason = "Mapper supplies a completed ProjectMap to the browser viewer for display."
+role = "supplies-input"
+other_roles = []
+primary = "proposal:present-the-project-map"
+supporting = ["dependency:mapper>map-web", "dependency:mapper>map-builder"]
+
+[routes.save-the-project-map]
+status = "proposed-addition"
+use_site = "dependency:mapper>map-persist"
+
+[routes.save-the-project-map.origin]
+module = "map-builder"
+item = "ProjectMap"
+
+[[routes.save-the-project-map.hops]]
+evidence = "dependency:mapper>map-builder"
+support = "proposed"
+role = "supplies-input"
+
+[routes.save-the-project-map.hops.to]
+module = "mapper"
+link = "receiver-uses-sender"
+
+[[routes.save-the-project-map.hops]]
+evidence = "dependency:mapper>map-persist"
+support = "proposed"
+role = "supplies-input"
+
+[routes.save-the-project-map.hops.to]
+module = "map-persist"
+link = "sender-uses-receiver"
+
+[routes.save-the-project-map.end]
+state = "reached"
+
+[routes.save-the-project-map.review]
+state = "judged"
+reason = "Mapper passes the completed ProjectMap to Map persist for storage."
+role = "supplies-input"
+other_roles = []
+primary = "dependency:mapper>map-persist"
+supporting = ["dependency:mapper>map-builder"]
+
+[routes.supply-the-project-graph]
+status = "proposed-addition"
+use_site = "dependency:mapper>map-builder"
+
+[routes.supply-the-project-graph.origin]
+module = "project-graph-rust"
+item = "ProjectGraph"
+
+[[routes.supply-the-project-graph.hops]]
+evidence = "dependency:mapper>project-graph-rust"
+support = "proposed"
+role = "wires"
+
+[routes.supply-the-project-graph.hops.to]
+module = "mapper"
+link = "receiver-uses-sender"
+
+[[routes.supply-the-project-graph.hops]]
+evidence = "dependency:mapper>map-builder"
+support = "proposed"
+role = "supplies-input"
+
+[routes.supply-the-project-graph.hops.to]
+module = "map-builder"
+link = "sender-uses-receiver"
+
+[routes.supply-the-project-graph.end]
+state = "reached"
+
+[routes.supply-the-project-graph.review]
+state = "judged"
+reason = "Mapper passes the original graph from the Rust grapher to Map builder so its routes and evidence can be matched to the review decisions."
+role = "supplies-input"
+other_roles = []
+primary = "dependency:mapper>map-builder"
+supporting = ["dependency:mapper>project-graph-rust"]
+
+[routes.wire-the-llm-evaluator]
+status = "proposed-addition"
+use_site = "dependency:mapper>graph-evaluator-llm"
+
+[routes.wire-the-llm-evaluator.origin]
+module = "graph-evaluator-llm"
+item = "LlmEvaluator"
+
+[[routes.wire-the-llm-evaluator.hops]]
+evidence = "dependency:mapper>graph-evaluator-llm"
+support = "proposed"
+role = "wires"
+
+[routes.wire-the-llm-evaluator.hops.to]
+module = "mapper"
+link = "receiver-uses-sender"
+
+[routes.wire-the-llm-evaluator.end]
+state = "reached"
+
+[routes.wire-the-llm-evaluator.review]
+state = "judged"
+reason = "Mapper constructs the LLM evaluator and calls it through the Graph evaluator contract."
+role = "direct-use"
+other_roles = []
+primary = "dependency:mapper>graph-evaluator-llm"
+supporting = []
+
+[routes.wire-the-manual-evaluator]
+status = "proposed-addition"
+use_site = "dependency:mapper>graph-evaluator-manual"
+
+[routes.wire-the-manual-evaluator.origin]
+module = "graph-evaluator-manual"
+item = "ManualEvaluator"
+
+[[routes.wire-the-manual-evaluator.hops]]
+evidence = "dependency:mapper>graph-evaluator-manual"
+support = "proposed"
+role = "wires"
+
+[routes.wire-the-manual-evaluator.hops.to]
+module = "mapper"
+link = "receiver-uses-sender"
+
+[routes.wire-the-manual-evaluator.end]
+state = "reached"
+
+[routes.wire-the-manual-evaluator.review]
+state = "judged"
+reason = "Mapper constructs the manual evaluator and calls it through the Graph evaluator contract."
+role = "direct-use"
+other_roles = []
+primary = "dependency:mapper>graph-evaluator-manual"
+supporting = []
+
+[routes.wire-the-rust-grapher]
+status = "proposed-addition"
+use_site = "dependency:mapper>project-graph-rust"
+
+[routes.wire-the-rust-grapher.origin]
+module = "project-graph-rust"
+item = "RustGrapher"
+
+[[routes.wire-the-rust-grapher.hops]]
+evidence = "dependency:mapper>project-graph-rust"
+support = "proposed"
+role = "wires"
+
+[routes.wire-the-rust-grapher.hops.to]
+module = "mapper"
+link = "receiver-uses-sender"
+
+[routes.wire-the-rust-grapher.end]
+state = "reached"
+
+[routes.wire-the-rust-grapher.review]
+state = "judged"
+reason = "For a Rust build, Mapper constructs the Rust grapher and calls it through the ProjectGrapher contract."
+role = "direct-use"
+other_roles = []
+primary = "dependency:mapper>project-graph-rust"
+supporting = []
+
+[routes.wire-the-typescript-grapher]
+status = "proposed-addition"
+use_site = "dependency:mapper>project-graph-typescript"
+
+[routes.wire-the-typescript-grapher.origin]
+module = "project-graph-typescript"
+item = "TypeScriptGrapher"
+
+[[routes.wire-the-typescript-grapher.hops]]
+evidence = "dependency:mapper>project-graph-typescript"
+support = "proposed"
+role = "wires"
+
+[routes.wire-the-typescript-grapher.hops.to]
+module = "mapper"
+link = "receiver-uses-sender"
+
+[routes.wire-the-typescript-grapher.end]
+state = "reached"
+
+[routes.wire-the-typescript-grapher.review]
+state = "judged"
+reason = "For a TypeScript project, Mapper constructs the TypeScript grapher and calls it through the same contract."
+role = "direct-use"
+other_roles = []
+primary = "dependency:mapper>project-graph-typescript"
+supporting = []
+
+[evidence."dependency:graph-evaluator-llm>graph-evaluator"]
+kind = "proposal"
+summary = "Implements the review decision contract for the LLM workflow."
+
+[evidence."dependency:graph-evaluator-llm>graph-evaluator-pieces"]
+kind = "proposal"
+summary = "Asks the model about one piece at a time and checks its answers with the shared rules."
+
+[evidence."dependency:graph-evaluator-manual>graph-evaluator"]
+kind = "proposal"
+summary = "Implements the review decision contract for the manual workflow."
+
+[evidence."dependency:graph-evaluator-manual>graph-evaluator-pieces"]
+kind = "proposal"
+summary = "Presents the workbook and checks each recorded answer with the shared pieces."
+
+[evidence."dependency:graph-evaluator-pieces>graph-evaluator"]
+kind = "proposal"
+summary = "Builds the GraphEvaluation from checked answers."
+
+[evidence."dependency:graph-evaluator>project-graph"]
+kind = "proposal"
+summary = "Uses ProjectGraph as the review input and its subject identities to anchor the returned judgments."
+
+[evidence."dependency:map-builder>graph-evaluator"]
+kind = "proposal"
+summary = "Map builder imports the GraphEvaluation type from Graph evaluator. Mapper supplies the evaluation when it calls Map builder."
+
+[evidence."dependency:map-builder>project-graph"]
+kind = "proposal"
+summary = "Reads a completed ProjectGraph through its shared data contract."
+
+[evidence."dependency:map-builder>project-map"]
+kind = "proposal"
+summary = "Returns the completed map using the ProjectMap type defined by Project map."
+
+[evidence."dependency:map-persist>project-map"]
+kind = "proposal"
+summary = "Uses the public ProjectMap representation for persistence."
+
+[evidence."dependency:map-web>project-map"]
+kind = "proposal"
+summary = "Uses the public ProjectMap representation for display."
+
+[evidence."dependency:mapper>graph-evaluator"]
+kind = "proposal"
+summary = "Passes the ProjectGraph to the selected evaluator and receives its GraphEvaluation."
+
+[evidence."dependency:mapper>graph-evaluator-llm"]
+kind = "proposal"
+summary = "Constructs this reviewer when the LLM workflow is selected."
+
+[evidence."dependency:mapper>graph-evaluator-manual"]
+kind = "proposal"
+summary = "Constructs this reviewer when the manual workflow is selected."
+
+[evidence."dependency:mapper>map-builder"]
+kind = "proposal"
+summary = "Mapper passes the graph it received from the language grapher and the judgments it received from Graph evaluator to Map builder. Map builder returns a ProjectMap to Mapper."
+
+[evidence."dependency:mapper>map-persist"]
+kind = "proposal"
+summary = "Mapper passes the ProjectMap returned by Map builder to Map persist for storage."
+
+[evidence."dependency:mapper>map-web"]
+kind = "proposal"
+summary = "Mapper passes the ProjectMap returned by Map builder to Map web for display."
+
+[evidence."dependency:mapper>project-graph"]
+kind = "proposal"
+summary = "Calls the selected grapher through the ProjectGrapher contract and passes the ProjectGraph it returns to review and map building."
+
+[evidence."dependency:mapper>project-graph-rust"]
+kind = "proposal"
+summary = "Constructs the Rust grapher for a Rust build."
+
+[evidence."dependency:mapper>project-graph-typescript"]
+kind = "proposal"
+summary = "Constructs the TypeScript grapher for a TypeScript project."
+
+[evidence."dependency:mapper>project-map"]
+kind = "proposal"
+summary = "Uses the ProjectMap type for the value it receives from Map builder and supplies to Map web and Map persist."
+
+[evidence."dependency:project-graph-rust>project-graph"]
+kind = "proposal"
+summary = "Implements the ProjectGrapher contract for Cargo and rustc and returns a ProjectGraph."
+
+[evidence."dependency:project-graph-typescript>project-graph"]
+kind = "proposal"
+summary = "Implements the same ProjectGrapher contract for an npm workspace with the TypeScript checker."
+
+[evidence."module:graph-evaluator"]
+kind = "proposal"
+summary = "graph-evaluator is a proposed module in docs/architecture/decisions.md."
+
+[evidence."module:graph-evaluator-llm"]
+kind = "proposal"
+summary = "graph-evaluator-llm is a proposed module in docs/architecture/decisions.md."
+
+[evidence."module:graph-evaluator-manual"]
+kind = "proposal"
+summary = "graph-evaluator-manual is a proposed module in docs/architecture/decisions.md."
+
+[evidence."module:graph-evaluator-pieces"]
+kind = "proposal"
+summary = "graph-evaluator-pieces is a proposed module in docs/architecture/decisions.md."
+
+[evidence."module:map-builder"]
+kind = "proposal"
+summary = "map-builder is a proposed module in docs/architecture/decisions.md."
+
+[evidence."module:map-persist"]
+kind = "proposal"
+summary = "map-persist is a proposed module in docs/architecture/decisions.md."
+
+[evidence."module:map-web"]
+kind = "proposal"
+summary = "map-web is a proposed module in docs/architecture/decisions.md."
+
+[evidence."module:mapper"]
+kind = "proposal"
+summary = "mapper is a proposed module in docs/architecture/decisions.md."
+
+[evidence."module:project-graph"]
+kind = "proposal"
+summary = "project-graph is a proposed module in docs/architecture/decisions.md."
+
+[evidence."module:project-graph-rust"]
+kind = "proposal"
+summary = "project-graph-rust is a proposed module in docs/architecture/decisions.md."
+
+[evidence."module:project-graph-typescript"]
+kind = "proposal"
+summary = "project-graph-typescript is a proposed module in docs/architecture/decisions.md."
+
+[evidence."module:project-map"]
+kind = "proposal"
+summary = "project-map is a proposed module in docs/architecture/decisions.md."
+
+[evidence."proposal:present-the-project-map"]
+kind = "proposal"
+summary = "Mapper supplies a completed ProjectMap to the browser viewer for display."
+
+[update]
+dependencies = []
+
+[update.modules]
+
+[update.routes]
+
+[remove]
+modules = []
+dependencies = []
+routes = []
+
+[evidence."module:map-draft"]
+kind = "proposal"
+summary = "map-draft is a module in docs/architecture/decisions.md."
+
+[evidence."module:map-preview"]
+kind = "proposal"
+summary = "map-preview is a module in docs/architecture/decisions.md."
+
+[evidence."dependency:map-draft>project-map"]
+kind = "proposal"
+summary = "map-draft combines values of the project-map types."
+
+[evidence."dependency:mapper>map-draft"]
+kind = "proposal"
+summary = "srs draft calls map-draft's combine."
+
+[evidence."dependency:mapper>map-preview"]
+kind = "proposal"
+summary = "srs draft preview runs a map-preview Preview and Watcher."
