@@ -303,7 +303,8 @@ fn a_package_dependency_outside_the_workspace_is_external() {
 
 #[test]
 fn an_implementation_entering_an_interface_slot_is_a_conditional_coercion() {
-    let (id, fact) = only_fact(|f| f.kind == FactKind::Coerce);
+    let (id, fact) =
+        only_fact(|f| f.kind == FactKind::Coerce && f.object == place(MAIN, "main", "backups"));
     assert_eq!(fact.subject, place(MAIN, "main", "os"));
     assert_eq!(fact.object, place(MAIN, "main", "backups"));
     assert_eq!(text(fact.site.as_ref().unwrap()), "os");
@@ -559,4 +560,140 @@ fn builds_of_different_source_under_one_revision_get_different_ids() {
     let two = build();
     std::fs::remove_dir_all(&root).unwrap();
     assert_ne!(one, two);
+}
+
+/// The call `backups.write(name)` inside the closure `installLater` returns.
+fn later_call() -> &'static FactId {
+    only_fact(|f| {
+        f.subject == item(INSTALLER, "installLater") && matches!(f.kind, FactKind::Call(_))
+    })
+    .0
+}
+
+#[test]
+fn a_destructured_parameter_reads_the_field_it_names() {
+    let (_, read) = only_fact(|f| {
+        f.kind == FactKind::Read && f.object == place(INSTALLER, "installLater", "backups")
+    });
+    assert_eq!(read.subject, place(INSTALLER, "InstallParts", "backups"));
+    assert_eq!(text(read.site.as_ref().unwrap()), "backups");
+}
+
+#[test]
+fn a_closure_captures_the_variables_it_uses() {
+    let captures = facts_where(|f| f.kind == FactKind::Capture);
+    assert_eq!(captures.len(), 2, "{captures:#?}");
+    let (_, backups) = only_fact(|f| {
+        f.kind == FactKind::Capture && f.subject == place(INSTALLER, "installLater", "backups")
+    });
+    assert_eq!(
+        text(backups.site.as_ref().unwrap()),
+        "() => backups.write(name)"
+    );
+    let Endpoint::Place { projection, .. } = &backups.object else {
+        panic!("a capture moves into a place")
+    };
+    let offset = backups.site.as_ref().unwrap().bytes.start;
+    assert_eq!(projection, &format!("backups@closure:{offset}"));
+}
+
+#[test]
+fn a_value_route_runs_through_an_object_literal_a_pattern_and_a_capture() {
+    let routes = routes_to(later_call());
+    assert_eq!(routes.len(), 1, "{routes:#?}");
+    let route = routes[0];
+    assert_eq!(route.origin, item(OS, "OsBackups"));
+    assert_eq!(route.end, RouteEnd::ReachedUse);
+    assert_eq!(
+        hop_kinds(route),
+        [
+            &FactKind::Construct,
+            &FactKind::Coerce,
+            &FactKind::Read,
+            &FactKind::Capture,
+            &FactKind::Pass
+        ]
+    );
+    assert_eq!(
+        route.hops[1].to,
+        place(INSTALLER, "InstallParts", "backups")
+    );
+    assert_eq!(
+        route.hops[2].to,
+        place(INSTALLER, "installLater", "backups")
+    );
+}
+
+#[test]
+fn an_array_pattern_takes_each_element_of_its_literal_and_skips_an_impossible_default() {
+    let (_, store) = only_fact(|f| f.object == place(MAIN, "main", "spare"));
+    assert_eq!(store.kind, FactKind::Store);
+    assert_eq!(store.subject, place(MAIN, "main", "os"));
+
+    let (call, _) = only_fact(|f| {
+        matches!(f.kind, FactKind::Call(_))
+            && f.site
+                .as_ref()
+                .is_some_and(|site| text(site) == "spare.write(\"spare\")")
+    });
+    let routes = routes_to(call);
+    assert_eq!(routes.len(), 1, "{routes:#?}");
+    assert_eq!(routes[0].origin, item(OS, "OsBackups"));
+    assert!(
+        routes[0]
+            .hops
+            .iter()
+            .all(|h| h.support == Support::Established)
+    );
+}
+
+#[test]
+fn an_object_pattern_default_and_the_field_read_are_each_conditional() {
+    let (call, _) = only_fact(|f| {
+        f.subject == item(MAIN, "main")
+            && f.object == item(API, "Backups.prune")
+            && matches!(f.kind, FactKind::Call(_))
+    });
+    let routes = routes_to(call);
+    assert_eq!(routes.len(), 2, "{routes:#?}");
+    let possible = |condition: &str| Support::Possible {
+        condition: Some(condition.into()),
+    };
+
+    let default = routes
+        .iter()
+        .find(|r| r.origin == item(MAIN, "MemoryBackups"))
+        .expect("a route from the default");
+    assert_eq!(default.end, RouteEnd::ReachedUse);
+    assert_eq!(default.hops[0].to, place(MAIN, "pick", "backups"));
+    assert_eq!(default.hops[0].support, possible("backups === undefined"));
+
+    let supplied = routes
+        .iter()
+        .find(|r| r.origin == place(MAIN, "Choice", "backups"))
+        .expect("a route through the field");
+    assert!(matches!(supplied.end, RouteEnd::Stopped { .. }));
+    assert_eq!(hop_kinds(supplied)[0], &FactKind::Read);
+    assert_eq!(supplied.hops[0].support, possible("backups !== undefined"));
+}
+
+#[test]
+fn a_default_after_a_spread_is_only_possible() {
+    let into_spread = facts_where(|f| f.object == place(MAIN, "main", "spread"));
+    assert_eq!(into_spread.len(), 1, "{into_spread:#?}");
+    let (construct, fact) = into_spread[0];
+    assert_eq!(fact.kind, FactKind::Construct);
+    assert_eq!(fact.subject, item(MAIN, "MemoryBackups"));
+    let hop = graph()
+        .routes
+        .values()
+        .flat_map(|r| &r.hops)
+        .find(|h| &h.fact == construct)
+        .expect("the default's move is on a route");
+    assert_eq!(
+        hop.support,
+        Support::Possible {
+            condition: Some("[0] === undefined".into())
+        }
+    );
 }

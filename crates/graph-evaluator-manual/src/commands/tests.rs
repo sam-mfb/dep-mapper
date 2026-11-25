@@ -17,7 +17,7 @@ impl Session {
             &Presentation {
                 page_size: 1,
                 source: &ByteOffsets,
-                command: "srs eval",
+                command: Some("srs eval"),
             },
         );
         store
@@ -219,7 +219,7 @@ fn the_instructions_name_the_project_and_the_command() {
         &Presentation {
             page_size: 10,
             source: &ByteOffsets,
-            command: "srs eval",
+            command: Some("srs eval"),
         },
     );
     let text = instructions("srs eval", &workbook);

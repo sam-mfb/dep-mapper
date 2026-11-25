@@ -10,7 +10,7 @@ fn workbook() -> Workbook {
         &Presentation {
             page_size: 10,
             source: &ByteOffsets,
-            command: "srs eval",
+            command: Some("srs eval"),
         },
     )
 }
