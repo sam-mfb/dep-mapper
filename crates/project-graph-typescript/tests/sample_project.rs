@@ -631,7 +631,10 @@ fn an_array_pattern_takes_each_element_of_its_literal_and_skips_an_impossible_de
     assert_eq!(store.subject, place(MAIN, "main", "os"));
 
     let (call, _) = only_fact(|f| {
-        f.object == item(OS, "OsBackups.write") && matches!(f.kind, FactKind::Call(_))
+        matches!(f.kind, FactKind::Call(_))
+            && f.site
+                .as_ref()
+                .is_some_and(|site| text(site) == "spare.write(\"spare\")")
     });
     let routes = routes_to(call);
     assert_eq!(routes.len(), 1, "{routes:#?}");
@@ -672,4 +675,25 @@ fn an_object_pattern_default_and_the_field_read_are_each_conditional() {
     assert!(matches!(supplied.end, RouteEnd::Stopped { .. }));
     assert_eq!(hop_kinds(supplied)[0], &FactKind::Read);
     assert_eq!(supplied.hops[0].support, possible("backups !== undefined"));
+}
+
+#[test]
+fn a_default_after_a_spread_is_only_possible() {
+    let into_spread = facts_where(|f| f.object == place(MAIN, "main", "spread"));
+    assert_eq!(into_spread.len(), 1, "{into_spread:#?}");
+    let (construct, fact) = into_spread[0];
+    assert_eq!(fact.kind, FactKind::Construct);
+    assert_eq!(fact.subject, item(MAIN, "MemoryBackups"));
+    let hop = graph()
+        .routes
+        .values()
+        .flat_map(|r| &r.hops)
+        .find(|h| &h.fact == construct)
+        .expect("the default's move is on a route");
+    assert_eq!(
+        hop.support,
+        Support::Possible {
+            condition: Some("[0] === undefined".into())
+        }
+    );
 }

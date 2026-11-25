@@ -38,5 +38,8 @@ export function main(dryRun: boolean): string {
   const [spare = new MemoryBackups()] = [os];
   spare.write("spare");
   pick({}).prune(1);
+  // After a spread, the position is unknown, so the default may run.
+  const [spread = new MemoryBackups()] = [...[os]];
+  spread.write("spread");
   return installer.install("tools");
 }

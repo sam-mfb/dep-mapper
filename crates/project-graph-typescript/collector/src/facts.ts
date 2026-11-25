@@ -555,16 +555,23 @@ class FileFacts {
    * `const [a = d] = [x]` moves each element of the literal into its name.
    * An element the literal supplies replaces the default, unless its type
    * admits undefined; then each move is conditional. An element the literal
-   * leaves out takes the default.
+   * leaves out takes the default. From the first spread on, positions are
+   * unknown: the element's value is not followed and its default is only
+   * possible.
    */
   private arrayPattern(pattern: ts.ArrayBindingPattern, initializer: ts.Expression): void {
     const literal = skipOuter(initializer);
     if (!ts.isArrayLiteralExpression(literal)) return;
+    const spread = literal.elements.findIndex((e) => ts.isSpreadElement(e));
     pattern.elements.forEach((element, index) => {
       if (ts.isOmittedExpression(element) || !ts.isIdentifier(element.name)) return;
       const destination = this.placeOf(element, element.name.text);
+      if (spread !== -1 && index >= spread) {
+        if (element.initializer) this.flow(element.initializer, destination, "store", `[${index}] === undefined`);
+        return;
+      }
       const value = literal.elements[index];
-      const supplied = value !== undefined && !ts.isOmittedExpression(value) && !ts.isSpreadElement(value);
+      const supplied = value !== undefined && !ts.isOmittedExpression(value);
       if (!supplied) {
         if (element.initializer) this.flow(element.initializer, destination, "store", null);
         return;
