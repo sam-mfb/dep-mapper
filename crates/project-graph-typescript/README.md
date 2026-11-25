@@ -36,7 +36,9 @@ npm ci
 
 Imports, re-exports and references are facts only when they reach another package or something outside the project. Calls, implementations and value moves are facts everywhere, because routes pass through code inside one package.
 
-A value moves between places. These are locals and parameters of a function, fields of a class or interface, a function's `return`, and the receiver of a method call, which moves into the called method's `self`. A class value written into an interface-typed slot is a `Coerce` move. If the class does not declare that interface, the same site also records a structural `Implements` fact. When a move happens on one branch of a conditional, its hop is `Possible`, with the condition's text.
+A value moves between places. These are locals and parameters of a function, fields of a class or interface, a function's `return`, and the receiver of a method call, which moves into the called method's `self`. A class value written into an interface-typed slot is a `Coerce` move. If the class does not declare that interface, the same site also records a structural `Implements` fact. A closure (a function expression, arrow function or nested function that is not an item) has its own places, named `name@closure:<byte offset>`. When it uses a variable declared outside it, a `Capture` move takes the outer place into the closure's place, at the closure. A name bound by an object pattern reads the field it names from the pattern's type, so `{ backups }: InstallParts` reads `InstallParts.backups`. An array pattern is followed only when its value is an array literal.
+
+When a move happens on one branch of a conditional, its hop is `Possible`, with the condition's text.
 
 There are three kinds of route:
 
@@ -44,7 +46,7 @@ There are three kinds of route:
 - **Value route.** Traced backward from a method call's receiver to the `new` expression that built the value, or to something outside the project. If the trace finds no incoming value, the route stops and says why.
 - **Receiver bound.** For a call through an interface, one bound for each class with an `Implements` fact for that interface.
 
-Not yet covered: values captured by closures, destructuring, namespaces, and calls through function-typed values beyond recording them as indirect.
+Not yet covered: namespaces, destructuring in assignments, array patterns over anything but a literal, and calls through function-typed values beyond recording them as indirect. Calling a closure is an indirect call, so a value passed to a closure as an argument is not followed.
 
 ## Sample
 
