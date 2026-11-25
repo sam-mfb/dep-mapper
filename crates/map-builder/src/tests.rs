@@ -724,3 +724,28 @@ fn facts_and_gaps_become_evidence_with_their_sources() {
         "macro bodies were not expanded"
     );
 }
+
+#[test]
+fn a_relationship_that_only_reaches_a_hop_taken_by_an_earlier_one_is_reported() {
+    let mut evaluation = evaluation();
+    evaluation.relationships.push(relationship(
+        RelationshipKind::DirectUse,
+        "logging is a direct use too",
+        vec![fact_ref("log")],
+    ));
+    let build = build_map(&graph(), &evaluation).unwrap();
+    assert!(
+        build
+            .problems
+            .contains(&BuildProblem::UnplacedRelationship { relationship: 4 })
+    );
+    assert!(
+        !build
+            .problems
+            .contains(&BuildProblem::UnplacedRelationship { relationship: 2 })
+    );
+    assert_eq!(
+        build.map.routes[&map_route("log")].hops[0].role,
+        Some(UseRole::Incidental)
+    );
+}

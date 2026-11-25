@@ -16,6 +16,8 @@
 //!
 //! When several relationships apply to one subject, the first in the
 //! evaluation's order gives the role and the rest give other roles.
+//! A hop has a single role, so only the first relationship citing its fact
+//! applies to it.
 //!
 //! Dependencies come from the graph's facts. A fact whose subject uses its
 //! object, such as an import, a reference, an implementation or a call, makes
