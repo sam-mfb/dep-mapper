@@ -9,6 +9,7 @@ use mapper::eval;
 use mapper::implementations::Installed;
 use mapper::run::{self, MapOutputs};
 use mapper::serve::PageServer;
+use mapper::show;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -114,6 +115,15 @@ fn preview(draft: &Path, listen: SocketAddr) -> Result<(), String> {
     Err(error.to_string())
 }
 
+/// The installed implementations, with their settings from the environment.
+fn installed() -> Installed {
+    Installed {
+        anthropic_api_key: std::env::var("ANTHROPIC_API_KEY")
+            .ok()
+            .filter(|key| !key.is_empty()),
+    }
+}
+
 fn main() -> ExitCode {
     let current_dir = match std::env::current_dir() {
         Ok(dir) => dir,
@@ -146,8 +156,12 @@ fn main() -> ExitCode {
                 }
             };
         }
+        Command::Show(command) => match std::fs::read_to_string(&command.map) {
+            Ok(text) => show::show(&command, &text, &mut Terminal).map_err(|e| e.to_string()),
+            Err(error) => Err(format!("reading {}: {error}", command.map.display())),
+        },
         Command::Map(command) => {
-            run::map(&command, &Installed, &mut Terminal).map_err(|e| e.to_string())
+            run::map(&command, &installed(), &mut Terminal).map_err(|e| e.to_string())
         }
         Command::Draft(DraftCommand::Check { draft }) => {
             draft::check(&draft, &mut Terminal).map_err(|e: DraftError| e.to_string())
