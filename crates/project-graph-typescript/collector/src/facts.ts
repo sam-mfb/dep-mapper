@@ -19,6 +19,12 @@
 //
 // A name bound by an object pattern reads the field of the pattern's type it
 // names, as if written `const name = value.field`.
+//
+// Array contents are kept by element type: the elements of any array whose
+// elements are of type T share the place `{ owner: T, projection: "[element]" }`.
+// An array literal stores into it; a `for...of` variable, the callback of an
+// array method and the result of `find`, `at` and the like read from it. Like
+// a field, it stands for every instance, so routes through it are possible.
 
 import ts from "typescript";
 import { hasModifier, LIBRARY, type Project } from "./project.ts";
@@ -211,7 +217,10 @@ class FileFacts {
       this.construction(node);
     } else if (ts.isClassDeclaration(node)) {
       this.declaredImplements(node);
+    } else if (ts.isForOfStatement(node)) {
+      this.forOf(node);
     } else if (ts.isVariableDeclaration(node) && node.initializer) {
+      this.declaredValueImplements(node);
       if (ts.isArrayBindingPattern(node.name)) {
         this.arrayPattern(node.name, node.initializer);
       } else {
@@ -276,6 +285,9 @@ class FileFacts {
       this.facts.receiver(id, this.flow(call.expression.expression, self, "pass", null, link));
     }
     this.arguments(call, call.arguments, declaration, target);
+    if (isArrayMethod(target) && ts.isPropertyAccessExpression(call.expression)) {
+      this.arrayCallbacks(call.expression.expression, call.arguments);
+    }
   }
 
   private construction(expression: ts.NewExpression): void {
@@ -377,8 +389,38 @@ class FileFacts {
         ...this.flow(e.whenFalse, destination, kind, both(condition, negated), link),
       ];
     }
+    if (
+      ts.isBinaryExpression(e) &&
+      (e.operatorToken.kind === ts.SyntaxKind.BarBarToken ||
+        e.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken)
+    ) {
+      const left = e.left.getText(this.file);
+      const nullish = e.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken;
+      const [used, unused] = nullish ? [`${left} != null`, `${left} == null`] : [left, `!(${left})`];
+      return [
+        ...this.flow(e.left, destination, kind, both(condition, used), link),
+        ...this.flow(e.right, destination, kind, both(condition, unused), link),
+      ];
+    }
     if (ts.isObjectLiteralExpression(e)) {
       return this.objectLiteral(e, condition);
+    }
+    if (ts.isArrayLiteralExpression(e)) {
+      const elements = this.elementPlace(this.checker.slotType(e) ?? this.checker.typeAt(e));
+      if (!elements) return [];
+      return e.elements.flatMap((element) =>
+        ts.isSpreadElement(element) || ts.isOmittedExpression(element)
+          ? []
+          : this.flow(element, elements, "store", condition),
+      );
+    }
+    if (ts.isCallExpression(e) && ts.isPropertyAccessExpression(e.expression) && ELEMENT_RESULT.has(e.expression.name.text)) {
+      const declaration = this.checker.calledDeclaration(e);
+      const target = declaration && this.project.endpointOf(declaration);
+      const elements = this.elementPlace(this.checker.typeAt(e.expression.expression));
+      if (target && isArrayMethod(target) && elements) {
+        return [this.write(elements, { kind: "read" }, destination, e, condition, link)];
+      }
     }
     if (ts.isNewExpression(e)) {
       const origin = this.classEndpoint(e);
@@ -413,6 +455,54 @@ class FileFacts {
       }
       return [];
     });
+  }
+
+  /** The place shared by the elements of arrays of this type, if its element type is an item. */
+  private elementPlace(arrayType: ts.Type): Endpoint | undefined {
+    const element = this.checker.elementType(arrayType);
+    const declaration = element?.getSymbol()?.declarations?.[0] ?? element?.aliasSymbol?.declarations?.[0];
+    const owner = declaration && this.project.items.get(declaration);
+    return owner ? { place: { owner, projection: "[element]" } } : undefined;
+  }
+
+  /** `for (const x of xs)` reads each element of `xs` into `x`. */
+  private forOf(statement: ts.ForOfStatement): void {
+    const list = statement.initializer;
+    if (!ts.isVariableDeclarationList(list) || list.declarations.length !== 1) return;
+    const declaration = list.declarations[0];
+    if (!ts.isIdentifier(declaration.name)) return;
+    const elements = this.elementPlace(this.checker.typeAt(statement.expression));
+    if (!elements) return;
+    this.write(elements, { kind: "read" }, this.placeOf(declaration, declaration.name.text), declaration);
+  }
+
+  /** The first parameter of a callback given to an array method receives the array's elements. */
+  private arrayCallbacks(array: ts.Expression, args: ts.NodeArray<ts.Expression>): void {
+    const elements = this.elementPlace(this.checker.typeAt(array));
+    if (!elements) return;
+    for (const arg of args) {
+      const callback = skipOuter(arg);
+      if (!ts.isArrowFunction(callback) && !ts.isFunctionExpression(callback)) continue;
+      const parameter = callback.parameters[0];
+      if (!parameter || !ts.isIdentifier(parameter.name)) continue;
+      this.write(elements, { kind: "read" }, this.placeOf(parameter, parameter.name.text), parameter);
+    }
+  }
+
+  /**
+   * `const x: Contract = { ... }`, a top-level value written as an object
+   * literal of an interface type, implements that interface.
+   */
+  private declaredValueImplements(declaration: ts.VariableDeclaration): void {
+    const item = this.project.items.get(declaration);
+    if (!item || !declaration.type || !declaration.initializer) return;
+    if (!ts.isObjectLiteralExpression(skipOuter(declaration.initializer))) return;
+    const contract = this.checker
+      .typeAt(declaration.type)
+      .getSymbol()
+      ?.declarations?.find((d) => ts.isInterfaceDeclaration(d));
+    const object = contract && this.project.endpointOf(contract);
+    if (object) this.write({ item }, { kind: "implements" }, object, declaration.type);
   }
 
   /** The endpoint a value is read from. */
@@ -660,6 +750,14 @@ class FileFacts {
     }
     return this.fileItem;
   }
+}
+
+/** Array methods whose result is one of the array's elements. */
+const ELEMENT_RESULT = new Set(["find", "findLast", "at", "pop", "shift"]);
+
+/** Whether a call target is a method of the library's array types. */
+function isArrayMethod(target: Endpoint): boolean {
+  return "external" in target && /^lib#(Readonly)?Array\.\w+$/.test(target.external);
 }
 
 /** A function that is not an item: a function expression, arrow function or nested function. */

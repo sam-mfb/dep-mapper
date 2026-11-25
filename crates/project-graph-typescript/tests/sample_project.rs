@@ -429,6 +429,7 @@ fn each_implementer_is_a_receiver_candidate_for_the_contract_call() {
         item(OS, "OsBackups"),
         item(MAIN, "MemoryBackups"),
         item(ECHO, "SpareBackups"),
+        item(REGISTRY, "quietBackups"),
     ];
     assert_eq!(bounds.len(), implementers.len());
     for (object, kind) in bounds {
@@ -807,4 +808,99 @@ fn an_inherited_tsconfig_is_part_of_the_content_revision() {
         "{strict_revision}"
     );
     assert_ne!(strict_revision, loose_revision);
+}
+
+const REGISTRY: &str = "@sample/app/src/registry.ts";
+
+#[test]
+fn a_typed_object_literal_implements_its_interface() {
+    let (_, fact) = only_fact(|f| {
+        f.kind == FactKind::Implements && f.subject == item(REGISTRY, "quietBackups")
+    });
+    assert_eq!(fact.object, item(API, "Backups"));
+    assert_eq!(text(fact.site.as_ref().unwrap()), "Backups");
+}
+
+/// Each call in the registry reaches both entries of its array, through the
+/// place shared by arrays of `Backups`, so each route is possible.
+#[test]
+fn array_elements_reach_callbacks_loops_and_find() {
+    let both = [item(REGISTRY, "quietBackups"), item(OS, "OsBackups")];
+    for call in [
+        "each.write(\"all\")",
+        "item.prune(1)",
+        "candidate.write(\"probe\")",
+        "first?.write(\"first\")",
+    ] {
+        let (id, _) = only_fact(|f| {
+            matches!(f.kind, FactKind::Call(_)) && f.site.as_ref().is_some_and(|s| text(s) == call)
+        });
+        let routes = routes_to(id);
+        let mut origins: Vec<_> = routes.iter().map(|r| format!("{:?}", r.origin)).collect();
+        origins.sort();
+        let mut expected: Vec<_> = both.iter().map(|o| format!("{o:?}")).collect();
+        expected.sort();
+        assert_eq!(origins, expected, "{call}");
+        let elements = place(API, "Backups", "[element]");
+        for route in routes {
+            let hop = route
+                .hops
+                .iter()
+                .find(|h| h.to == elements)
+                .unwrap_or_else(|| panic!("{call}: a hop into the element place"));
+            assert_eq!(hop.support, Support::Possible { condition: None }, "{call}");
+        }
+    }
+}
+
+#[test]
+fn each_side_of_or_is_a_conditional_move() {
+    let routes = routes_to(
+        only_fact(|f| {
+            matches!(f.kind, FactKind::Call(_))
+                && f.site
+                    .as_ref()
+                    .is_some_and(|s| text(s) == "chosen.write(\"one\")")
+        })
+        .0,
+    );
+    let fallback = routes
+        .iter()
+        .find(|r| r.origin == item(REGISTRY, "quietBackups"))
+        .expect("a route from the fallback");
+    assert_eq!(fallback.hops[0].to, place(REGISTRY, "writeOne", "chosen"));
+    assert_eq!(
+        fallback.hops[0].support,
+        Support::Possible {
+            condition: Some("!(given)".into())
+        }
+    );
+    let given = facts_where(|f| {
+        f.subject == place(REGISTRY, "writeOne", "given")
+            && f.object == place(REGISTRY, "writeOne", "chosen")
+    });
+    assert_eq!(given.len(), 1, "the given value is the other side");
+}
+
+#[test]
+fn an_unbuilt_workspace_package_resolves_to_its_source_entry() {
+    let root = sample_copy("unbuilt");
+    // Without the `paths` mappings, `@sample/...` imports have nothing to
+    // resolve to but the packages' own manifests, as in a fresh checkout.
+    let config = root.join("tsconfig.json");
+    let text = std::fs::read_to_string(&config).unwrap();
+    let start = text.find("\"@sample/backup-api\"").unwrap();
+    let end = text.find("\"clock\"").unwrap();
+    std::fs::write(&config, format!("{}{}", &text[..start], &text[end..])).unwrap();
+    let mut selection = selection(AS_WRITTEN);
+    selection.root = root.clone();
+    let unbuilt = grapher().build_graph(&selection);
+    std::fs::remove_dir_all(&root).unwrap();
+
+    let unbuilt = unbuilt.expect("the unbuilt copy builds");
+    assert!(unbuilt.gaps.is_empty(), "{:#?}", unbuilt.gaps);
+    assert_eq!(
+        unbuilt.facts.keys().collect::<Vec<_>>(),
+        graph().facts.keys().collect::<Vec<_>>()
+    );
 }
