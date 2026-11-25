@@ -39,3 +39,29 @@ export function tallyAll(): Tally {
     return total;
   }, new Tally());
 }
+
+class FallbackBackups implements Backups {
+  write(label: string): string {
+    return label;
+  }
+
+  prune(_keep: number): void {}
+}
+
+interface Holder {
+  backups: Backups;
+  spare?: Backups;
+}
+
+// Destructuring in assignments, not declarations.
+export function reassign(): string {
+  const holder: Holder = { backups: new OsBackups() };
+  let picked: Backups;
+  let spare: Backups;
+  ({ backups: picked, spare = quietBackups } = holder);
+  let first: Backups;
+  let second: Backups;
+  [first, second = new FallbackBackups()] = ALL;
+  second.prune(0);
+  return picked.write("reassigned") + spare.write("held") + first.write("in order");
+}
