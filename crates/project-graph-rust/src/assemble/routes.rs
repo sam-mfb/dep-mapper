@@ -115,6 +115,7 @@ pub(super) fn traced(
         .collect();
     let implementors = implementors(resolve, units, crates);
     let traces = value_routes::trace(&flows, &uses, LIMITS);
+    let into = moves_into(&flows);
     let mut routes = Vec::new();
     for (receiver, traces) in receivers.iter().zip(traces) {
         let crosses_modules =
@@ -157,7 +158,20 @@ pub(super) fn traced(
                 Trace::Stopped { reason } => {
                     stopped = true;
                     if crosses_modules {
-                        routes.push(stop(reason));
+                        // Only a search that saw every move can say where the
+                        // value enters; one stopped at a bound keeps saying so.
+                        let entries = if reason == value_routes::NO_ORIGIN {
+                            unsupplied_parameters(resolve, &into, &receiver.receiver)
+                        } else {
+                            Vec::new()
+                        };
+                        routes.push(stop(match entries.as_slice() {
+                            [] => reason,
+                            entries => format!(
+                                "the value enters as {}, which nothing in this build supplies",
+                                entries.join(", ")
+                            ),
+                        }));
                     }
                 }
             }
@@ -338,6 +352,63 @@ fn is_closure(def: &r::Def) -> bool {
         .rsplit("::")
         .next()
         .is_some_and(|last| last.starts_with("{closure#"))
+}
+
+/// For each endpoint, keyed by its debug form, the endpoints moved into it.
+fn moves_into(flows: &[Flow]) -> HashMap<String, Vec<&Endpoint>> {
+    let mut into: HashMap<String, Vec<&Endpoint>> = HashMap::new();
+    for flow in flows {
+        into.entry(format!("{:?}", flow.to))
+            .or_default()
+            .push(&flow.from);
+    }
+    into
+}
+
+/// The parameters a stopped trace leads back to that no call in the build
+/// passes anything to, such as the clock a library takes from whoever
+/// constructs it, when only its tests and examples do. At most three, named
+/// for a reader.
+fn unsupplied_parameters(
+    resolve: &Resolver,
+    into: &HashMap<String, Vec<&Endpoint>>,
+    receiver: &Endpoint,
+) -> Vec<String> {
+    const MOST_NODES: usize = 5_000;
+    let key = |endpoint: &Endpoint| format!("{endpoint:?}");
+    let mut seen = HashSet::from([key(receiver)]);
+    let mut queue = VecDeque::from([receiver]);
+    let mut found = Vec::new();
+    while let Some(at) = queue.pop_front() {
+        if seen.len() >= MOST_NODES {
+            break;
+        }
+        match into.get(&key(at)) {
+            Some(sources) => {
+                for &source in sources {
+                    if seen.insert(key(source)) {
+                        queue.push_back(source);
+                    }
+                }
+            }
+            None => {
+                // Only a function's own parameters: a closure's come from
+                // whoever calls it, which is followed elsewhere.
+                if let Endpoint::Place { owner, projection } = at
+                    && let Some(position) = projection.strip_prefix("argument ")
+                    && let Some(item) = resolve.items.get(owner)
+                {
+                    let name = format!("argument {position} of `{}`", item.name);
+                    if !found.contains(&name) {
+                        found.push(name);
+                    }
+                }
+            }
+        }
+    }
+    found.sort();
+    found.truncate(3);
+    found
 }
 
 /// The reported moves of a path, in order. A hop is possible when its own

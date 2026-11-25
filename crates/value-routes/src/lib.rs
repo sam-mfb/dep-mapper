@@ -24,6 +24,10 @@
 use project_graph::{Endpoint, Fact};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
+/// The reason a trace gives when it explored every move into the receiver
+/// without reaching an origin, as opposed to stopping at a bound.
+pub const NO_ORIGIN: &str = "no flow reaches the receiver from a known origin";
+
 /// One move of a value from `from` to `to`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Flow {
@@ -96,7 +100,7 @@ pub fn trace(flows: &[Flow], uses: &[Use], limits: Limits) -> Vec<Vec<Trace>> {
         .map(|u| match nodes.find(&u.receiver) {
             Some(receiver) => graph.trace_one(receiver, limits),
             None => vec![Trace::Stopped {
-                reason: "no flow reaches the receiver from a known origin".to_string(),
+                reason: NO_ORIGIN.to_string(),
             }],
         })
         .collect()
@@ -228,7 +232,7 @@ impl<'a> Graph<'a> {
                 limits.max_call_depth
             )
         } else {
-            "no flow reaches the receiver from a known origin".to_string()
+            NO_ORIGIN.to_string()
         };
         stopped_or(origins, reason)
     }
