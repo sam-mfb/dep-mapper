@@ -6,8 +6,9 @@ use graph_evaluator::EvaluationError;
 use map_builder::{BuildProblem, GraphMismatch, MapBuild};
 use map_persist::MapDocument;
 use project_graph::{BuildSelection, GraphingError};
+use project_map::ProjectMap;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 /// What `srs map` should map, where to save it and where to show it.
@@ -87,16 +88,27 @@ pub fn map(
     let saved = map_persist::save(&MapDocument::Map(built.map.clone()));
     write(outputs, &command.out, &saved)?;
     outputs.note(&format!("saved the map to {}", command.out.display()));
-    if command.page.is_none() && command.serve.is_none() {
+    present(&built.map, command.page.as_deref(), command.serve, outputs)
+}
+
+/// Writes the map's page to `page` and serves it at `serve`, each if given.
+/// Serving runs until it fails.
+pub fn present(
+    map: &ProjectMap,
+    page: Option<&Path>,
+    serve: Option<SocketAddr>,
+    outputs: &mut dyn MapOutputs,
+) -> Result<(), MapError> {
+    if page.is_none() && serve.is_none() {
         return Ok(());
     }
-    let page = map_web::page(&built.map);
-    if let Some(path) = &command.page {
-        write(outputs, path, &page)?;
+    let text = map_web::page(map);
+    if let Some(path) = page {
+        write(outputs, path, &text)?;
         outputs.note(&format!("wrote the map page to {}", path.display()));
     }
-    if let Some(address) = command.serve {
-        let source = outputs.serve_page(address, &page);
+    if let Some(address) = serve {
+        let source = outputs.serve_page(address, &text);
         return Err(MapError::Serve { address, source });
     }
     Ok(())

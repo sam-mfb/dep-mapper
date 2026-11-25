@@ -9,6 +9,7 @@ use mapper::eval;
 use mapper::implementations::Installed;
 use mapper::run::{self, MapOutputs};
 use mapper::serve::PageServer;
+use mapper::show;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -155,6 +156,10 @@ fn main() -> ExitCode {
                 }
             };
         }
+        Command::Show(command) => match std::fs::read_to_string(&command.map) {
+            Ok(text) => show::show(&command, &text, &mut Terminal).map_err(|e| e.to_string()),
+            Err(error) => Err(format!("reading {}: {error}", command.map.display())),
+        },
         Command::Map(command) => {
             run::map(&command, &installed(), &mut Terminal).map_err(|e| e.to_string())
         }
