@@ -22,12 +22,17 @@ impl MapOutputs for Terminal {
     }
 
     fn serve_page(&mut self, address: SocketAddr, page: &str) -> std::io::Error {
-        match PageServer::bind(address) {
-            Ok(server) => server.serve(page, &mut |error| {
-                eprintln!("srs: a connection failed: {error}");
-            }),
-            Err(error) => error,
+        let server = match PageServer::bind(address) {
+            Ok(server) => server,
+            Err(error) => return error,
+        };
+        match server.address() {
+            Ok(bound) => self.note(&format!("serving the map at http://{bound}/")),
+            Err(error) => return error,
         }
+        server.serve(page, &mut |error| {
+            eprintln!("srs: a connection failed: {error}");
+        })
     }
 }
 

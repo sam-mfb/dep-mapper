@@ -32,7 +32,8 @@ pub trait MapOutputs {
     fn note(&mut self, message: &str);
     /// Writes `text` to the file at `path`, replacing what was there.
     fn write_file(&mut self, path: &std::path::Path, text: &str) -> std::io::Result<()>;
-    /// Serves the page at `address`. Returns only when serving fails.
+    /// Serves the page at `address`, saying where once it is listening.
+    /// Returns only when serving fails, including when it cannot start.
     fn serve_page(&mut self, address: SocketAddr, page: &str) -> std::io::Error;
 }
 
@@ -90,7 +91,6 @@ pub fn map(
         outputs.note(&format!("wrote the map page to {}", path.display()));
     }
     if let Some(address) = command.serve {
-        outputs.note(&format!("serving the map at http://{address}/"));
         let source = outputs.serve_page(address, &page);
         return Err(MapError::Serve { address, source });
     }
