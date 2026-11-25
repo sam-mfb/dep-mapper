@@ -35,8 +35,8 @@ fn map_says_which_piece_is_missing() {
         "default",
         "--evaluator",
         "manual",
-        "--page",
-        "unused.html",
+        "--out",
+        "unused.toml",
     ]);
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(

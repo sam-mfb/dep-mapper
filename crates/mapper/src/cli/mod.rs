@@ -69,6 +69,9 @@ struct MapArgs {
     /// Who judges the graph.
     #[arg(long, value_enum)]
     evaluator: EvaluatorArg,
+    /// Save the map to this file, to reopen without analysis.
+    #[arg(long)]
+    out: PathBuf,
     /// Write the map's page to this file.
     #[arg(long)]
     page: Option<PathBuf>,
@@ -105,6 +108,7 @@ impl From<MapArgs> for MapCommand {
                 EvaluatorArg::Manual => EvaluatorChoice::Manual,
                 EvaluatorArg::Llm => EvaluatorChoice::Llm,
             },
+            out: args.out,
             page: args.page,
             serve: args.serve,
         }

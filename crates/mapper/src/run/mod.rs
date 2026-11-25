@@ -1,20 +1,23 @@
-//! Running `srs map`: graph, evaluate, build the map, then show it. Side
-//! effects go through the injected implementations and outputs.
+//! Running `srs map`: graph, evaluate, build the map, save it, then show it.
+//! Side effects go through the injected implementations and outputs.
 
 use crate::implementations::{EvaluatorChoice, Implementations, Language, Unavailable};
 use graph_evaluator::EvaluationError;
 use map_builder::{BuildProblem, GraphMismatch, MapBuild};
+use map_persist::MapDocument;
 use project_graph::{BuildSelection, GraphingError};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use thiserror::Error;
 
-/// What `srs map` should map and where to show it.
+/// What `srs map` should map, where to save it and where to show it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MapCommand {
     pub selection: BuildSelection,
     pub language: Language,
     pub evaluator: EvaluatorChoice,
+    /// Where to save the map, so it can be reopened without analysis.
+    pub out: PathBuf,
     /// Where to write the map's page, if anywhere.
     pub page: Option<PathBuf>,
     /// Where to serve the map's page, if anywhere. Serving runs until the
@@ -27,15 +30,14 @@ pub trait MapOutputs {
     /// Tells the person running the command something, such as a problem
     /// the map builder reported.
     fn note(&mut self, message: &str);
-    fn write_page(&mut self, path: &std::path::Path, page: &str) -> std::io::Result<()>;
+    /// Writes `text` to the file at `path`, replacing what was there.
+    fn write_file(&mut self, path: &std::path::Path, text: &str) -> std::io::Result<()>;
     /// Serves the page at `address`. Returns only when serving fails.
     fn serve_page(&mut self, address: SocketAddr, page: &str) -> std::io::Error;
 }
 
 #[derive(Debug, Error)]
 pub enum MapError {
-    #[error("no page to write or serve: give --page, --serve or both")]
-    NothingToShow,
     #[error(transparent)]
     Unavailable(#[from] Unavailable),
     #[error("graphing failed: {0}")]
@@ -44,8 +46,8 @@ pub enum MapError {
     Evaluation(#[from] EvaluationError),
     #[error(transparent)]
     Mismatch(#[from] GraphMismatch),
-    #[error("writing the page to {path}: {source}")]
-    WritePage {
+    #[error("writing {path}: {source}")]
+    WriteFile {
         path: PathBuf,
         source: std::io::Error,
     },
@@ -69,27 +71,22 @@ pub fn build(
 }
 
 /// Runs `srs map`: builds the map, notes each problem the builder reported,
-/// then writes the page and serves it as the command asks.
+/// saves the map, then writes the page and serves it as the command asks.
 pub fn map(
     command: &MapCommand,
     implementations: &dyn Implementations,
     outputs: &mut dyn MapOutputs,
 ) -> Result<(), MapError> {
-    if command.page.is_none() && command.serve.is_none() {
-        return Err(MapError::NothingToShow);
-    }
     let built = build(command, implementations)?;
     for problem in &built.problems {
         outputs.note(&describe(problem));
     }
     let page = map_web::page(&built.map);
+    let saved = map_persist::save(&MapDocument::Map(built.map));
+    write(outputs, &command.out, &saved)?;
+    outputs.note(&format!("saved the map to {}", command.out.display()));
     if let Some(path) = &command.page {
-        outputs
-            .write_page(path, &page)
-            .map_err(|source| MapError::WritePage {
-                path: path.clone(),
-                source,
-            })?;
+        write(outputs, path, &page)?;
         outputs.note(&format!("wrote the map page to {}", path.display()));
     }
     if let Some(address) = command.serve {
@@ -98,6 +95,15 @@ pub fn map(
         return Err(MapError::Serve { address, source });
     }
     Ok(())
+}
+
+fn write(outputs: &mut dyn MapOutputs, path: &std::path::Path, text: &str) -> Result<(), MapError> {
+    outputs
+        .write_file(path, text)
+        .map_err(|source| MapError::WriteFile {
+            path: path.into(),
+            source,
+        })
 }
 
 fn describe(problem: &BuildProblem) -> String {

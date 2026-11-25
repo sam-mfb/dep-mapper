@@ -70,7 +70,7 @@ impl Implementations for StandIns {
 #[derive(Default)]
 struct Recorded {
     notes: Vec<String>,
-    pages: Vec<(PathBuf, String)>,
+    files: Vec<(PathBuf, String)>,
     served: Vec<(SocketAddr, String)>,
 }
 
@@ -79,8 +79,8 @@ impl MapOutputs for Recorded {
         self.notes.push(message.into());
     }
 
-    fn write_page(&mut self, path: &Path, page: &str) -> std::io::Result<()> {
-        self.pages.push((path.into(), page.into()));
+    fn write_file(&mut self, path: &Path, text: &str) -> std::io::Result<()> {
+        self.files.push((path.into(), text.into()));
         Ok(())
     }
 
@@ -99,24 +99,29 @@ fn command() -> MapCommand {
         },
         language: Language::Rust,
         evaluator: EvaluatorChoice::Manual,
+        out: "map.toml".into(),
         page: Some("map.html".into()),
         serve: None,
     }
 }
 
 #[test]
-fn map_writes_the_page_and_notes_what_the_builder_could_not_match() {
+fn map_saves_the_map_writes_the_page_and_notes_what_the_builder_could_not_match() {
     let mut outputs = Recorded::default();
     map(&command(), &StandIns { graphers: true }, &mut outputs).unwrap();
-    let [(path, page)] = outputs.pages.as_slice() else {
-        panic!("one page is written")
+    let [(saved_path, saved), (page_path, page)] = outputs.files.as_slice() else {
+        panic!("the map and its page are written")
     };
-    assert_eq!(path, Path::new("map.html"));
+    assert_eq!(saved_path, Path::new("map.toml"));
+    let built = build(&command(), &StandIns { graphers: true }).unwrap();
+    assert_eq!(map_persist::load(saved), Ok(MapDocument::Map(built.map)));
+    assert_eq!(page_path, Path::new("map.html"));
     assert!(page.contains("sample-project"));
     assert_eq!(
         outputs.notes,
         [
             "the evaluation judges module missing, which the graph does not have",
+            "saved the map to map.toml",
             "wrote the map page to map.html",
         ]
     );
@@ -131,19 +136,19 @@ fn serving_runs_after_writing_and_reports_why_it_stopped() {
     let mut outputs = Recorded::default();
     let error = map(&command, &StandIns { graphers: true }, &mut outputs).unwrap_err();
     assert!(matches!(error, MapError::Serve { address: a, .. } if a == address));
-    assert_eq!(outputs.pages.len(), 1);
+    assert_eq!(outputs.files.len(), 2);
     assert_eq!(outputs.served.len(), 1);
-    assert_eq!(outputs.served[0].1, outputs.pages[0].1);
+    assert_eq!(outputs.served[0].1, outputs.files[1].1);
 }
 
 #[test]
-fn a_command_with_nowhere_to_show_the_map_does_nothing() {
+fn without_a_page_or_address_the_map_is_only_saved() {
     let mut command = command();
     command.page = None;
     let mut outputs = Recorded::default();
-    let error = map(&command, &StandIns { graphers: true }, &mut outputs).unwrap_err();
-    assert!(matches!(error, MapError::NothingToShow));
-    assert!(outputs.notes.is_empty());
+    map(&command, &StandIns { graphers: true }, &mut outputs).unwrap();
+    assert_eq!(outputs.files.len(), 1);
+    assert!(outputs.served.is_empty());
 }
 
 #[test]
@@ -151,7 +156,7 @@ fn an_unavailable_grapher_stops_the_command() {
     let mut outputs = Recorded::default();
     let error = map(&command(), &StandIns { graphers: false }, &mut outputs).unwrap_err();
     assert_eq!(error.to_string(), "no Rust grapher");
-    assert!(outputs.pages.is_empty());
+    assert!(outputs.files.is_empty());
 }
 
 #[test]

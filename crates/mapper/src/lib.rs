@@ -2,8 +2,9 @@
 //! judgment or presentation of its own.
 //!
 //! `srs map` builds the graph for a selected build with the language's
-//! grapher, evaluates it with the selected evaluator, builds the map, and
-//! shows it: written as a page, served to a browser, or both.
+//! grapher, evaluates it with the selected evaluator, builds the map, saves
+//! it with map-persist, and shows it: written as a page, served to a
+//! browser, or both.
 //!
 //! - [`run`] runs a command against injected implementations and outputs.
 //! - [`implementations`] names the graphers and evaluators a command can

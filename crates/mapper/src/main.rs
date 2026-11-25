@@ -9,7 +9,7 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::process::ExitCode;
 
-/// Notes go to standard error, pages to files and the network.
+/// Notes go to standard error, maps and pages to files, pages to the network.
 struct Terminal;
 
 impl MapOutputs for Terminal {
@@ -17,8 +17,8 @@ impl MapOutputs for Terminal {
         eprintln!("srs: {message}");
     }
 
-    fn write_page(&mut self, path: &Path, page: &str) -> std::io::Result<()> {
-        std::fs::write(path, page)
+    fn write_file(&mut self, path: &Path, text: &str) -> std::io::Result<()> {
+        std::fs::write(path, text)
     }
 
     fn serve_page(&mut self, address: SocketAddr, page: &str) -> std::io::Error {

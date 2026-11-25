@@ -14,6 +14,8 @@ fn map_arguments_become_a_map_command() {
         "tsconfig",
         "--evaluator",
         "llm",
+        "--out",
+        "map.toml",
         "--page",
         "map.html",
         "--serve",
@@ -30,6 +32,7 @@ fn map_arguments_become_a_map_command() {
             },
             language: Language::TypeScript,
             evaluator: EvaluatorChoice::Llm,
+            out: "map.toml".into(),
             page: Some("map.html".into()),
             serve: Some("127.0.0.1:8080".parse().unwrap()),
         })

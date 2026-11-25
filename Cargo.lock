@@ -181,6 +181,7 @@ dependencies = [
  "clap",
  "graph-evaluator",
  "map-builder",
+ "map-persist",
  "map-web",
  "project-graph",
  "project-map",
