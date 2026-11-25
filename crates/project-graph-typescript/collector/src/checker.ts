@@ -25,6 +25,13 @@ export interface Checker {
   projectFiles(): readonly ts.SourceFile[];
   /** Whether the tsconfig names the file itself, rather than the program reaching it by an import. */
   isSelected(file: ts.SourceFile): boolean;
+  /**
+   * Every file the config parser and the compiler read, as absolute paths:
+   * the tsconfig and the configs it extends, sources, declaration files and
+   * package manifests consulted for module resolution. The TypeScript
+   * package's own files, such as its library declarations, are left out.
+   */
+  consultedFiles(): string[];
   /** Whether the file is one of the compiler's own library files. */
   isDefaultLibrary(file: ts.SourceFile): boolean;
   /** The symbol a name refers to, before following import aliases. */

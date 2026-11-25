@@ -146,6 +146,10 @@ fn describe(problem: &BuildProblem) -> String {
         BuildProblem::UnplacedRelationship { relationship } => {
             format!("relationship {relationship} applies to no route, hop or dependency on the map")
         }
+        BuildProblem::DuplicateCluster(cluster) => format!(
+            "the evaluation lists cluster {} more than once; the map keeps its first place",
+            cluster.0
+        ),
         BuildProblem::IncompleteGraph { cited_by, missing } => {
             format!("the graph's {cited_by:?} refers to {missing:?}, which the graph does not hold")
         }

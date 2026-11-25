@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/project-graph", "crates/graph-evaluator", "crates/graph-evaluator-manual", "crates/project-map", "crates/map-web", "crates/map-persist", "crates/project-graph-typescript", "crates/map-preview", "crates/project-graph-rust", "crates/project-graph-rust/records", "crates/map-builder", "crates/mapper", "crates/graph-evaluator-llm", "crates/map-draft", "crates/graph-evaluator-pieces"]
+members = ["crates/project-graph", "crates/graph-evaluator", "crates/graph-evaluator-manual", "crates/project-map", "crates/map-web", "crates/map-persist", "crates/project-graph-typescript", "crates/map-preview", "crates/project-graph-rust", "crates/project-graph-rust/records", "crates/map-builder", "crates/mapper", "crates/graph-evaluator-llm", "crates/map-draft", "crates/graph-evaluator-pieces", "crates/value-routes"]
 exclude = ["crates/project-graph-rust/driver", "crates/project-graph-rust/tests/fixture"]
 resolver = "3"
 

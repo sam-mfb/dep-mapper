@@ -4,7 +4,8 @@
 //! The TypeScript checker does the reading. `NodeCollector` runs the
 //! collector in `collector/` (TypeScript 6, pinned by its lockfile) in a Node
 //! child process; it prints items, facts and receiver links as JSON Lines.
-//! This crate assembles those records into the graph and traces its routes.
+//! This crate assembles those records into the graph and traces its value
+//! routes with the shared `value-routes` tracer.
 //!
 //! `TypeScriptGrapher` takes its collector, revision source and trace limits
 //! at construction. Mapper builds it with `NodeCollector::bundled` and

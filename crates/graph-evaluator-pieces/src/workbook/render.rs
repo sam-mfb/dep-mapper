@@ -5,6 +5,7 @@ use project_graph::{
     Dispatch, Endpoint, FactId, FactKind, ImportUse, ItemId, ItemKind, ModuleId, ProjectGraph,
     ReceiverBasis, RouteEnd, RouteId, SourceSpan, Support, Visibility,
 };
+use std::collections::BTreeMap;
 use std::fmt::Write;
 
 /// Converts a span's byte offsets into line numbers, when the source is available.
@@ -48,10 +49,14 @@ impl<'a> Renderer<'a> {
         }
     }
 
+    /// A module's page: its units, gaps and a summary of its routes grouped
+    /// by where they lead, then its items, paged. The routes themselves are
+    /// listed in full in the routes pieces the summary names.
     pub(super) fn module_pages(
         &self,
         id: &ModuleId,
         routes: &[&RouteId],
+        piece_of: &BTreeMap<RouteId, String>,
         page_size: usize,
     ) -> Vec<String> {
         let graph = self.graph;
@@ -86,18 +91,6 @@ impl<'a> Renderer<'a> {
                 }
             );
         }
-        let _ = writeln!(head, "\nItems:");
-        let items: Vec<_> = graph
-            .items
-            .keys()
-            .filter(|i| &graph.items[*i].module == id)
-            .collect();
-        if items.is_empty() {
-            let _ = writeln!(head, "- none recorded");
-        }
-        for item in items {
-            let _ = writeln!(head, "- {}", self.item_line(item));
-        }
         let gaps: Vec<_> = graph
             .gaps
             .iter()
@@ -124,14 +117,83 @@ impl<'a> Renderer<'a> {
             ),
             None => String::new(),
         };
-        let lines: Vec<String> = routes.iter().map(|r| self.route_summary(r)).collect();
-        paged(
-            &head,
-            "Routes that start, pass through or end in this module",
-            &lines,
-            page_size,
-            &record,
-        )
+        let _ = write!(head, "{}", self.route_groups(id, routes, piece_of));
+        let items: Vec<String> = graph
+            .items
+            .keys()
+            .filter(|i| &graph.items[*i].module == id)
+            .map(|item| self.item_line(item))
+            .collect();
+        paged(&head, "Items", &items, page_size, &record)
+    }
+
+    /// The routes touching a module, counted by the module or outside
+    /// package at their other end, with the piece that lists them and a few
+    /// examples.
+    fn route_groups(
+        &self,
+        id: &ModuleId,
+        routes: &[&RouteId],
+        piece_of: &BTreeMap<RouteId, String>,
+    ) -> String {
+        const EXAMPLES: usize = 3;
+        let mut groups: BTreeMap<(String, String), Vec<&RouteId>> = BTreeMap::new();
+        for route in routes {
+            let other = self.other_end(id, route);
+            let piece = piece_of.get(*route).cloned().unwrap_or_default();
+            groups.entry((other, piece)).or_default().push(route);
+        }
+        let mut text = format!(
+            "\nRoutes that start, pass through or end in this module: {}\n",
+            routes.len()
+        );
+        if groups.is_empty() {
+            text.push_str("- none\n");
+        }
+        let mut ordered: Vec<_> = groups.into_iter().collect();
+        ordered.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(&b.0)));
+        for ((other, piece), group) in ordered {
+            let examples: Vec<String> = group
+                .iter()
+                .take(EXAMPLES)
+                .map(|r| format!("route:{}", r.0))
+                .collect();
+            let _ = writeln!(
+                text,
+                "- {} {other}, listed in {piece}; for example {}",
+                group.len(),
+                examples.join(", ")
+            );
+        }
+        text
+    }
+
+    /// Where a route leads from a module's point of view: another project
+    /// module, an outside package, or nowhere beyond the module.
+    fn other_end(&self, id: &ModuleId, route: &RouteId) -> String {
+        let route = &self.graph.routes[route];
+        let points = std::iter::once(&route.origin).chain(route.hops.iter().map(|hop| &hop.to));
+        let mut outside = None;
+        for point in points {
+            match point {
+                Endpoint::Module(m) if m != id => return format!("with {}", self.module_name(m)),
+                Endpoint::Item(i) | Endpoint::Place { owner: i, .. } => {
+                    if let Some(item) = self.graph.items.get(i)
+                        && &item.module != id
+                    {
+                        return format!("with {}", self.module_name(&item.module));
+                    }
+                }
+                Endpoint::External(name) | Endpoint::Unresolved(name) if outside.is_none() => {
+                    outside = Some(outside_package(name));
+                }
+                _ => {}
+            }
+        }
+        match outside {
+            Some(package) => format!("leaving for {package}"),
+            None => "within the module".into(),
+        }
     }
 
     pub(super) fn routes_pages(
@@ -252,26 +314,6 @@ impl<'a> Renderer<'a> {
         text
     }
 
-    fn route_summary(&self, id: &RouteId) -> String {
-        let route = &self.graph.routes[id];
-        let end = route
-            .hops
-            .last()
-            .map(|hop| &hop.to)
-            .unwrap_or(&route.origin);
-        let stopped = match &route.end {
-            RouteEnd::ReachedUse => "",
-            RouteEnd::Stopped { .. } => ", stops early",
-        };
-        format!(
-            "route:{}: {} -> {} ({} hops{stopped})",
-            id.0,
-            self.endpoint(&route.origin),
-            self.endpoint(end),
-            route.hops.len()
-        )
-    }
-
     fn item_line(&self, id: &ItemId) -> String {
         let item = &self.graph.items[id];
         format!(
@@ -318,6 +360,19 @@ impl<'a> Renderer<'a> {
             Endpoint::External(name) => format!("outside the project: {name}"),
             Endpoint::Unresolved(name) => format!("unresolved: {name}"),
         }
+    }
+}
+
+/// The package an outside name belongs to: its first path segment, without
+/// reference or generic punctuation.
+fn outside_package(name: &str) -> String {
+    let trimmed = name.trim_start_matches(['<', '&', '*', ' ']);
+    let first = trimmed.split("::").next().unwrap_or(trimmed);
+    let first = first.split(['<', ' ', '>']).next().unwrap_or(first);
+    if first.is_empty() {
+        name.to_string()
+    } else {
+        first.to_string()
     }
 }
 

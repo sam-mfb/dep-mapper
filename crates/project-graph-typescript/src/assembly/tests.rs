@@ -14,7 +14,8 @@ fn records(lines: &[&str]) -> Vec<Record> {
     lines.iter().map(|l| parse(l).unwrap()).collect()
 }
 
-const PROJECT: &str = r#"{"record":"project","name":"demo","settings":{"strict":"true"}}"#;
+const PROJECT: &str =
+    r#"{"record":"project","name":"demo","settings":{"strict":"true"},"sources":"00"}"#;
 const MODULE: &str = r#"{"record":"module","id":"app","name":"app","root":"packages/app"}"#;
 const END: &str = r#"{"record":"end"}"#;
 

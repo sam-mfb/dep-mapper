@@ -8,7 +8,10 @@ use rustc_hir::{
     def_id::{DefId, LOCAL_CRATE},
     intravisit::{self, Visitor},
 };
-use rustc_middle::{hir::nested_filter, ty::TyCtxt};
+use rustc_middle::{
+    hir::nested_filter,
+    ty::{TyCtxt, print::with_no_trimmed_paths, print::with_no_visible_paths},
+};
 use rustc_session::config::CrateType;
 use rustc_span::Span;
 
@@ -17,7 +20,9 @@ pub fn def(tcx: TyCtxt<'_>, id: DefId) -> r::Def {
         crate_name: tcx.crate_name(id.krate).to_string(),
         crate_id: crate_id(tcx, id.krate),
         path: tcx.def_path(id).to_string_no_crate_verbose(),
-        name: tcx.def_path_str(id),
+        // The path from the defining crate: not a visible alias such as the
+        // `_serde` a derive declares, and not shortened.
+        name: with_no_visible_paths!(with_no_trimmed_paths!(tcx.def_path_str(id))),
     }
 }
 
