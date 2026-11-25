@@ -1,6 +1,6 @@
 import type { Backups } from "@sample/backup-api";
 import { OsBackups } from "@sample/backup-os";
-import { Installer } from "@sample/installer";
+import { Installer, installLater } from "@sample/installer";
 import { systemClock } from "clock";
 
 // Implements Backups without saying so.
@@ -23,5 +23,7 @@ export function main(dryRun: boolean): string {
   const backups: Backups = dryRun ? new MemoryBackups() : os;
   const installer = new Installer(backups);
   console.log(systemClock.now());
+  const later = installLater({ backups: os, name: "later" });
+  later();
   return installer.install("tools");
 }

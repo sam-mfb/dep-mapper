@@ -10,6 +10,15 @@
 // `{ owner: class or interface, projection: name }`, a function's result is
 // projection `return`, and a method call's receiver moves into the called
 // method's `self`. A top-level variable is its own item.
+//
+// A closure (a function expression, arrow function or nested function that
+// is not an item) shares its enclosing item's places, with names marked
+// `name@closure:<byte offset of the closure>`. When a closure uses a variable
+// declared outside it, a capture move takes the outer place into the
+// closure's own place at the closure's site.
+//
+// A name bound by an object pattern reads the field of the pattern's type it
+// names, as if written `const name = value.field`.
 
 import ts from "typescript";
 import { hasModifier, LIBRARY, type Project } from "./project.ts";
@@ -78,6 +87,7 @@ class FileFacts {
   private readonly module: string;
   private readonly identifiers: ts.Identifier[] = [];
   private readonly witnessed = new Set<string>();
+  private readonly captured = new Map<string, Endpoint>();
 
   constructor(project: Project, facts: FactWriter, file: ts.SourceFile, fileItem: string, module: string) {
     this.project = project;
@@ -181,8 +191,14 @@ class FileFacts {
     } else if (ts.isClassDeclaration(node)) {
       this.declaredImplements(node);
     } else if (ts.isVariableDeclaration(node) && node.initializer) {
-      const destination = this.declarationSlot(node);
-      if (destination) this.flow(node.initializer, destination, "store", null);
+      if (ts.isArrayBindingPattern(node.name)) {
+        this.arrayPattern(node.name, node.initializer);
+      } else {
+        const destination = this.declarationSlot(node);
+        if (destination) this.flow(node.initializer, destination, "store", null);
+      }
+    } else if (ts.isBindingElement(node) && ts.isIdentifier(node.name)) {
+      this.bindingElement(node, node.name);
     } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
       const destination = this.targetSlot(node.left);
       if (destination) this.flow(node.right, destination, "store", null);
@@ -259,7 +275,13 @@ class FileFacts {
     args.forEach((arg, index) => {
       const last = parameters[parameters.length - 1];
       const parameter = parameters[index] ?? (last?.dotDotDotToken ? last : undefined);
-      if (!parameter || !ts.isIdentifier(parameter.name)) return;
+      if (!parameter) return;
+      if (!ts.isIdentifier(parameter.name)) {
+        // A destructured parameter reads fields, so an object literal argument fills them.
+        const value = skipOuter(arg);
+        if (ts.isObjectLiteralExpression(value)) this.objectLiteral(value, null);
+        return;
+      }
       const name = parameter.name.text;
       if ("item" in target) {
         this.flow(arg, { place: { owner: target.item, projection: name } }, "pass", null);
@@ -411,7 +433,7 @@ class FileFacts {
     const item = this.project.items.get(declaration);
     if (item) return { item };
     if (!ts.isIdentifier(declaration.name)) return undefined;
-    return { place: { owner: this.ownerOf(declaration), projection: declaration.name.text } };
+    return this.placeOf(declaration, declaration.name.text);
   }
 
   private targetSlot(target: ts.Expression): Endpoint | undefined {
@@ -421,7 +443,7 @@ class FileFacts {
     return undefined;
   }
 
-  /** The slot a variable or parameter name refers to. */
+  /** The slot a variable or parameter name refers to, as seen from where the name is used. */
   private variableSlot(id: ts.Identifier): Endpoint | undefined {
     const symbol = this.checker.symbolAt(id);
     if (!symbol) return undefined;
@@ -431,21 +453,108 @@ class FileFacts {
     if (ts.isVariableDeclaration(declaration)) {
       const target = this.project.endpointOf(declaration);
       if (target) return target;
-      if (ts.isIdentifier(declaration.name)) {
-        return { place: { owner: this.ownerOf(declaration), projection: declaration.name.text } };
-      }
     }
-    if (ts.isParameter(declaration) && ts.isIdentifier(declaration.name)) {
-      const owner = this.project.items.get(declaration.parent) ?? this.ownerOf(declaration);
-      return { place: { owner, projection: declaration.name.text } };
+    const isLocal =
+      ts.isVariableDeclaration(declaration) || ts.isParameter(declaration) || ts.isBindingElement(declaration);
+    const name = (declaration as ts.NamedDeclaration).name;
+    if (!isLocal || !name || !ts.isIdentifier(name)) return undefined;
+    if (declaration.getSourceFile() !== this.file) return undefined;
+    return this.captureInto(declaration, this.placeOf(declaration, name.text), name.text, id);
+  }
+
+  /** The place of a local, parameter or bound name where it is declared. */
+  private placeOf(declaration: ts.Node, name: string): Endpoint {
+    if (ts.isParameter(declaration)) {
+      const owner = this.project.items.get(declaration.parent);
+      if (owner) return { place: { owner, projection: name } };
+    }
+    const closure = this.closureAround(declaration);
+    const projection = closure ? `${name}@closure:${this.offset(closure)}` : name;
+    return { place: { owner: this.ownerOf(declaration), projection } };
+  }
+
+  /**
+   * Follows a variable from its declaration into each closure between it
+   * and `use`, recording one capture per closure and variable.
+   */
+  private captureInto(declaration: ts.Node, place: Endpoint, name: string, use: ts.Node): Endpoint {
+    const closures: ts.Node[] = [];
+    for (let node = use.parent; node; node = node.parent) {
+      if (this.isItemBoundary(node)) break;
+      if (!isClosure(node, this.project)) continue;
+      if (declaration.pos >= node.pos && declaration.end <= node.end) break;
+      closures.push(node);
+    }
+    let current = place;
+    for (const closure of closures.reverse()) {
+      const key = `${this.offset(closure)} ${name} ${JSON.stringify(place)}`;
+      let inner = this.captured.get(key);
+      if (!inner) {
+        if (!("place" in current)) return current;
+        inner = { place: { owner: current.place.owner, projection: `${name}@closure:${this.offset(closure)}` } };
+        this.write(current, { kind: "capture" }, inner, closure);
+        this.captured.set(key, inner);
+      }
+      current = inner;
+    }
+    return current;
+  }
+
+  /** The innermost closure that holds a node, if no item lies between them. */
+  private closureAround(node: ts.Node): ts.Node | undefined {
+    for (let current = node.parent; current; current = current.parent) {
+      if (this.isItemBoundary(current)) return undefined;
+      if (isClosure(current, this.project)) return current;
     }
     return undefined;
+  }
+
+  private isItemBoundary(node: ts.Node): boolean {
+    return (
+      this.project.items.has(node) &&
+      (ts.isFunctionLike(node) || ts.isClassLike(node) || ts.isVariableDeclaration(node))
+    );
+  }
+
+  private offset(node: ts.Node): number {
+    return this.project.span(node).start;
+  }
+
+  /** `name` bound by an object pattern reads the field it names; an array pattern element is handled with its literal. */
+  private bindingElement(element: ts.BindingElement, name: ts.Identifier): void {
+    const destination = this.placeOf(element, name.text);
+    if (element.initializer) this.flow(element.initializer, destination, "store", null);
+    if (!ts.isObjectBindingPattern(element.parent)) return;
+    const property = element.propertyName
+      ? ts.isIdentifier(element.propertyName) || ts.isStringLiteral(element.propertyName)
+        ? element.propertyName.text
+        : undefined
+      : name.text;
+    if (property === undefined) return;
+    const symbol = this.checker.propertyOf(this.checker.typeAt(element.parent), property);
+    const source = symbol?.valueDeclaration && this.fieldOf(symbol.valueDeclaration, property);
+    if (source) this.write(source, { kind: "read" }, destination, element);
+  }
+
+  /** `const [a, b] = [x, y]` moves each element of the literal into its name. */
+  private arrayPattern(pattern: ts.ArrayBindingPattern, initializer: ts.Expression): void {
+    const literal = skipOuter(initializer);
+    if (!ts.isArrayLiteralExpression(literal)) return;
+    pattern.elements.forEach((element, index) => {
+      const value = literal.elements[index];
+      if (!value || ts.isOmittedExpression(element) || !ts.isIdentifier(element.name)) return;
+      this.flow(value, this.placeOf(element, element.name.text), "store", null);
+    });
   }
 
   /** The slot a property access reads or writes, when the property is a field. */
   private fieldSlot(access: ts.PropertyAccessExpression): Endpoint | undefined {
     const declaration = this.checker.symbolAt(access.name)?.valueDeclaration;
-    if (!declaration) return undefined;
+    return declaration && this.fieldOf(declaration, access.name.text);
+  }
+
+  /** The place of a field, given the property's declaration. */
+  private fieldOf(declaration: ts.Declaration, name: string): Endpoint | undefined {
     let container: ts.Node | undefined;
     if (ts.isPropertyDeclaration(declaration) || ts.isPropertySignature(declaration)) {
       container = declaration.parent;
@@ -453,23 +562,38 @@ class FileFacts {
       container = declaration.parent.parent;
     }
     if (!container) return undefined;
-    const name = access.name.text;
     const owner = this.project.items.get(container);
     if (owner) return { place: { owner, projection: name } };
     const target = this.project.endpointOf(container);
     return target && "external" in target ? { external: this.project.externalName(declaration) } : undefined;
   }
 
-  /** The item whose code holds the node: a function, method, class, top-level variable or the file. */
+  /** The item whose code holds the node: a function, method, type, top-level variable or the file. */
   private ownerOf(node: ts.Node): string {
     for (let current = node.parent; current; current = current.parent) {
       const item = this.project.items.get(current);
-      if (item && (ts.isFunctionLike(current) || ts.isClassLike(current) || ts.isVariableDeclaration(current))) {
+      if (
+        item &&
+        (ts.isFunctionLike(current) ||
+          ts.isClassLike(current) ||
+          ts.isVariableDeclaration(current) ||
+          ts.isInterfaceDeclaration(current) ||
+          ts.isTypeAliasDeclaration(current) ||
+          ts.isEnumDeclaration(current))
+      ) {
         return item;
       }
     }
     return this.fileItem;
   }
+}
+
+/** A function that is not an item: a function expression, arrow function or nested function. */
+function isClosure(node: ts.Node, project: Project): boolean {
+  return (
+    (ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) &&
+    !project.items.has(node)
+  );
 }
 
 function both(outer: string | null, inner: string): string {
