@@ -31,7 +31,7 @@ npm ci
 | `collector/src/records.ts` | The JSON Lines records the collector prints. `src/collection/records.rs` mirrors it. |
 | `src/collection` | The `Collector` contract and `NodeCollector`, which runs the collector. |
 | `src/assembly` | Turns the records into the graph. This is pure. |
-| `src/routes` | Builds the routes from `project_graph` facts only. |
+| `src/routes` | Builds the routes from `project_graph` facts only. Value routes come from the shared `value-routes` tracer. |
 | `src/revision` | The source revision, from Git. |
 
 Imports, re-exports and references are facts only when they reach another package or something outside the project. Calls, implementations and value moves are facts everywhere, because routes pass through code inside one package.
@@ -43,10 +43,10 @@ When a move happens on one branch of a conditional, its hop is `Possible`, with 
 There are three kinds of route:
 
 - **Direct use.** One hop from the supplier to the user, for an import, re-export, reference, implementation, call or declared dependency between packages.
-- **Value route.** Traced backward from a method call's receiver to the `new` expression that built the value, or to something outside the project. If the trace finds no incoming value, the route stops and says why.
+- **Value route.** The shared `value-routes` tracer searches back from a method call's receiver to each `new` expression that can supply it, keeping one path per origin. A value returned from a call is matched to that call's own arguments. A move into or out of a field, or out of a closure's captured variable, stands for every instance of that place, so its hop is possible. If no origin is reached, the route stops at the call and says why.
 - **Receiver bound.** For a call through an interface, one bound for each class with an `Implements` fact for that interface.
 
-Not yet covered: namespaces, destructuring in assignments, array patterns over anything but a literal, and calls through function-typed values beyond recording them as indirect. Calling a closure is an indirect call, so a value passed to a closure as an argument is not followed.
+Not yet covered: namespaces, destructuring in assignments, array patterns over anything but a literal, and calls through function-typed values beyond recording them as indirect. Calling a closure is an indirect call, so a value passed to a closure as an argument is not followed. A value that comes from outside the project is not an origin, so its trace stops. When a call's result is passed straight into another call, the move is matched to the inner call only.
 
 ## Sample
 

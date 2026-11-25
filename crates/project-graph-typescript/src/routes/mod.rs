@@ -1,20 +1,22 @@
 //! Routes over a graph's facts. Nothing here depends on TypeScript: the input
-//! is `project_graph` facts, so this module can move to a library shared
-//! with other languages.
+//! is `project_graph` facts.
 //!
 //! - A direct use between two modules, such as an import or a call, is a
 //!   route of one hop from the supplier to the user.
-//! - A value route follows value moves backward from a method call's
-//!   receiver to the place the value was constructed, then lists the hops
-//!   forward. A trace that finds no further move ends as a stopped route.
+//! - A value route explains a method call's receiver. The shared
+//!   `value-routes` tracer searches back from the receiver over the value
+//!   moves to each origin it reaches, matching a value returned from a call
+//!   to that call's own arguments. A trace that reaches no origin is a
+//!   route that stops at the call.
 //! - A receiver bound names each class that implements the contract a call
 //!   is made through.
 
 use project_graph::{
-    CoverageGap, Endpoint, Fact, FactId, FactKind, Hop, ItemId, ModuleId, ReceiverBasis, Route,
-    RouteEnd, RouteId, Support,
+    Endpoint, Fact, FactId, FactKind, Hop, ItemId, ModuleId, ReceiverBasis, Route, RouteEnd,
+    RouteId, Support,
 };
 use std::collections::{BTreeMap, BTreeSet};
+use value_routes::{CallLink, Flow, Trace, Use};
 
 /// A method call and the value moves that deliver its receiver.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -23,161 +25,153 @@ pub struct ReceiverUse {
     pub moves: Vec<FactId>,
 }
 
-/// Bounds on the backward search for each use.
+/// How a value move crosses a call, named by the call's site.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MoveLink {
+    /// An argument (or receiver) entering the callee at this call site.
+    Argument(String),
+    /// A value returned by the callee at this call site.
+    Returned(String),
+}
+
+/// Bounds on the search for each receiver.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TraceLimits {
-    /// The most hops one route may have before the trace stops.
-    pub max_hops: usize,
-    /// The most routes kept for one use; the rest are reported as a gap.
-    pub max_routes_per_use: usize,
+    /// The most search states explored for one receiver.
+    pub max_states: usize,
+    /// The deepest nesting of calls a path may return through.
+    pub max_call_depth: usize,
 }
 
 impl TraceLimits {
-    /// Limits that cover every route in small and medium projects.
+    /// The limits project-graph-rust uses, which cover its real workspaces.
     pub const STANDARD: TraceLimits = TraceLimits {
-        max_hops: 32,
-        max_routes_per_use: 16,
+        max_states: 20_000,
+        max_call_depth: 8,
     };
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
-pub struct Traced {
-    pub routes: BTreeMap<RouteId, Route>,
-    pub gaps: Vec<CoverageGap>,
+/// The value moves of a graph, with what the facts themselves do not say.
+pub struct ValueMoves<'a> {
+    pub facts: &'a BTreeMap<FactId, Fact>,
+    /// The call each linked move crosses.
+    pub links: &'a BTreeMap<FactId, MoveLink>,
+    /// The condition of each move that happens on only one branch.
+    pub conditions: &'a BTreeMap<FactId, String>,
 }
 
-/// Value routes for each receiver use. `conditions` holds the condition of
-/// each move that happens on only one branch; its hop is possible, not
-/// established.
+/// Value routes for each receiver use. `joins_instances` says which
+/// endpoints stand for every instance of a place, such as a field of a type
+/// or a variable a closure captured; a hop into or out of one is possible,
+/// since the value read may belong to another instance. A hop whose move is
+/// conditional is possible under that condition.
 pub fn trace_values(
-    facts: &BTreeMap<FactId, Fact>,
-    conditions: &BTreeMap<FactId, String>,
+    moves: &ValueMoves,
     uses: &[ReceiverUse],
+    joins_instances: impl Fn(&Endpoint) -> bool,
     limits: TraceLimits,
-) -> Traced {
-    let mut incoming: BTreeMap<String, Vec<&FactId>> = BTreeMap::new();
-    for (id, fact) in facts {
+) -> BTreeMap<RouteId, Route> {
+    let mut flows = Vec::new();
+    let mut ids = Vec::new();
+    let mut add = |id: &FactId, fact: &Fact, to: Endpoint, call: Option<CallLink>| {
+        flows.push(Flow {
+            from: fact.subject.clone(),
+            joins_instances: joins_instances(&fact.subject) || joins_instances(&to),
+            to,
+            fact: Some(fact.clone()),
+            call,
+        });
+        ids.push(id.clone());
+    };
+    for (id, fact) in moves.facts {
         if is_move(&fact.kind) {
-            incoming.entry(key(&fact.object)).or_default().push(id);
+            let call = moves.links.get(id).map(|link| match link {
+                MoveLink::Argument(site) => CallLink::Argument(site.clone()),
+                MoveLink::Returned(site) => CallLink::Returned(site.clone()),
+            });
+            add(id, fact, fact.object.clone(), call);
         }
     }
-    let search = Search {
-        facts,
-        conditions,
-        incoming,
-        limits,
-    };
-    let mut traced = Traced::default();
-    for receiver in uses {
-        let mut found = Vec::new();
-        for start in &receiver.moves {
-            if facts.contains_key(start) {
-                search.backward(&mut vec![start.clone()], &mut found);
+    // Each call gets a receiver of its own, so a trace explains this call
+    // and not every call to the same method.
+    let receivers: Vec<Endpoint> = uses
+        .iter()
+        .map(|u| Endpoint::Unresolved(format!("receiver of {}", u.call.0)))
+        .collect();
+    for (receiver_use, receiver) in uses.iter().zip(&receivers) {
+        for id in &receiver_use.moves {
+            if let Some(fact) = moves.facts.get(id) {
+                add(id, fact, receiver.clone(), None);
             }
         }
-        if found.len() > limits.max_routes_per_use {
-            traced.gaps.push(CoverageGap {
-                unit: facts.get(&receiver.call).map(|f| f.unit.clone()),
-                site: facts.get(&receiver.call).and_then(|f| f.site.clone()),
-                reason: format!(
-                    "{} value routes reach this call; only the first {} are kept",
-                    found.len(),
-                    limits.max_routes_per_use
-                ),
-            });
-            found.truncate(limits.max_routes_per_use);
-        }
-        for (index, (origin, hops, end)) in found.into_iter().enumerate() {
-            traced.routes.insert(
-                RouteId(format!("value:{}:{index}", receiver.call.0)),
-                Route {
-                    use_site: Some(receiver.call.clone()),
+    }
+    let traces = value_routes::trace(
+        &flows,
+        &receivers
+            .iter()
+            .map(|receiver| Use {
+                receiver: receiver.clone(),
+            })
+            .collect::<Vec<_>>(),
+        value_routes::Limits {
+            max_states: limits.max_states,
+            max_call_depth: limits.max_call_depth,
+        },
+    );
+
+    let mut routes = BTreeMap::new();
+    for (receiver_use, traces) in uses.iter().zip(traces) {
+        for (index, trace) in traces.into_iter().enumerate() {
+            let route = match trace {
+                Trace::Reached { origin, path, .. } => Route {
+                    use_site: Some(receiver_use.call.clone()),
                     origin,
-                    hops,
-                    end,
+                    hops: path
+                        .iter()
+                        .filter_map(|&i| {
+                            let fact = flows[i].fact.as_ref()?;
+                            let support = match moves.conditions.get(&ids[i]) {
+                                Some(condition) => Support::Possible {
+                                    condition: Some(condition.clone()),
+                                },
+                                None if flows[i].joins_instances => {
+                                    Support::Possible { condition: None }
+                                }
+                                None => Support::Established,
+                            };
+                            Some(Hop {
+                                to: fact.object.clone(),
+                                fact: ids[i].clone(),
+                                support,
+                            })
+                        })
+                        .collect(),
+                    end: RouteEnd::ReachedUse,
                 },
+                Trace::Stopped { reason } => Route {
+                    use_site: Some(receiver_use.call.clone()),
+                    origin: receiver_use
+                        .moves
+                        .iter()
+                        .find_map(|id| moves.facts.get(id))
+                        .map(|fact| fact.subject.clone())
+                        .unwrap_or_else(|| {
+                            Endpoint::Unresolved(format!("receiver of {}", receiver_use.call.0))
+                        }),
+                    hops: Vec::new(),
+                    end: RouteEnd::Stopped {
+                        at: receiver_use.call.clone(),
+                        reason,
+                    },
+                },
+            };
+            routes.insert(
+                RouteId(format!("value:{}:{index}", receiver_use.call.0)),
+                route,
             );
         }
     }
-    traced
-}
-
-struct Search<'a> {
-    facts: &'a BTreeMap<FactId, Fact>,
-    conditions: &'a BTreeMap<FactId, String>,
-    incoming: BTreeMap<String, Vec<&'a FactId>>,
-    limits: TraceLimits,
-}
-
-type Found = (Endpoint, Vec<Hop>, RouteEnd);
-
-impl Search<'_> {
-    /// `path` holds the moves found so far, the latest (earliest in the
-    /// value's journey) last.
-    fn backward(&self, path: &mut Vec<FactId>, found: &mut Vec<Found>) {
-        let earliest = path.last().expect("a path starts with one move");
-        let fact = &self.facts[earliest];
-        let source = &fact.subject;
-        if fact.kind == FactKind::Construct || matches!(source, Endpoint::External(_)) {
-            found.push((source.clone(), self.hops(path), RouteEnd::ReachedUse));
-            return;
-        }
-        if path.len() >= self.limits.max_hops {
-            found.push(self.stopped(path, "the search reached its hop limit".into()));
-            return;
-        }
-        let entering: Vec<&FactId> = self
-            .incoming
-            .get(&key(source))
-            .into_iter()
-            .flatten()
-            .copied()
-            .filter(|id| !path.contains(id))
-            .collect();
-        if entering.is_empty() {
-            let reason = match source {
-                Endpoint::Place { projection, .. } if projection == "this" => {
-                    "the value is the object whose method holds this code".to_string()
-                }
-                _ => format!("no recorded value enters {}", describe(source)),
-            };
-            found.push(self.stopped(path, reason));
-            return;
-        }
-        for id in entering {
-            path.push(id.clone());
-            self.backward(path, found);
-            path.pop();
-        }
-    }
-
-    fn stopped(&self, path: &[FactId], reason: String) -> Found {
-        let earliest = path.last().expect("a path starts with one move");
-        (
-            self.facts[earliest].subject.clone(),
-            self.hops(path),
-            RouteEnd::Stopped {
-                at: earliest.clone(),
-                reason,
-            },
-        )
-    }
-
-    fn hops(&self, path: &[FactId]) -> Vec<Hop> {
-        path.iter()
-            .rev()
-            .map(|id| Hop {
-                to: self.facts[id].object.clone(),
-                fact: id.clone(),
-                support: match self.conditions.get(id) {
-                    Some(condition) => Support::Possible {
-                        condition: Some(condition.clone()),
-                    },
-                    None => Support::Established,
-                },
-            })
-            .collect()
-    }
+    routes
 }
 
 fn is_move(kind: &FactKind) -> bool {
@@ -191,19 +185,6 @@ fn is_move(kind: &FactKind) -> bool {
             | FactKind::Coerce
             | FactKind::Capture
     )
-}
-
-/// A key that identifies an endpoint for lookups.
-fn key(endpoint: &Endpoint) -> String {
-    format!("{endpoint:?}")
-}
-
-fn describe(endpoint: &Endpoint) -> String {
-    match endpoint {
-        Endpoint::Module(ModuleId(id)) | Endpoint::Item(ItemId(id)) => id.clone(),
-        Endpoint::Place { owner, projection } => format!("{projection} in {}", owner.0),
-        Endpoint::External(name) | Endpoint::Unresolved(name) => name.clone(),
-    }
 }
 
 /// One-hop routes for each fact that shows one module using another or

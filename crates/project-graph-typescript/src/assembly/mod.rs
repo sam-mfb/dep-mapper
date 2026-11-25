@@ -9,7 +9,7 @@
 //! come from uncommitted source.
 
 use crate::collection::records::{self, Record};
-use crate::routes::{self, ReceiverUse, TraceLimits};
+use crate::routes::{self, MoveLink, ReceiverUse, TraceLimits, ValueMoves};
 use project_graph::{
     Build, BuildUnit, CoverageGap, Dispatch, Endpoint, Fact, FactId, FactKind, GraphId, ImportUse,
     Item, ItemId, ItemKind, Module, ModuleId, ProjectGraph, SourceSpan, UnitId, Visibility,
@@ -51,6 +51,7 @@ pub fn assemble(
     let mut parents = BTreeMap::new();
     let mut facts = BTreeMap::new();
     let mut conditions = BTreeMap::new();
+    let mut links = BTreeMap::new();
     let mut receivers = Vec::new();
     let mut gaps = Vec::new();
     let unit_of = |module: &str| UnitId(format!("{module}:{}", selected.target));
@@ -95,11 +96,19 @@ pub fn assemble(
                 object,
                 site,
                 condition,
+                link,
             } => {
                 let module = known(&modules, module)?;
                 let id = FactId(id);
                 if let Some(condition) = condition {
                     conditions.insert(id.clone(), condition);
+                }
+                if let Some(link) = link {
+                    let link = match link {
+                        records::Link::Argument(site) => MoveLink::Argument(site),
+                        records::Link::Returned(site) => MoveLink::Returned(site),
+                    };
+                    links.insert(id.clone(), link);
                 }
                 facts.insert(
                     id,
@@ -143,9 +152,34 @@ pub fn assemble(
         Endpoint::External(_) | Endpoint::Unresolved(_) => None,
     };
     let mut routes = routes::direct_routes(&facts, module_of);
-    let traced = routes::trace_values(&facts, &conditions, &receivers, limits);
-    routes.extend(traced.routes);
-    gaps.extend(traced.gaps);
+    // A field stands for every instance of its type, and a captured variable
+    // for every instance of its closure.
+    let captured: Vec<&Endpoint> = facts
+        .values()
+        .filter(|f| f.kind == FactKind::Capture)
+        .map(|f| &f.object)
+        .collect();
+    let joins_instances = |endpoint: &Endpoint| match endpoint {
+        Endpoint::Place { owner, projection } => {
+            (projection != "this"
+                && items
+                    .get(owner)
+                    .is_some_and(|i: &Item| i.kind == ItemKind::Type))
+                || captured.contains(&endpoint)
+        }
+        _ => false,
+    };
+    let moves = ValueMoves {
+        facts: &facts,
+        links: &links,
+        conditions: &conditions,
+    };
+    routes.extend(routes::trace_values(
+        &moves,
+        &receivers,
+        joins_instances,
+        limits,
+    ));
     facts.extend(routes::receiver_bounds(&facts, |method| {
         parents.get(method).cloned()
     }));

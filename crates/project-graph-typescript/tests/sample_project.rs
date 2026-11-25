@@ -413,10 +413,7 @@ fn a_receiver_nobody_supplies_stops_the_trace() {
     let RouteEnd::Stopped { reason, .. } = &routes[0].end else {
         panic!("expected a stopped route")
     };
-    assert_eq!(
-        reason,
-        "no recorded value enters backups in @sample/installer/src/index.ts#installWith"
-    );
+    assert_eq!(reason, "no flow reaches the receiver from a known origin");
 }
 
 #[test]
@@ -670,11 +667,16 @@ fn an_object_pattern_default_and_the_field_read_are_each_conditional() {
 
     let supplied = routes
         .iter()
-        .find(|r| r.origin == place(MAIN, "Choice", "backups"))
+        .find(|r| r.origin == item(OS, "OsBackups"))
         .expect("a route through the field");
-    assert!(matches!(supplied.end, RouteEnd::Stopped { .. }));
-    assert_eq!(hop_kinds(supplied)[0], &FactKind::Read);
-    assert_eq!(supplied.hops[0].support, possible("backups !== undefined"));
+    assert_eq!(supplied.end, RouteEnd::ReachedUse);
+    let read = supplied
+        .hops
+        .iter()
+        .find(|h| graph().facts[&h.fact].kind == FactKind::Read)
+        .expect("the pattern reads the field");
+    assert_eq!(read.to, place(MAIN, "pick", "backups"));
+    assert_eq!(read.support, possible("backups !== undefined"));
 }
 
 #[test]

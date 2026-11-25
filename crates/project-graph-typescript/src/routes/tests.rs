@@ -39,7 +39,32 @@ fn hop_facts(route: &Route) -> Vec<&str> {
     route.hops.iter().map(|h| h.fact.0.as_str()).collect()
 }
 
-const LIMITS: TraceLimits = TraceLimits::STANDARD;
+/// Fields are places owned by an item whose name starts with a capital.
+fn is_field(endpoint: &Endpoint) -> bool {
+    matches!(endpoint, Endpoint::Place { owner, .. } if owner.0.starts_with(char::is_uppercase))
+}
+
+fn trace(
+    facts: &BTreeMap<FactId, Fact>,
+    links: &[(&str, MoveLink)],
+    conditions: &[(&str, &str)],
+    uses: &[ReceiverUse],
+) -> BTreeMap<RouteId, Route> {
+    let links = links
+        .iter()
+        .map(|(id, link)| (FactId((*id).into()), link.clone()))
+        .collect();
+    let conditions = conditions
+        .iter()
+        .map(|(id, c)| (FactId((*id).into()), c.to_string()))
+        .collect();
+    let moves = ValueMoves {
+        facts,
+        links: &links,
+        conditions: &conditions,
+    };
+    trace_values(&moves, uses, is_field, TraceLimits::STANDARD)
+}
 
 #[test]
 fn a_value_route_runs_forward_from_construction_to_the_receiver() {
@@ -50,47 +75,44 @@ fn a_value_route_runs_forward_from_construction_to_the_receiver() {
         ),
         (
             "arg",
-            fact(place("main", "os"), FactKind::Pass, place("Use.new", "b")),
+            fact(place("main", "os"), FactKind::Pass, place("use_new", "b")),
         ),
         (
             "field",
-            fact(place("Use.new", "b"), FactKind::Store, place("Use", "b")),
+            fact(place("use_new", "b"), FactKind::Store, place("Use", "b")),
         ),
         (
             "recv",
             fact(
                 place("Use", "b"),
                 FactKind::Pass,
-                place("Api.write", "self"),
-            ),
-        ),
-        (
-            "call",
-            fact(
-                item("Use.run"),
-                FactKind::Call(Dispatch::Contract),
-                item("Api.write"),
+                place("api_write", "self"),
             ),
         ),
     ]);
-    let traced = trace_values(
-        &graph,
-        &BTreeMap::new(),
-        &[receiver("call", &["recv"])],
-        LIMITS,
-    );
-    assert!(traced.gaps.is_empty());
-    let route = &traced.routes[&RouteId("value:call:0".into())];
+    let routes = trace(&graph, &[], &[], &[receiver("call", &["recv"])]);
+    let route = &routes[&RouteId("value:call:0".into())];
     assert_eq!(route.origin, item("Os"));
     assert_eq!(route.use_site, Some(FactId("call".into())));
     assert_eq!(hop_facts(route), ["new", "arg", "field", "recv"]);
-    assert_eq!(route.hops.last().unwrap().to, place("Api.write", "self"));
+    assert_eq!(route.hops.last().unwrap().to, place("api_write", "self"));
     assert_eq!(route.end, RouteEnd::ReachedUse);
-    assert!(route.hops.iter().all(|h| h.support == Support::Established));
+    let support: Vec<_> = route.hops.iter().map(|h| h.support.clone()).collect();
+    let possible = Support::Possible { condition: None };
+    assert_eq!(
+        support,
+        [
+            Support::Established,
+            Support::Established,
+            possible.clone(),
+            possible
+        ],
+        "moves into and out of a field are possible"
+    );
 }
 
 #[test]
-fn each_branch_of_a_conditional_is_its_own_possible_route() {
+fn a_conditional_move_is_possible_under_its_condition() {
     let graph = facts(vec![
         (
             "mem",
@@ -109,23 +131,18 @@ fn each_branch_of_a_conditional_is_its_own_possible_route() {
             fact(
                 place("main", "b"),
                 FactKind::Pass,
-                place("Api.write", "self"),
+                place("api_write", "self"),
             ),
         ),
     ]);
-    let conditions = BTreeMap::from([
-        (FactId("mem".into()), "dry".to_string()),
-        (FactId("coerce".into()), "!dry".to_string()),
-    ]);
-    let traced = trace_values(&graph, &conditions, &[receiver("call", &["recv"])], LIMITS);
-    let origins: Vec<_> = traced.routes.values().map(|r| r.origin.clone()).collect();
-    assert_eq!(origins.len(), 2);
-    assert!(origins.contains(&item("Mem")) && origins.contains(&item("Os")));
-    let from_os = traced
-        .routes
-        .values()
-        .find(|r| r.origin == item("Os"))
-        .unwrap();
+    let routes = trace(
+        &graph,
+        &[],
+        &[("mem", "dry"), ("coerce", "!dry")],
+        &[receiver("call", &["recv"])],
+    );
+    assert_eq!(routes.len(), 2);
+    let from_os = routes.values().find(|r| r.origin == item("Os")).unwrap();
     assert_eq!(hop_facts(from_os), ["os", "coerce", "recv"]);
     assert_eq!(
         from_os.hops[1].support,
@@ -136,140 +153,109 @@ fn each_branch_of_a_conditional_is_its_own_possible_route() {
 }
 
 #[test]
-fn a_trace_with_no_incoming_value_stops_where_it_ran_out() {
+fn a_returned_value_is_matched_to_its_own_call() {
+    // `const a = id(new A()); const b = id(new B()); b.go()` reaches only B.
+    let graph = facts(vec![
+        (
+            "newA",
+            fact(item("A"), FactKind::Construct, place("id", "x")),
+        ),
+        (
+            "newB",
+            fact(item("B"), FactKind::Construct, place("id", "x")),
+        ),
+        (
+            "ret",
+            fact(place("id", "x"), FactKind::Return, place("id", "return")),
+        ),
+        (
+            "outA",
+            fact(place("id", "return"), FactKind::Return, place("main", "a")),
+        ),
+        (
+            "outB",
+            fact(place("id", "return"), FactKind::Return, place("main", "b")),
+        ),
+        (
+            "recv",
+            fact(place("main", "b"), FactKind::Pass, place("go", "self")),
+        ),
+    ]);
+    let links = [
+        ("newA", MoveLink::Argument("call-a".into())),
+        ("newB", MoveLink::Argument("call-b".into())),
+        ("outA", MoveLink::Returned("call-a".into())),
+        ("outB", MoveLink::Returned("call-b".into())),
+    ];
+    let routes = trace(&graph, &links, &[], &[receiver("call", &["recv"])]);
+    let origins: Vec<_> = routes.values().map(|r| r.origin.clone()).collect();
+    assert_eq!(origins, [item("B")]);
+}
+
+#[test]
+fn each_call_explains_only_its_own_receiver() {
+    // Two calls to the same method: each route starts from its own receiver.
+    let graph = facts(vec![
+        (
+            "newA",
+            fact(item("A"), FactKind::Construct, place("main", "a")),
+        ),
+        (
+            "newB",
+            fact(item("B"), FactKind::Construct, place("main", "b")),
+        ),
+        (
+            "recvA",
+            fact(place("main", "a"), FactKind::Pass, place("go", "self")),
+        ),
+        (
+            "recvB",
+            fact(place("main", "b"), FactKind::Pass, place("go", "self")),
+        ),
+    ]);
+    let routes = trace(
+        &graph,
+        &[],
+        &[],
+        &[receiver("callA", &["recvA"]), receiver("callB", &["recvB"])],
+    );
+    assert_eq!(routes[&RouteId("value:callA:0".into())].origin, item("A"));
+    assert_eq!(routes[&RouteId("value:callB:0".into())].origin, item("B"));
+    assert_eq!(routes.len(), 2);
+}
+
+#[test]
+fn a_trace_that_reaches_no_origin_stops_at_the_call() {
     let graph = facts(vec![(
         "recv",
         fact(
             place("helper", "b"),
             FactKind::Pass,
-            place("Api.write", "self"),
+            place("api_write", "self"),
         ),
     )]);
-    let traced = trace_values(
-        &graph,
-        &BTreeMap::new(),
-        &[receiver("call", &["recv"])],
-        LIMITS,
-    );
-    let route = traced.routes.values().next().unwrap();
+    let routes = trace(&graph, &[], &[], &[receiver("call", &["recv"])]);
+    let route = routes.values().next().unwrap();
     assert_eq!(route.origin, place("helper", "b"));
-    assert_eq!(
-        route.end,
-        RouteEnd::Stopped {
-            at: FactId("recv".into()),
-            reason: "no recorded value enters b in helper".into()
-        }
-    );
+    assert!(route.hops.is_empty());
+    assert!(matches!(
+        &route.end,
+        RouteEnd::Stopped { at, .. } if at == &FactId("call".into())
+    ));
 }
 
 #[test]
-fn a_cycle_of_moves_ends_the_trace_instead_of_repeating() {
-    let graph = facts(vec![
-        (
-            "ab",
-            fact(place("f", "a"), FactKind::Store, place("f", "b")),
-        ),
-        (
-            "ba",
-            fact(place("f", "b"), FactKind::Store, place("f", "a")),
-        ),
-        (
-            "recv",
-            fact(place("f", "a"), FactKind::Pass, place("Api.write", "self")),
-        ),
-    ]);
-    let traced = trace_values(
-        &graph,
-        &BTreeMap::new(),
-        &[receiver("call", &["recv"])],
-        LIMITS,
-    );
-    assert_eq!(traced.routes.len(), 1);
-    let route = traced.routes.values().next().unwrap();
-    assert_eq!(hop_facts(route), ["ab", "ba", "recv"]);
-    assert!(matches!(route.end, RouteEnd::Stopped { .. }));
-}
-
-#[test]
-fn a_value_from_outside_the_project_is_an_origin() {
+fn a_receiver_constructed_in_place_is_its_own_origin() {
+    // `new Os().prune()`
     let graph = facts(vec![(
-        "recv",
-        fact(
-            Endpoint::External("clock#systemClock".into()),
-            FactKind::Pass,
-            place("Api.write", "self"),
-        ),
+        "new",
+        fact(item("Os"), FactKind::Construct, place("prune", "self")),
     )]);
-    let traced = trace_values(
-        &graph,
-        &BTreeMap::new(),
-        &[receiver("call", &["recv"])],
-        LIMITS,
-    );
-    let route = traced.routes.values().next().unwrap();
-    assert_eq!(route.origin, Endpoint::External("clock#systemClock".into()));
-    assert_eq!(route.end, RouteEnd::ReachedUse);
-}
-
-#[test]
-fn routes_beyond_the_limit_are_reported_as_a_gap() {
-    let mut list = vec![(
-        "recv".to_string(),
-        fact(place("f", "b"), FactKind::Pass, place("Api.write", "self")),
-    )];
-    for n in 0..3 {
-        list.push((
-            format!("new{n}"),
-            fact(item(&format!("C{n}")), FactKind::Construct, place("f", "b")),
-        ));
-    }
-    let graph: BTreeMap<_, _> = list.into_iter().map(|(id, f)| (FactId(id), f)).collect();
-    let limits = TraceLimits {
-        max_hops: 32,
-        max_routes_per_use: 2,
-    };
-    let traced = trace_values(
-        &graph,
-        &BTreeMap::new(),
-        &[receiver("call", &["recv"])],
-        limits,
-    );
-    assert_eq!(traced.routes.len(), 2);
-    assert_eq!(traced.gaps.len(), 1);
-    assert!(traced.gaps[0].reason.starts_with("3 value routes"));
-}
-
-#[test]
-fn a_long_chain_stops_at_the_hop_limit() {
-    let graph = facts(vec![
-        (
-            "ab",
-            fact(place("f", "a"), FactKind::Store, place("f", "b")),
-        ),
-        (
-            "bc",
-            fact(place("f", "b"), FactKind::Store, place("f", "c")),
-        ),
-        (
-            "recv",
-            fact(place("f", "c"), FactKind::Pass, place("Api.write", "self")),
-        ),
-    ]);
-    let limits = TraceLimits {
-        max_hops: 2,
-        max_routes_per_use: 16,
-    };
-    let traced = trace_values(
-        &graph,
-        &BTreeMap::new(),
-        &[receiver("call", &["recv"])],
-        limits,
-    );
-    let route = traced.routes.values().next().unwrap();
-    assert_eq!(hop_facts(route), ["bc", "recv"]);
-    assert!(
-        matches!(&route.end, RouteEnd::Stopped { reason, .. } if reason == "the search reached its hop limit")
-    );
+    let routes = trace(&graph, &[], &[], &[receiver("call", &["new"])]);
+    let route = routes.values().next().unwrap();
+    assert_eq!(route.origin, item("Os"));
+    assert_eq!(hop_facts(route), ["new"]);
+    assert_eq!(route.hops[0].to, place("prune", "self"));
 }
 
 fn module_of(endpoint: &Endpoint) -> Option<ModuleId> {

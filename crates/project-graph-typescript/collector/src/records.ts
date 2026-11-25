@@ -34,6 +34,9 @@ export type FactKind =
   | { kind: "coerce" }
   | { kind: "capture" };
 
+/** A call site, named by the span of the call expression: `file:start-end`. */
+export type Link = { argument: string } | { returned: string };
+
 export type ItemKind = "type" | "value" | "function" | "method" | "module";
 export type Visibility = "exported" | "internal" | "unknown";
 
@@ -62,6 +65,8 @@ export type Record =
       site: Span | null;
       /** Set when the move happens only on one branch of a conditional. */
       condition: string | null;
+      /** For a move into a callee's parameter or out of its result, the call site. */
+      link: Link | null;
     }
   /** A method call whose receiver the collector followed into the callee's `self`. */
   | { record: "receiver"; call: string; moves: string[] }

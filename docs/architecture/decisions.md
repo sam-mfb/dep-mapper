@@ -49,7 +49,7 @@ A `ProjectGraph` records receiver bounds separately from witnessed handoffs. A r
 
 `mapper` owns the composition. It constructs the grapher for the project’s language and calls it through the `ProjectGrapher` contract in `project-graph` with the selected build. Each language crate builds the `ProjectGraph` end to end: it reads the source and traces its own routes. `project-graph-rust` serves the initial investigation, and `project-graph-typescript` implements the same contract for another language.
 
-`project-graph-typescript` reads an npm workspace, one module per package, with the build selected by a tsconfig. It runs the TypeScript checker in a Node child process. The child uses the TypeScript 6 API through a small interface of our own, so the move to TypeScript 7 changes one file. It prints items, facts and receiver links as JSON Lines, and the Rust crate assembles the graph and traces the routes.
+`project-graph-typescript` reads an npm workspace, one module per package, with the build selected by a tsconfig. It runs the TypeScript checker in a Node child process. The child uses the TypeScript 6 API through a small interface of our own, so the move to TypeScript 7 changes one file. It prints items, facts and receiver links as JSON Lines, and the Rust crate assembles the graph. It traces value routes with `value-routes`, the shared tracer that `project-graph-rust` also uses.
 
 Analysis is not split into a language reader and a shared grapher. If some route logic turns out to be the same across languages, it goes in a library the language crates call, not in a separate stage of the pipeline.
 
