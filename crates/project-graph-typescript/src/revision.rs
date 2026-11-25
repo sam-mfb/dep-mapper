@@ -11,13 +11,20 @@ pub trait SourceRevision {
 }
 
 #[derive(Debug, Error)]
-#[error("could not identify the source revision: {0}")]
-pub struct RevisionError(pub String);
+pub enum RevisionError {
+    /// The source at `root` is not under version control. The grapher then
+    /// names the revision by the contents of the files it read.
+    #[error("the source is not under version control")]
+    NotVersioned,
+    #[error("could not identify the source revision: {0}")]
+    Failed(String),
+}
 
 /// The Git commit at `root`. When files under `root` differ from it, the
 /// revision is `<commit>-dirty-<hash>`, where the hash covers the changes to
 /// tracked files and the contents of untracked ones, so different local
 /// changes give different revisions.
+/// Outside a Git repository it reports [`RevisionError::NotVersioned`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitRevision {
     /// The Git executable, by path or by name on `PATH`.
@@ -47,7 +54,7 @@ impl SourceRevision for GitRevision {
         for path in untracked.split(|b| *b == 0).filter(|p| !p.is_empty()) {
             let name = String::from_utf8_lossy(path).to_string();
             let contents = std::fs::read(root.join(&name))
-                .map_err(|e| RevisionError(format!("{name}: {e}")))?;
+                .map_err(|e| RevisionError::Failed(format!("{name}: {e}")))?;
             hash.update((name.len() as u64).to_le_bytes());
             hash.update(name.as_bytes());
             hash.update((contents.len() as u64).to_le_bytes());
@@ -70,11 +77,14 @@ impl GitRevision {
             .arg(root)
             .args(args)
             .output()
-            .map_err(|e| RevisionError(format!("{}: {e}", self.git.display())))?;
+            .map_err(|e| RevisionError::Failed(format!("{}: {e}", self.git.display())))?;
         if !output.status.success() {
-            return Err(RevisionError(
-                String::from_utf8_lossy(&output.stderr).trim().to_string(),
-            ));
+            let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(if message.contains("not a git repository") {
+                RevisionError::NotVersioned
+            } else {
+                RevisionError::Failed(message)
+            });
         }
         Ok(output.stdout)
     }

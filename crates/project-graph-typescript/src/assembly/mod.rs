@@ -57,7 +57,7 @@ pub fn assemble(
 
     for record in records {
         match record {
-            Record::Project { name, settings } => project = Some((name, settings)),
+            Record::Project { name, settings, .. } => project = Some((name, settings)),
             Record::Module { id, name, root } => {
                 modules.insert(ModuleId(id), Module { name, root });
             }
