@@ -566,3 +566,30 @@ fn only_a_proposed_update_in_a_map_carries_a_proposed_review() {
     );
     assert_eq!(error.position, position(10, 12));
 }
+
+#[test]
+fn a_role_the_reviewer_named_reads_back_exactly() {
+    for name in ["", " padded ", "logs through", "other: nested"] {
+        let mut map = example::sharsheret();
+        let route = map.routes.values_mut().next().unwrap();
+        route.description = Review::Judged {
+            judgment: RouteDescription {
+                role: UseRole::Other(name.into()),
+                other_roles: vec![],
+            },
+            reason: "Named.".into(),
+            primary: CitationId("module:mapper".into()),
+            supporting: vec![],
+        };
+        round_trip(MapDocument::Map(map));
+    }
+    let Ok(MapDocument::Draft(draft)) =
+        load(&ROUTE.replace("role = \"wires\"", "role = \"other:logs\""))
+    else {
+        panic!("not a draft")
+    };
+    assert!(matches!(
+        &draft.routes[&RouteId("r".into())].description,
+        Review::Judged { judgment, .. } if judgment.role == UseRole::Other("logs".into())
+    ));
+}

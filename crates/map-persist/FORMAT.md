@@ -150,7 +150,7 @@ A review's `state` is `unreviewed`, `deferred` or `judged`.
   - For a module, it also needs `concern` and `kind` (`logic`, `effect`, `composition` or `contract`). `layer` may be left out.
   - For a dependency or route, it also needs `role`. `other_roles` is an array of roles and may be left out to mean none.
 
-A role is one of `direct-use`, `implements`, `wires`, `supplies-input`, `full-injection`, `adapted-injection` or `incidental`. Any other role is written as `"other: <description>"`.
+A role is one of `direct-use`, `implements`, `wires`, `supplies-input`, `full-injection`, `adapted-injection` or `incidental`. Any other role is written as `"other: <description>"`. The description is everything after `other:` and the one space that follows it.
 
 ## Evidence
 

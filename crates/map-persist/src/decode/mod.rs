@@ -514,11 +514,11 @@ impl Decoder<'_> {
 
     fn role(&self, role: &Spanned<String>) -> Result<UseRole> {
         let text = role.get_ref();
+        // Saving writes "other: <name>". Reading drops the prefix and the one
+        // space after it, and keeps the rest exactly, so a name reads back
+        // as it was saved.
         if let Some(other) = text.strip_prefix("other:") {
-            let other = other.trim();
-            if other.is_empty() {
-                return Err(self.error(role.span(), "`other:` needs a description".into()));
-            }
+            let other = other.strip_prefix(' ').unwrap_or(other);
             return Ok(UseRole::Other(other.into()));
         }
         ROLES
