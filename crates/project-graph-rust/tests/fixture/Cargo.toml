@@ -1,0 +1,6 @@
+# A small project for project-graph-rust's tests. `vendor/clock` is a path
+# dependency outside the workspace, which stands in for a third-party crate.
+[workspace]
+members = ["supplier", "consumer", "app"]
+exclude = ["vendor"]
+resolver = "3"
