@@ -32,3 +32,9 @@ const _: () = {
         }
     }
 };
+
+/// Uses the supplier inside an `async fn`, whose body is a coroutine that
+/// captures its arguments.
+pub async fn write_later(backups: Box<dyn Backups>) -> u32 {
+    backups.write()
+}
