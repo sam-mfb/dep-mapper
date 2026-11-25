@@ -391,6 +391,7 @@ dependencies = [
  "map-preview",
  "map-web",
  "project-graph",
+ "project-graph-rust",
  "project-graph-typescript",
  "project-map",
  "thiserror",

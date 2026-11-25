@@ -5,7 +5,7 @@
 ## `srs map`
 
 ```sh
-srs map <root> --language <rust|typescript> --target <target> --configuration <settings> \
+srs map <root> --language <rust|typescript> [--cache <dir>] --target <target> --configuration <settings> \
     --evaluator <manual|llm> [--workbook <dir>] [--agent <none|wait|claude>] \
     --out <map.toml> [--page <map.html>] [--serve <address>]
 ```
@@ -13,8 +13,9 @@ srs map <root> --language <rust|typescript> --target <target> --configuration <s
 | Option | Meaning |
 | --- | --- |
 | `<root>` | The directory holding the project's source. |
-| `--language` | Selects the grapher. TypeScript is available now. Rust will be once project-graph-rust merges. |
-| `--target`, `--configuration` | The build to analyze, in the grapher's terms. For TypeScript, the target is the tsconfig file, relative to the root, and the configuration is `tsconfig`. |
+| `--language` | Selects the grapher: project-graph-rust or project-graph-typescript. |
+| `--cache` | For Rust: where the grapher keeps its rustc driver and build output between runs. Without it, `<root>/target/srs`. The first run builds the driver, which takes about a minute. |
+| `--target`, `--configuration` | The build to analyze, in the grapher's terms. For Rust, the target is a package, optionally with one target as `package/bin:name`, and the configuration is `default features` or Cargo flags such as `--features x`. For TypeScript, the target is the tsconfig file, relative to the root, and the configuration is `tsconfig`. |
 | `--evaluator` | Who judges the graph. `manual` needs `--workbook`. The LLM evaluator is not available yet. |
 | `--agent` | For `manual`: who answers while `srs map` runs. `none` (the default when the option is left out) stops after writing the workbook. `wait` shows the request and checks every 5 seconds for a submission, for up to 4 hours. `claude` runs Claude Code in the project directory; `srs` must be on `PATH` for it to run `srs eval`. |
 | `--out` | Where to save the map. map-persist writes it, and it can be reopened without analysis. |
@@ -36,6 +37,19 @@ srs eval --workbook <dir> submit
 ```
 
 `srs eval` exits with 0 when the command did its work, 1 when an answer was refused or a check found problems (the output says why), and 2 when the command could not run.
+
+## Example: sharsheret itself
+
+The Rust grapher needs the pinned toolchain from `rust-toolchain.toml`, with its `rustc-dev` component. From the repository root:
+
+```sh
+cargo build -p mapper
+target/debug/srs map . --language rust --target mapper --configuration "default features" \
+    --evaluator manual --workbook target/srs-self/workbook --agent claude \
+    --out target/srs-self/map.toml --page target/srs-self/map.html
+```
+
+The `mapper` package depends on every other crate, so its build covers the whole project. With `--agent claude`, Claude Code answers the workbook. With `--agent none`, answer it yourself with `srs eval` and run the command again. `tests/sharsheret_rust.rs` runs the same steps for the smaller `map-builder` package, with a few answers.
 
 ## Example: the TypeScript sample
 

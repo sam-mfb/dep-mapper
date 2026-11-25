@@ -132,6 +132,10 @@ struct MapArgs {
     /// The project's language.
     #[arg(long, value_enum)]
     language: LanguageArg,
+    /// For Rust: where to keep the grapher's driver and build output between
+    /// runs. Without it, `<root>/target/srs`.
+    #[arg(long)]
+    cache: Option<PathBuf>,
     /// The build target, in the terms of the language's build tool.
     #[arg(long)]
     target: String,
@@ -180,6 +184,9 @@ enum EvaluatorArg {
     Llm,
 }
 
+/// The Rust grapher's cache when `--cache` is not given, under the root.
+const DEFAULT_RUST_CACHE: &str = "target/srs";
+
 impl MapArgs {
     fn into_command(self, current_dir: &Path) -> Result<MapCommand, clap::Error> {
         let evaluator = match (self.evaluator, self.workbook) {
@@ -206,16 +213,28 @@ impl MapArgs {
                 ));
             }
         };
+        let language = match (self.language, self.cache) {
+            (LanguageArg::Rust, Some(cache)) => Language::Rust {
+                cache: current_dir.join(cache),
+            },
+            (LanguageArg::Rust, None) => Language::Rust {
+                cache: current_dir.join(&self.root).join(DEFAULT_RUST_CACHE),
+            },
+            (LanguageArg::Typescript, None) => Language::TypeScript,
+            (LanguageArg::Typescript, Some(_)) => {
+                return Err(Cli::command().error(
+                    ErrorKind::ArgumentConflict,
+                    "--cache applies only to --language rust",
+                ));
+            }
+        };
         Ok(MapCommand {
             selection: BuildSelection {
                 root: self.root,
                 target: self.target,
                 configuration: self.configuration,
             },
-            language: match self.language {
-                LanguageArg::Rust => Language::Rust,
-                LanguageArg::Typescript => Language::TypeScript,
-            },
+            language,
             evaluator,
             out: self.out,
             page: self.page,

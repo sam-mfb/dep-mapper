@@ -64,8 +64,10 @@ pub fn build(
     command: &MapCommand,
     implementations: &dyn Implementations,
 ) -> Result<MapBuild, MapError> {
-    let grapher = implementations.grapher(command.language)?;
+    // The evaluator first: its checks are quick, while a grapher may build
+    // tools before it can start.
     let evaluator = implementations.evaluator(&command.evaluator, &command.selection)?;
+    let grapher = implementations.grapher(&command.language)?;
     let graph = grapher.build_graph(&command.selection)?;
     let evaluation = evaluator.evaluate(&graph)?;
     Ok(map_builder::build_map(&graph, &evaluation)?)

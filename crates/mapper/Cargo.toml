@@ -21,6 +21,7 @@ map-persist.workspace = true
 map-preview.workspace = true
 map-web.workspace = true
 project-graph.workspace = true
+project-graph-rust = { path = "../project-graph-rust" }
 project-graph-typescript = { path = "../project-graph-typescript" }
 project-map.workspace = true
 thiserror.workspace = true

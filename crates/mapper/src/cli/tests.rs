@@ -150,3 +150,49 @@ fn an_absolute_workbook_path_is_kept() {
     };
     assert_eq!(command.workbook, Path::new("/data/wb"));
 }
+
+#[test]
+fn the_rust_cache_defaults_to_the_projects_target_directory() {
+    let language = |extra: &[&str]| {
+        let args = [&["--evaluator", "llm"], extra].concat();
+        let Command::Map(command) = parse(map_args(&args)).unwrap() else {
+            panic!("a map command")
+        };
+        command.language
+    };
+    assert_eq!(
+        language(&[]),
+        Language::Rust {
+            cache: "/home/someone/work/./target/srs".into()
+        }
+    );
+    assert_eq!(
+        language(&["--cache", "cache"]),
+        Language::Rust {
+            cache: "/home/someone/work/cache".into()
+        }
+    );
+}
+
+#[test]
+fn a_cache_for_typescript_is_a_mistake() {
+    let outcome = parse([
+        "srs",
+        "map",
+        ".",
+        "--language",
+        "typescript",
+        "--target",
+        "tsconfig.json",
+        "--configuration",
+        "tsconfig",
+        "--evaluator",
+        "llm",
+        "--out",
+        "m",
+        "--cache",
+        "c",
+    ])
+    .unwrap_err();
+    assert!(outcome.text.contains("--cache applies only"));
+}
