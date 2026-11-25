@@ -39,3 +39,10 @@ export function tallyAll(): Tally {
     return total;
   }, new Tally());
 }
+
+// An array pattern over a value that is not an array literal.
+export function writePrimary(): string {
+  const [primary, second = quietBackups] = ALL;
+  second.prune(2);
+  return primary.write("primary");
+}
