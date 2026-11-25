@@ -40,6 +40,8 @@ Imports, re-exports and references are facts only when they reach another packag
 
 A value moves between places. These are locals and parameters of a function, fields of a class or interface, a function's `return`, and the receiver of a method call, which moves into the called method's `self`. A class value written into an interface-typed slot is a `Coerce` move. If the class does not declare that interface, the same site also records a structural `Implements` fact. Array contents are tracked by element type. The elements of every array of `T` share one place, `{ owner: T, projection: "[element]" }`. An array literal stores into it. A `for...of` variable, the element parameters of a callback given to an array method (the first for `map`, `forEach`, `filter`, `find` and the like, both for `sort`, the second for `reduce`, whose accumulator is not followed; callbacks of other methods are not followed), and the result of `find`, `findLast`, `at`, `pop` and `shift` read from it. Like a field, it stands for every instance, so a hop through it is possible. Each side of `a || b` and `a ?? b` is a conditional move. A top-level constant written as an object literal of an interface type, such as `const tool: Tool = { ... }`, implements that interface.
 
+A function-typed parameter `cb` of a function `f` has two slots: the arguments of every call through it, `cb(0)`, `cb(1)` and so on, and its result, `cb return`. Inside `f`, `cb(x)` passes `x` into `cb(0)`. Where `f` is called with a closure or a named function for `cb`, that function's parameters read from those slots, and its returned values move into `cb return`. The slots join every call of `f`, so hops through them are possible.
+
 A closure (a function expression, arrow function or nested function that is not an item) has its own places, named `name@closure:<byte offset>`. When it uses a variable declared outside it, a `Capture` move takes the outer place into the closure's place, at the closure. A name bound by an object pattern reads the field it names from the pattern's type, so `{ backups }: InstallParts` reads `InstallParts.backups`. An array pattern is followed only when its value is an array literal.
 
 When a move happens on one branch of a conditional, its hop is `Possible`, with the condition's text.
@@ -50,7 +52,7 @@ There are three kinds of route:
 - **Value route.** The shared `value-routes` tracer searches back from a method call's receiver to each `new` expression that can supply it, keeping one path per origin. A value returned from a call is matched to that call's own arguments. A move into or out of a field, or out of a closure's captured variable, stands for every instance of that place, so its hop is possible. If no origin is reached, the route stops at the call and says why.
 - **Receiver bound.** For a call through an interface, one bound for each class with an `Implements` fact for that interface.
 
-Not yet covered: arrays kept per variable rather than per element type, other containers such as `Map` and `Set`, destructuring in assignments, array patterns over anything but a literal, and calls through function-typed values beyond recording them as indirect. Calling a closure is an indirect call, so a value passed to a closure as an argument is not followed. A value that comes from outside the project is not an origin, so its trace stops.
+Not yet covered: arrays kept per variable rather than per element type, other containers such as `Map` and `Set`, destructuring in assignments, array patterns over anything but a literal, and calls through function-typed values beyond recording them as indirect. A closure is followed when it is given as an argument for a parameter; one stored in a variable or a field and called later is not. A value that comes from outside the project is not an origin, so its trace stops.
 
 ## Sample
 
@@ -61,3 +63,22 @@ Not yet covered: arrays kept per variable rather than per element type, other co
 - `installer` holds a `Backups` and calls `write` on it.
 - `app` builds the installer with either `OsBackups` or its own `MemoryBackups`, which implements `Backups` without saying so.
 - `vendor/clock` stands for a third-party package.
+
+## Mapping a real project
+
+This is how [manypkg](https://github.com/Thinkmill/manypkg) (MIT, four packages) was mapped, with Claude Code answering the evaluation workbook. Keep the clone and the outputs outside this repository.
+
+```sh
+git clone https://github.com/Thinkmill/manypkg.git ~/src/manypkg
+# Install dependencies without running their scripts. The project's own
+# build step is not needed: imports between its packages resolve to source.
+(cd ~/src/manypkg && npm install --ignore-scripts)
+
+cargo build -p mapper
+PATH="$PWD/target/debug:$PATH" srs map ~/src/manypkg \
+    --language typescript --target tsconfig.json --configuration tsconfig \
+    --evaluator manual --workbook ~/srs-out/manypkg/workbook --agent claude \
+    --out ~/srs-out/manypkg/map.toml --page ~/srs-out/manypkg/map.html
+```
+
+`--agent claude` runs Claude Code in the project directory with read access and `srs eval`, so `srs` must be on `PATH`. On manypkg at 97e2ab9 the graph has 155 items, about 2,150 facts and no gaps, and the run takes about five minutes. Without Claude, leave out `--agent` and answer the workbook with `srs eval` (see the mapper README).

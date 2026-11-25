@@ -20,6 +20,14 @@
 // A name bound by an object pattern reads the field of the pattern's type it
 // names, as if written `const name = value.field`.
 //
+// A function-typed parameter `cb` of a function `f` has two slots: argument
+// `i` of every call through it, `{ owner: f, projection: "cb(i)" }`, and its
+// result, `"cb return"`. Inside `f`, `cb(x)` passes `x` into `cb(0)` and its
+// value comes from `cb return`. Where `f` is called with a function for `cb`,
+// that function's parameters read from those slots and its returned values
+// move into `cb return`. The slots join every call of `f`, so their moves are
+// possible.
+//
 // Array contents are kept by element type: the elements of any array whose
 // elements are of type T share the place `{ owner: T, projection: "[element]" }`.
 // An array literal stores into it; a `for...of` variable, the callback of an
@@ -84,7 +92,8 @@ class FactWriter {
     const count = this.seen.get(base) ?? 0;
     this.seen.set(base, count + 1);
     const id = count === 0 ? base : `${base}~${count}`;
-    this.emit({ record: "fact", id, module, subject, fact, object, site, condition, link });
+    const joins_instances = isCallbackSlot(subject) || isCallbackSlot(object);
+    this.emit({ record: "fact", id, module, subject, fact, object, site, condition, link, joins_instances });
     return id;
   }
 
@@ -273,6 +282,16 @@ class FileFacts {
     const declaration = this.checker.calledDeclaration(call);
     const target = declaration && this.project.endpointOf(declaration);
     const owner: Endpoint = { item: this.ownerOf(call) };
+    // A call through a callback parameter calls whatever function was given,
+    // even when the parameter's type names a project function (`typeof f`).
+    const callback = this.callbackParameter(call.expression);
+    if (callback) {
+      this.write(owner, { kind: "call", dispatch: "indirect" }, { unresolved: call.expression.getText(this.file) }, call);
+      call.arguments.forEach((arg, index) => {
+        this.flow(arg, { place: { owner: callback.owner, projection: `${callback.name}(${index})` } }, "pass", null);
+      });
+      return;
+    }
     if (!declaration || !target) {
       this.write(owner, { kind: "call", dispatch: "indirect" }, { unresolved: call.expression.getText(this.file) }, call);
       return;
@@ -326,6 +345,7 @@ class FileFacts {
       const name = parameter.name.text;
       if ("item" in target) {
         this.flow(arg, { place: { owner: target.item, projection: name } }, "pass", null, link);
+        this.callbackArgument(arg, target.item, name);
       } else if ("external" in target && !target.external.startsWith(`${LIBRARY}#`)) {
         this.flow(arg, { external: `${target.external}(${name})` }, "pass", null, link);
       }
@@ -436,9 +456,11 @@ class FileFacts {
     else if (kind === "store" && this.project.isField(source) && !this.project.isField(destination)) move = "read";
     if (this.witnessImplements(e)) move = "coerce";
     // A value that comes out of a call crosses that call too.
-    const moveLink: Link | null = ts.isCallExpression(e)
-      ? { argument: link?.argument ?? null, returned: this.callSite(e) }
-      : link;
+    // A call through a callback parameter has no callee of its own to match.
+    const moveLink: Link | null =
+      ts.isCallExpression(e) && !this.callbackParameter(e.expression)
+        ? { argument: link?.argument ?? null, returned: this.callSite(e) }
+        : link;
     return [this.write(source, { kind: move } as FactKind, destination, e, condition, moveLink)];
   }
 
@@ -508,6 +530,62 @@ class FileFacts {
     if (object) this.write({ item }, { kind: "implements" }, object, declaration.type);
   }
 
+  /**
+   * The function and name of a parameter called as a function, when `callee`
+   * names a parameter of an item: `cb` in `function f(cb) { cb(x) }`.
+   */
+  private callbackParameter(callee: ts.Expression): { owner: string; name: string } | undefined {
+    if (!ts.isIdentifier(callee)) return undefined;
+    const declaration = this.checker.symbolAt(callee)?.valueDeclaration;
+    if (!declaration || !ts.isParameter(declaration) || !ts.isIdentifier(declaration.name)) return undefined;
+    const owner = this.project.items.get(declaration.parent);
+    return owner ? { owner, name: declaration.name.text } : undefined;
+  }
+
+  /**
+   * When a function is passed for parameter `name` of `owner`, its
+   * parameters read the arguments `owner` gives it and its returned values
+   * move into the parameter's result. The function is a closure written at
+   * the call or a function item named there.
+   */
+  private callbackArgument(arg: ts.Expression, owner: string, name: string): void {
+    const value = skipOuter(arg);
+    let fn: ts.SignatureDeclaration | undefined;
+    if (ts.isArrowFunction(value) || ts.isFunctionExpression(value)) {
+      fn = value;
+    } else if (ts.isIdentifier(value)) {
+      const symbol = this.checker.symbolAt(value);
+      const declaration = symbol && this.checker.resolveAlias(symbol).valueDeclaration;
+      if (declaration && ts.isFunctionDeclaration(declaration) && this.project.items.has(declaration)) fn = declaration;
+    }
+    if (!fn) return;
+    const result: Endpoint = { place: { owner, projection: `${name} return` } };
+    const item = this.project.items.get(fn);
+    fn.parameters.forEach((parameter, index) => {
+      if (!ts.isIdentifier(parameter.name)) return;
+      const into: Endpoint = item
+        ? { place: { owner: item, projection: parameter.name.text } }
+        : this.placeOf(parameter, parameter.name.text);
+      this.write({ place: { owner, projection: `${name}(${index})` } }, { kind: "pass" }, into, parameter);
+    });
+    if (item) {
+      // A named function's returns already move into its own `return`.
+      this.write({ place: { owner: item, projection: "return" } }, { kind: "return" }, result, value);
+      return;
+    }
+    const body = "body" in fn ? fn.body : undefined;
+    if (body && !ts.isBlock(body)) {
+      this.flow(body as ts.Expression, result, "return", null);
+    } else if (body) {
+      const visit = (node: ts.Node): void => {
+        if (ts.isFunctionLike(node)) return;
+        if (ts.isReturnStatement(node) && node.expression) this.flow(node.expression, result, "return", null);
+        ts.forEachChild(node, visit);
+      };
+      ts.forEachChild(body, visit);
+    }
+  }
+
   /** The endpoint a value is read from. */
   private sourceOf(e: ts.Expression): Endpoint | undefined {
     if (ts.isIdentifier(e)) return this.variableSlot(e);
@@ -519,6 +597,8 @@ class FileFacts {
     }
     if (ts.isPropertyAccessExpression(e)) return this.fieldSlot(e);
     if (ts.isCallExpression(e)) {
+      const callback = this.callbackParameter(e.expression);
+      if (callback) return { place: { owner: callback.owner, projection: `${callback.name} return` } };
       const declaration = this.checker.calledDeclaration(e);
       const target = declaration && this.project.endpointOf(declaration);
       if (!target) return undefined;
@@ -773,6 +853,11 @@ const ELEMENT_PARAMETERS: ReadonlyMap<string, readonly number[]> = new Map<strin
   ["reduce", [1]],
   ["reduceRight", [1]],
 ]);
+
+/** Whether an endpoint is a callback parameter's argument or result slot (see the header). */
+function isCallbackSlot(endpoint: Endpoint): boolean {
+  return "place" in endpoint && /\(\d+\)$| return$/.test(endpoint.place.projection);
+}
 
 /** Array methods whose result is one of the array's elements. */
 const ELEMENT_RESULT = new Set(["find", "findLast", "at", "pop", "shift"]);
