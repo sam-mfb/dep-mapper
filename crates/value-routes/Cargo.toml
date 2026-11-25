@@ -1,0 +1,11 @@
+[package]
+name = "value-routes"
+description = "Traces a value back from its use to where its implementation entered, over value moves any language can supply"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+project-graph.workspace = true

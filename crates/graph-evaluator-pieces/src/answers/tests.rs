@@ -246,3 +246,54 @@ fn stored_answers_read_back_with_missing_fields_as_empty() {
         }
     );
 }
+
+#[test]
+fn the_rest_of_a_routes_piece_can_be_set_aside_at_once_keeping_cited_and_earlier_routes() {
+    let mut graph = testing::graph();
+    let extra = graph.routes[&project_graph::RouteId("r-wire".into())].clone();
+    graph
+        .routes
+        .insert(project_graph::RouteId("r-wire-2".into()), extra.clone());
+    graph
+        .routes
+        .insert(project_graph::RouteId("r-wire-3".into()), extra);
+    let workbook = present(
+        &graph,
+        &Presentation {
+            page_size: 10,
+            source: &ByteOffsets,
+            command: Some("srs eval"),
+        },
+    );
+    let piece = PieceId("routes/app+disk".into());
+    let related = record(
+        &workbook,
+        &Answers::new(),
+        relate("routes/app+disk", &["route:r-wire"]),
+    )
+    .unwrap();
+    let earlier = Edit::SetAside {
+        route: "route:r-wire-2".into(),
+        reason: "Earlier reason.".into(),
+    };
+    let earlier = record(&workbook, &related.answers, earlier).unwrap();
+    let rest = Edit::SetAsideRest {
+        piece: piece.clone(),
+        reason: "Same wiring again.".into(),
+    };
+    let rest = record(&workbook, &earlier.answers, rest).unwrap();
+    let set_aside = &rest.answers[&piece].set_aside;
+    assert_eq!(set_aside.len(), 2);
+    assert_eq!(set_aside["route:r-wire-2"], "Earlier reason.");
+    assert_eq!(set_aside["route:r-wire-3"], "Same wiring again.");
+    let empty = Edit::SetAsideRest {
+        piece: piece.clone(),
+        reason: " ".into(),
+    };
+    assert!(record(&workbook, &rest.answers, empty).is_err());
+    let wrong = Edit::SetAsideRest {
+        piece: PieceId::module("app"),
+        reason: "x".into(),
+    };
+    assert!(record(&workbook, &rest.answers, wrong).is_err());
+}

@@ -79,6 +79,12 @@ pub enum Edit {
         route: String,
         reason: String,
     },
+    /// Sets aside, with one reason, every route of a routes piece that no
+    /// relationship cites and that is not already set aside.
+    SetAsideRest {
+        piece: PieceId,
+        reason: String,
+    },
 }
 
 /// An edit that was kept.
@@ -244,6 +250,35 @@ fn apply(
                 format!("{route} is not a route in this graph"),
             )),
         },
+        Edit::SetAsideRest { piece, reason } => {
+            let subject = Subject::Piece(piece.clone());
+            let Some(PieceSubject::Routes { routes, .. }) =
+                workbook.piece(&piece).map(|p| &p.subject)
+            else {
+                return Err(refused(
+                    subject,
+                    format!("{} is not a routes piece", piece.0),
+                ));
+            };
+            if reason.trim().is_empty() {
+                return Err(refused(
+                    subject,
+                    "give a reason for setting the routes aside".into(),
+                ));
+            }
+            let cited: std::collections::BTreeSet<String> = answers
+                .values()
+                .flat_map(|a| a.relationships.values())
+                .flat_map(|r| r.cite.iter().cloned())
+                .collect();
+            let entry = answers.entry(piece.clone()).or_default();
+            for route in routes {
+                if !cited.contains(route) && !entry.set_aside.contains_key(route) {
+                    entry.set_aside.insert(route.clone(), reason.clone());
+                }
+            }
+            Ok((piece, subject))
+        }
     }
 }
 

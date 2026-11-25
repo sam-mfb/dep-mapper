@@ -1,6 +1,7 @@
 use crate::assembly::{Selected, assemble};
+use crate::collection::records::Record;
 use crate::collection::{CollectRequest, Collector};
-use crate::revision::SourceRevision;
+use crate::revision::{RevisionError, SourceRevision};
 use crate::routes::TraceLimits;
 use project_graph::{BuildSelection, GraphingError, ProjectGraph, ProjectGrapher};
 
@@ -13,6 +14,10 @@ pub const AS_WRITTEN: &str = "tsconfig";
 /// A selection's `target` is the tsconfig file, relative to the project
 /// root, that names the source files and compiler options. Its
 /// `configuration` must be [`AS_WRITTEN`].
+///
+/// The revision comes from the injected [`SourceRevision`]. When it reports
+/// that the source is not under version control, the revision is
+/// `unversioned-<hash>`, from the contents of the files the collector read.
 pub struct TypeScriptGrapher {
     collector: Box<dyn Collector>,
     revision: Box<dyn SourceRevision>,
@@ -46,10 +51,11 @@ impl ProjectGrapher for TypeScriptGrapher {
         let failed = |e: &dyn std::fmt::Display| GraphingError {
             message: e.to_string(),
         };
-        let source_revision = self
-            .revision
-            .revision(&selection.root)
-            .map_err(|e| failed(&e))?;
+        let versioned = match self.revision.revision(&selection.root) {
+            Ok(revision) => Some(revision),
+            Err(RevisionError::NotVersioned) => None,
+            Err(e) => return Err(failed(&e)),
+        };
         let records = self
             .collector
             .collect(&CollectRequest {
@@ -57,11 +63,26 @@ impl ProjectGrapher for TypeScriptGrapher {
                 tsconfig: selection.target.clone(),
             })
             .map_err(|e| failed(&e))?;
+        let source_revision = versioned.unwrap_or_else(|| unversioned(&records));
         let selected = Selected {
             source_revision,
             target: selection.target.clone(),
             configuration: selection.configuration.clone(),
         };
         assemble(&selected, records, self.limits).map_err(|e| failed(&e))
+    }
+}
+
+/// The revision of source outside version control: `unversioned-` and the
+/// first 16 hex digits of the hash of the files the collector read. Output
+/// without a project record is refused when the graph is assembled.
+fn unversioned(records: &[Record]) -> String {
+    let sources = records.iter().find_map(|record| match record {
+        Record::Project { sources, .. } => Some(sources.as_str()),
+        _ => None,
+    });
+    match sources {
+        Some(sources) => format!("unversioned-{}", &sources[..sources.len().min(16)]),
+        None => "unversioned".to_string(),
     }
 }

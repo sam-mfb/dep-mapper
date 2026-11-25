@@ -15,3 +15,7 @@ pub fn helper() -> u32 {
 }
 
 pub const DATABASE_FILE: &str = "db.sqlite";
+
+pub trait Build {
+    fn build(seed: u32) -> Self;
+}

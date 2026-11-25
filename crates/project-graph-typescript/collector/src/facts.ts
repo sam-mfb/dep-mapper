@@ -22,7 +22,7 @@
 
 import ts from "typescript";
 import { hasModifier, LIBRARY, type Project } from "./project.ts";
-import type { Dispatch, Emit, Endpoint, FactKind, ImportUse, Span } from "./records.ts";
+import type { Dispatch, Emit, Endpoint, FactKind, ImportUse, Link, Span } from "./records.ts";
 
 type MoveKind = "store" | "read" | "pass" | "return";
 
@@ -65,12 +65,20 @@ class FactWriter {
     this.emit = emit;
   }
 
-  write(module: string, subject: Endpoint, fact: FactKind, object: Endpoint, site: Span, condition: string | null = null): string {
+  write(
+    module: string,
+    subject: Endpoint,
+    fact: FactKind,
+    object: Endpoint,
+    site: Span,
+    condition: string | null = null,
+    link: Link | null = null,
+  ): string {
     const base = `${fact.kind}@${site.file}:${site.start}`;
     const count = this.seen.get(base) ?? 0;
     this.seen.set(base, count + 1);
     const id = count === 0 ? base : `${base}~${count}`;
-    this.emit({ record: "fact", id, module, subject, fact, object, site, condition });
+    this.emit({ record: "fact", id, module, subject, fact, object, site, condition, link });
     return id;
   }
 
@@ -114,8 +122,21 @@ class FileFacts {
     return this.project.checker;
   }
 
-  private write(subject: Endpoint, fact: FactKind, object: Endpoint, site: ts.Node, condition: string | null = null): string {
-    return this.facts.write(this.module, subject, fact, object, this.project.span(site), condition);
+  private write(
+    subject: Endpoint,
+    fact: FactKind,
+    object: Endpoint,
+    site: ts.Node,
+    condition: string | null = null,
+    link: Link | null = null,
+  ): string {
+    return this.facts.write(this.module, subject, fact, object, this.project.span(site), condition, link);
+  }
+
+  /** Names a call site for call links. */
+  private callSite(call: ts.CallExpression | ts.NewExpression): string {
+    const span = this.project.span(call);
+    return `${span.file}:${span.start}-${span.end}`;
   }
 
   /** Whether an endpoint lies outside this file's package. */
@@ -251,9 +272,10 @@ class FileFacts {
     const id = this.write(owner, { kind: "call", dispatch }, target, call);
     if ("item" in target && ts.isPropertyAccessExpression(call.expression) && isInstanceMethod(declaration)) {
       const self: Endpoint = { place: { owner: target.item, projection: "self" } };
-      this.facts.receiver(id, this.flow(call.expression.expression, self, "pass", null));
+      const link: Link = { argument: this.callSite(call), returned: null };
+      this.facts.receiver(id, this.flow(call.expression.expression, self, "pass", null, link));
     }
-    this.arguments(call.arguments, declaration, target);
+    this.arguments(call, call.arguments, declaration, target);
   }
 
   private construction(expression: ts.NewExpression): void {
@@ -266,10 +288,16 @@ class FileFacts {
     }
     const dispatch: Dispatch = "external" in target ? "foreign" : "direct";
     this.write({ item: this.ownerOf(expression) }, { kind: "call", dispatch }, target, expression);
-    if (declaration) this.arguments(expression.arguments ?? ts.factory.createNodeArray(), declaration, target);
+    if (declaration) this.arguments(expression, expression.arguments ?? ts.factory.createNodeArray(), declaration, target);
   }
 
-  private arguments(args: ts.NodeArray<ts.Expression>, declaration: ts.Declaration, target: Endpoint): void {
+  private arguments(
+    call: ts.CallExpression | ts.NewExpression,
+    args: ts.NodeArray<ts.Expression>,
+    declaration: ts.Declaration,
+    target: Endpoint,
+  ): void {
+    const link: Link = { argument: this.callSite(call), returned: null };
     if (!ts.isFunctionLike(declaration)) return;
     const parameters = declaration.parameters;
     args.forEach((arg, index) => {
@@ -284,9 +312,9 @@ class FileFacts {
       }
       const name = parameter.name.text;
       if ("item" in target) {
-        this.flow(arg, { place: { owner: target.item, projection: name } }, "pass", null);
+        this.flow(arg, { place: { owner: target.item, projection: name } }, "pass", null, link);
       } else if ("external" in target && !target.external.startsWith(`${LIBRARY}#`)) {
-        this.flow(arg, { external: `${target.external}(${name})` }, "pass", null);
+        this.flow(arg, { external: `${target.external}(${name})` }, "pass", null, link);
       }
     });
   }
@@ -333,14 +361,20 @@ class FileFacts {
    * and returns their fact IDs. A conditional expression moves each branch
    * under its own condition.
    */
-  private flow(expression: ts.Expression, destination: Endpoint, kind: MoveKind, condition: string | null): string[] {
+  private flow(
+    expression: ts.Expression,
+    destination: Endpoint,
+    kind: MoveKind,
+    condition: string | null,
+    link: Link | null = null,
+  ): string[] {
     const e = skipOuter(expression);
     if (ts.isConditionalExpression(e)) {
       const test = e.condition.getText(this.file);
       const negated = ts.isIdentifier(skipOuter(e.condition)) ? `!${test}` : `!(${test})`;
       return [
-        ...this.flow(e.whenTrue, destination, kind, both(condition, test)),
-        ...this.flow(e.whenFalse, destination, kind, both(condition, negated)),
+        ...this.flow(e.whenTrue, destination, kind, both(condition, test), link),
+        ...this.flow(e.whenFalse, destination, kind, both(condition, negated), link),
       ];
     }
     if (ts.isObjectLiteralExpression(e)) {
@@ -350,7 +384,7 @@ class FileFacts {
       const origin = this.classEndpoint(e);
       if (!origin) return [];
       this.witnessImplements(e);
-      return [this.write(origin, { kind: "construct" }, destination, e, condition)];
+      return [this.write(origin, { kind: "construct" }, destination, e, condition, link)];
     }
     const source = this.sourceOf(e);
     if (!source) return [];
@@ -358,7 +392,11 @@ class FileFacts {
     if (ts.isCallExpression(e)) move = "return";
     else if (kind === "store" && this.project.isField(source) && !this.project.isField(destination)) move = "read";
     if (this.witnessImplements(e)) move = "coerce";
-    return [this.write(source, { kind: move } as FactKind, destination, e, condition)];
+    // A value that comes out of a call crosses that call too.
+    const moveLink: Link | null = ts.isCallExpression(e)
+      ? { argument: link?.argument ?? null, returned: this.callSite(e) }
+      : link;
+    return [this.write(source, { kind: move } as FactKind, destination, e, condition, moveLink)];
   }
 
   private objectLiteral(literal: ts.ObjectLiteralExpression, condition: string | null): string[] {
