@@ -1,0 +1,396 @@
+use super::*;
+use project_map::*;
+use std::collections::{BTreeMap, BTreeSet};
+
+fn round_trip(document: MapDocument) {
+    let text = save(&document);
+    let loaded = load(&text).unwrap_or_else(|error| panic!("{error}\n{text}"));
+    assert_eq!(loaded, document);
+    assert_eq!(save(&loaded), text, "saving again gives the same text");
+}
+
+fn position(line: usize, column: usize) -> Option<Position> {
+    Some(Position { line, column })
+}
+
+/// Loads `text`, which must fail, and returns the error.
+fn refused(text: &str) -> LoadError {
+    match load(text) {
+        Ok(document) => panic!("loaded {document:?}"),
+        Err(error) => error,
+    }
+}
+
+fn proposed_route(origin: &str, receiver: &str, note: &str) -> MapRoute {
+    MapRoute {
+        status: Status::Proposed,
+        use_site: None,
+        origin: RoutePoint::Project(ProjectPoint {
+            module: ModuleId(origin.into()),
+            item: Some("Thing".into()),
+        }),
+        hops: vec![
+            MapHop {
+                to: HopTarget::Project {
+                    point: ProjectPoint {
+                        module: ModuleId(receiver.into()),
+                        item: None,
+                    },
+                    link: HopLink::ReceiverUsesSender,
+                },
+                evidence: CitationId(note.into()),
+                support: HopSupport::Proposed,
+                role: Some(UseRole::Other("logs through".into())),
+            },
+            MapHop {
+                to: HopTarget::Outside(OutsidePoint::Unresolved("plugin".into())),
+                evidence: CitationId(note.into()),
+                support: HopSupport::Possible {
+                    condition: Some("with plugins".into()),
+                },
+                role: None,
+            },
+        ],
+        end: MapRouteEnd::Stopped {
+            at: CitationId(note.into()),
+            reason: "Unknown plugin.".into(),
+        },
+        description: Review::Deferred {
+            reason: "Not decided.".into(),
+        },
+    }
+}
+
+fn draft(base: DraftBase, remove: Removals) -> Draft {
+    let note = CitationId("note".into());
+    Draft {
+        base,
+        layers: Layers::new(vec![LayerName("Planned".into())]).unwrap(),
+        modules: BTreeMap::from([(
+            ModuleId("cache".into()),
+            MapModule {
+                status: Status::Proposed,
+                name: "cache".into(),
+                surface: vec![SurfaceItem {
+                    name: "Cache".into(),
+                    kind: ItemKind::Type,
+                    signature: None,
+                    declaration: None,
+                }],
+                description: Review::Judged {
+                    judgment: ModuleDescription {
+                        concern: "Keeps recent maps.".into(),
+                        kind: ModuleKind::Effect,
+                        layer: Some(LayerName("Planned".into())),
+                    },
+                    reason: "Loading is slow.".into(),
+                    primary: note.clone(),
+                    supporting: vec![],
+                },
+            },
+        )]),
+        dependencies: BTreeMap::from([(
+            DependencyId {
+                from: ModuleId("cache".into()),
+                to: ModuleId("map-persist".into()),
+            },
+            MapDependency {
+                status: Status::Proposed,
+                evidence: vec![note.clone()],
+                description: Review::Judged {
+                    judgment: RouteDescription {
+                        role: UseRole::DirectUse,
+                        other_roles: vec![UseRole::Incidental],
+                    },
+                    reason: "Reads through it.".into(),
+                    primary: note.clone(),
+                    supporting: vec![],
+                },
+            },
+        )]),
+        routes: BTreeMap::from([(
+            RouteId("cached".into()),
+            proposed_route("map-persist", "cache", "note"),
+        )]),
+        evidence: BTreeMap::from([(
+            note,
+            MapEvidence {
+                kind: EvidenceKind::Proposal,
+                build_unit: None,
+                summary: "Sam wants faster previews.".into(),
+                location: None,
+            },
+        )]),
+        remove,
+    }
+}
+
+#[test]
+fn a_saved_map_survives_saving_and_loading() {
+    round_trip(MapDocument::Map(example::sharsheret()));
+}
+
+#[test]
+fn a_map_without_a_source_and_with_located_evidence_survives_saving_and_loading() {
+    let mut map = example::sharsheret();
+    map.source = None;
+    let gap = &mut map.coverage_gaps[0];
+    gap.build_unit = Some(UnitId("map-web/lib".into()));
+    gap.location = Some(Location {
+        file: SourcePath("crates/map-web/src/lib.rs".into()),
+        bytes: 3..9,
+    });
+    round_trip(MapDocument::Map(map));
+}
+
+#[test]
+fn a_draft_over_a_base_survives_saving_and_loading() {
+    let remove = Removals {
+        modules: BTreeSet::from([ModuleId("map-web".into())]),
+        dependencies: BTreeSet::from([DependencyId {
+            from: ModuleId("mapper".into()),
+            to: ModuleId("map-persist".into()),
+        }]),
+        routes: BTreeSet::from([RouteId("save-the-project-map".into())]),
+    };
+    round_trip(MapDocument::Draft(draft(
+        DraftBase::Saved("maps/sharsheret.toml".into()),
+        remove,
+    )));
+}
+
+#[test]
+fn a_draft_standing_alone_survives_saving_and_loading() {
+    round_trip(MapDocument::Draft(draft(
+        DraftBase::None {
+            project: "sketch".into(),
+        },
+        Removals::default(),
+    )));
+}
+
+#[test]
+fn a_hand_written_draft_leaves_out_statuses_and_empty_sections() {
+    let text = r#"
+format = 1
+kind = "draft"
+project = "sketch"
+
+[modules.cache]
+name = "cache"
+review = { state = "unreviewed" }
+"#;
+    let Ok(MapDocument::Draft(draft)) = load(text) else {
+        panic!("not a draft")
+    };
+    assert_eq!(
+        draft.base,
+        DraftBase::None {
+            project: "sketch".into()
+        }
+    );
+    assert!(draft.layers.is_empty());
+    assert_eq!(
+        draft.modules[&ModuleId("cache".into())].status,
+        Status::Proposed
+    );
+    assert!(draft.dependencies.is_empty() && draft.routes.is_empty());
+    assert_eq!(draft.remove, Removals::default());
+}
+
+#[test]
+fn an_unknown_version_is_refused_at_its_line() {
+    let error = refused("kind = \"map\"\nformat = 2\n");
+    assert_eq!(error.position, position(2, 10));
+    assert!(error.message.contains("version 2"), "{}", error.message);
+}
+
+#[test]
+fn an_unknown_kind_is_refused() {
+    let error = refused("format = 1\nkind = \"sketch\"\n");
+    assert_eq!(error.position, position(2, 8));
+}
+
+#[test]
+fn a_missing_required_field_is_refused_with_a_position() {
+    let error = refused(
+        "format = 1\nkind = \"draft\"\nproject = \"p\"\n\n[modules.cache]\nreview = { state = \"unreviewed\" }\n",
+    );
+    assert!(error.message.contains("name"), "{}", error.message);
+    assert_eq!(error.position.map(|p| p.line), Some(5));
+}
+
+#[test]
+fn a_misspelled_field_is_refused_at_its_line() {
+    let error = refused("format = 1\nkind = \"draft\"\nproject = \"p\"\nlayer = [\"x\"]\n");
+    assert!(error.message.contains("layer"), "{}", error.message);
+    assert_eq!(error.position, position(4, 1));
+}
+
+#[test]
+fn a_saved_map_needs_every_status() {
+    let mut text = save(&MapDocument::Map(example::sharsheret()));
+    let at = text.find("status = \"observed\"\n").unwrap();
+    text.replace_range(at..at + "status = \"observed\"\n".len(), "");
+    let error = refused(&text);
+    assert_eq!(error.message, "`status` is required in a saved map");
+    assert!(error.position.is_some());
+}
+
+#[test]
+fn a_draft_names_a_base_or_a_project_but_not_both() {
+    let error = refused("format = 1\nkind = \"draft\"\nbase = \"m.toml\"\nproject = \"p\"\n");
+    assert_eq!(error.position, position(4, 11));
+    let error = refused("format = 1\nkind = \"draft\"\n");
+    assert_eq!(error.position, None);
+}
+
+#[test]
+fn a_draft_standing_alone_removes_nothing() {
+    let error =
+        refused("format = 1\nkind = \"draft\"\nproject = \"p\"\n\n[remove]\nmodules = [\"a\"]\n");
+    assert_eq!(
+        error.message,
+        "a draft without a base map has nothing to remove"
+    );
+    let empty = "format = 1\nkind = \"draft\"\nproject = \"p\"\n\n[remove]\nmodules = []\n";
+    assert!(load(empty).is_ok());
+}
+
+#[test]
+fn a_part_removed_twice_is_refused_at_the_second() {
+    let error = refused(
+        "format = 1\nkind = \"draft\"\nbase = \"m\"\n\n[remove]\nroutes = [\"r\",\n  \"r\"]\n",
+    );
+    assert_eq!(error.position, position(7, 3));
+}
+
+const ROUTE: &str = r#"format = 1
+kind = "draft"
+project = "p"
+
+[routes.r]
+origin = { module = "a" }
+end = { state = "reached" }
+review = { state = "judged", role = "wires", reason = "Why.", primary = "n" }
+
+[[routes.r.hops]]
+to = { module = "b", link = "receiver-uses-sender" }
+evidence = "n"
+support = "proposed"
+"#;
+
+#[test]
+fn a_route_written_by_hand_loads() {
+    let Ok(MapDocument::Draft(draft)) = load(ROUTE) else {
+        panic!("not a draft")
+    };
+    let route = &draft.routes[&RouteId("r".into())];
+    assert_eq!(route.hops[0].support, HopSupport::Proposed);
+    assert!(matches!(
+        &route.description,
+        Review::Judged { judgment, supporting, .. }
+            if judgment.role == UseRole::Wires && supporting.is_empty()
+    ));
+}
+
+#[test]
+fn an_unknown_role_is_refused_at_its_place() {
+    let error = refused(&ROUTE.replace("role = \"wires\"", "role = \"wire\""));
+    assert_eq!(error.position, position(8, 37));
+    assert!(
+        error.message.contains("unknown role \"wire\""),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn a_review_field_that_does_not_fit_its_state_is_refused() {
+    let error = refused(&ROUTE.replace("state = \"judged\"", "state = \"deferred\""));
+    assert_eq!(error.message, "a deferred review has no `role`");
+    assert_eq!(error.position, position(8, 10));
+    let error = refused(&ROUTE.replace("role = \"wires\"", "kind = \"logic\""));
+    assert_eq!(error.message, "a judged review has no `kind`");
+    let error = refused(&ROUTE.replace(", primary = \"n\"", ""));
+    assert_eq!(error.message, "a judged review needs `primary`");
+}
+
+#[test]
+fn a_point_must_be_one_kind_of_place() {
+    let error = refused(&ROUTE.replace(
+        "origin = { module = \"a\" }",
+        "origin = { module = \"a\", external = \"tokio\" }",
+    ));
+    assert_eq!(error.position, position(6, 10));
+    let error = refused(&ROUTE.replace(", link = \"receiver-uses-sender\"", ""));
+    assert_eq!(error.message, "a hop into a project module needs a `link`");
+    let error = refused(&ROUTE.replace(
+        "origin = { module = \"a\" }",
+        "origin = { module = \"a\", link = \"same-module\" }",
+    ));
+    assert_eq!(error.message, "a route's origin has no `link`");
+}
+
+#[test]
+fn only_a_possible_hop_has_a_condition() {
+    let error = refused(&ROUTE.replace(
+        "support = \"proposed\"",
+        "support = \"proposed\"\ncondition = \"later\"",
+    ));
+    assert_eq!(error.message, "only a possible hop has a `condition`");
+    assert_eq!(error.position, position(13, 11));
+}
+
+#[test]
+fn a_dependency_listed_twice_is_refused() {
+    let entry = "[[dependencies]]\nfrom = \"a\"\nto = \"b\"\nreview = { state = \"unreviewed\" }\n";
+    let text = format!("format = 1\nkind = \"draft\"\nproject = \"p\"\n\n{entry}\n{entry}");
+    let error = refused(&text);
+    assert_eq!(error.message, "the dependency of a on b is listed twice");
+    assert_eq!(error.position.map(|p| p.line), Some(10));
+}
+
+#[test]
+fn a_location_ending_before_it_starts_is_refused() {
+    let text = "format = 1\nkind = \"draft\"\nproject = \"p\"\n\n[evidence.n]\nkind = \"source\"\nsummary = \"s\"\nlocation = { file = \"f\", start = 9, end = 3 }\n";
+    let error = refused(text);
+    assert_eq!(error.message, "`start` (9) is after `end` (3)");
+    assert_eq!(error.position, position(8, 12));
+}
+
+#[test]
+fn an_error_reads_as_line_column_and_message() {
+    let error = LoadError {
+        position: position(3, 7),
+        message: "bad".into(),
+    };
+    assert_eq!(error.to_string(), "3:7: bad");
+}
+
+#[test]
+fn the_examples_in_the_format_document_load_as_one_draft() {
+    let document = include_str!("../FORMAT.md");
+    let blocks: Vec<&str> = document
+        .split("```toml\n")
+        .skip(1)
+        .map(|block| block.split("```").next().unwrap())
+        .collect();
+    assert_eq!(blocks.len(), 4);
+    let text = format!(
+        "format = 1\nkind = \"draft\"\nbase = \"m.toml\"\n\n{}",
+        blocks.join("\n")
+    );
+    let Ok(MapDocument::Draft(draft)) = load(&text) else {
+        panic!("{:?}", load(&text))
+    };
+    assert_eq!(
+        (
+            draft.modules.len(),
+            draft.dependencies.len(),
+            draft.routes.len()
+        ),
+        (1, 1, 1)
+    );
+    assert!(draft.modules.values().all(|m| m.status == Status::Proposed));
+}

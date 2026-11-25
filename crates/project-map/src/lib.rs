@@ -7,11 +7,14 @@
 //! `Status`: observed in code, or a proposed addition, update or removal.
 //! A map made only of proposals has no `source`.
 //! `ProjectMap::problems` checks that the parts of a map fit together.
+//! A `Draft` holds proposed changes to a saved map.
 
+mod draft;
 mod layers;
 mod problems;
 mod route;
 
+pub use draft::{Draft, DraftBase, Removals};
 pub use layers::{DuplicateLayer, Layers};
 pub use problems::{MapPart, MapProblem};
 use std::collections::BTreeMap;
