@@ -11,6 +11,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "graph-evaluator-manual"
+version = "0.1.0"
+dependencies = [
+ "graph-evaluator",
+ "project-graph",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
