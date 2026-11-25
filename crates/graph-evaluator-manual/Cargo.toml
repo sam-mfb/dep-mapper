@@ -8,10 +8,4 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-graph-evaluator.workspace = true
-project-graph.workspace = true
-serde = { version = "1.0.228", features = ["derive"] }
-thiserror.workspace = true
-
-[dev-dependencies]
-serde_json = "1.0.145"
+graph-evaluator-pieces.workspace = true

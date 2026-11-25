@@ -20,6 +20,13 @@ dependencies = [
 name = "graph-evaluator-manual"
 version = "0.1.0"
 dependencies = [
+ "graph-evaluator-pieces",
+]
+
+[[package]]
+name = "graph-evaluator-pieces"
+version = "0.1.0"
+dependencies = [
  "graph-evaluator",
  "project-graph",
  "serde",
