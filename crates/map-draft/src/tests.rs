@@ -385,3 +385,102 @@ fn the_base_given_must_match_the_draft() {
         BaseMismatch::Missing("map.toml".into())
     );
 }
+
+#[test]
+fn a_module_updated_and_removed_is_removed_with_its_connections() {
+    let mut draft = draft();
+    draft.update.modules.insert(
+        module_id("map-persist"),
+        update(ModuleChanges {
+            kind: Some(ModuleKind::Logic),
+            ..ModuleChanges::default()
+        }),
+    );
+    draft.remove.modules.insert(module_id("map-persist"));
+    let result = combined(&draft);
+    assert_eq!(
+        result.problems,
+        [DraftProblem::UpdatedAndRemoved {
+            part: MapPart::Module(module_id("map-persist"))
+        }]
+    );
+    assert!(
+        result.map.modules[&module_id("map-persist")]
+            .status
+            .is_removal()
+    );
+    assert!(
+        result.map.dependencies[&dependency_id("mapper", "map-persist")]
+            .status
+            .is_removal()
+    );
+}
+
+/// The example map with an update to Mapper's dependency on Map persist
+/// already proposed.
+fn base_with_an_update() -> ProjectMap {
+    let mut base = sharsheret();
+    let dependency = base
+        .dependencies
+        .get_mut(&dependency_id("mapper", "map-persist"))
+        .unwrap();
+    dependency.status = Status::ProposedUpdate {
+        proposed: judged(RouteDescription {
+            role: UseRole::Wires,
+            other_roles: vec![],
+        }),
+    };
+    base
+}
+
+#[test]
+fn an_update_the_base_already_proposes_is_not_replaced_by_a_removal() {
+    let id = dependency_id("mapper", "map-persist");
+    let refused = [DraftProblem::ChangeOfProposal {
+        part: MapPart::Dependency(id.clone()),
+    }];
+    // Removed by name.
+    let mut explicit = draft();
+    explicit.remove.dependencies.insert(id.clone());
+    let result = combine(&explicit, Some(&base_with_an_update())).unwrap();
+    assert_eq!(result.problems, refused);
+    assert!(matches!(
+        result.map.dependencies[&id].status,
+        Status::ProposedUpdate { .. }
+    ));
+    // Removed with its module.
+    let mut cascaded = draft();
+    cascaded.remove.modules.insert(module_id("map-persist"));
+    let result = combine(&cascaded, Some(&base_with_an_update())).unwrap();
+    assert!(
+        result.problems.starts_with(&refused),
+        "{:?}",
+        result.problems
+    );
+    assert!(matches!(
+        result.map.dependencies[&id].status,
+        Status::ProposedUpdate { .. }
+    ));
+}
+
+#[test]
+fn a_refused_module_removal_takes_nothing_with_it() {
+    let mut base = sharsheret();
+    base.modules
+        .get_mut(&module_id("map-persist"))
+        .unwrap()
+        .status = Status::ProposedRemoval;
+    let mut draft = draft();
+    draft.remove.modules.insert(module_id("map-persist"));
+    let result = combine(&draft, Some(&base)).unwrap();
+    assert_eq!(
+        result.problems[0],
+        DraftProblem::ChangeOfProposal {
+            part: MapPart::Module(module_id("map-persist"))
+        }
+    );
+    assert_eq!(
+        result.map.dependencies[&dependency_id("mapper", "map-persist")].status,
+        Status::Observed
+    );
+}

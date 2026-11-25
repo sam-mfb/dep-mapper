@@ -108,7 +108,7 @@ pub fn combine(draft: &Draft, base: Option<&ProjectMap>) -> Result<Combined, Bas
         }
     }
     let updated = update(&mut map, &draft.update, &mut problems);
-    let removed = remove(&mut map, &draft.remove, &mut problems);
+    let removed = remove(&mut map, &draft.remove, &updated, &mut problems);
     for part in updated.intersection(&removed) {
         problems.push(DraftProblem::UpdatedAndRemoved { part: part.clone() });
     }
@@ -296,47 +296,61 @@ fn connection_judgment(
 }
 
 /// Marks the removals, with the dependencies and routes of removed modules,
-/// and returns every part removed.
+/// and returns every part removed. `updated` names the parts this draft
+/// updated: a removal may replace those, and the caller reports it. A
+/// proposal the base already holds is never replaced.
 fn remove(
     map: &mut ProjectMap,
     removals: &Removals,
+    updated: &BTreeSet<MapPart>,
     problems: &mut Vec<DraftProblem>,
 ) -> BTreeSet<MapPart> {
     let mut removed = BTreeSet::new();
+    let mut modules = BTreeSet::new();
     for id in &removals.modules {
         let part = MapPart::Module(id.clone());
         match map.modules.get_mut(id) {
-            Some(module) if matches!(module.status, Status::Observed) => {
-                module.status = Status::ProposedRemoval;
-                removed.insert(part);
+            Some(module) => {
+                if mark_removed(&mut module.status, part, updated, &mut removed, problems) {
+                    modules.insert(id.clone());
+                }
             }
-            Some(_) => problems.push(DraftProblem::ChangeOfProposal { part }),
             None => problems.push(DraftProblem::RemovalOfMissingPart { part }),
         }
     }
-    let modules = &removals.modules;
-    // Only parts in code go with a removed module. An addition that rests on
-    // it is left for `ProjectMap::problems` to report.
+    // Only parts in code go with a removed module, and only modules whose
+    // removal was accepted take their parts along. An addition that rests on
+    // a removed module is left for `ProjectMap::problems` to report; a part
+    // the base already proposes to remove stays as it is.
+    let goes_with = |status_in_code: bool, already_removed: bool, touches: bool| {
+        status_in_code && !already_removed && touches
+    };
     let mut dependencies: BTreeSet<DependencyId> = map
         .dependencies
         .iter()
         .filter(|(id, dependency)| {
-            dependency.status.in_code() && (modules.contains(&id.from) || modules.contains(&id.to))
+            goes_with(
+                dependency.status.in_code(),
+                dependency.status.is_removal(),
+                modules.contains(&id.from) || modules.contains(&id.to),
+            )
         })
-        .map(|(id, _)| id)
-        .cloned()
+        .map(|(id, _)| id.clone())
         .collect();
     let mut routes: BTreeSet<RouteId> = map
         .routes
         .iter()
         .filter(|(_, route)| {
-            route.status.in_code()
-                && route
+            goes_with(
+                route.status.in_code(),
+                route.status.is_removal(),
+                route
                     .origin
                     .module()
                     .into_iter()
                     .chain(route.hops.iter().filter_map(|hop| hop.to.module()))
-                    .any(|m| modules.contains(m))
+                    .any(|m| modules.contains(m)),
+            )
         })
         .map(|(id, _)| id.clone())
         .collect();
@@ -360,42 +374,45 @@ fn remove(
     }
     for id in dependencies {
         let dependency = map.dependencies.get_mut(&id).expect("listed from the map");
+        let part = MapPart::Dependency(id);
         mark_removed(
             &mut dependency.status,
-            MapPart::Dependency(id),
+            part,
+            updated,
             &mut removed,
             problems,
         );
     }
     for id in routes {
         let route = map.routes.get_mut(&id).expect("listed from the map");
-        mark_removed(
-            &mut route.status,
-            MapPart::Route(id),
-            &mut removed,
-            problems,
-        );
+        let part = MapPart::Route(id);
+        mark_removed(&mut route.status, part, updated, &mut removed, problems);
     }
     removed
 }
 
-/// Marks a dependency or route for removal. One already updated by this
-/// draft is reported by the caller; one proposed in the base is refused.
+/// Marks a part for removal and says whether it was. An observed part, or
+/// one this draft updated, is removed; any other proposal the base holds is
+/// refused.
 fn mark_removed<D>(
     status: &mut Status<D>,
     part: MapPart,
+    updated: &BTreeSet<MapPart>,
     removed: &mut BTreeSet<MapPart>,
     problems: &mut Vec<DraftProblem>,
-) {
-    match status {
-        Status::Observed | Status::ProposedUpdate { .. } => {
-            *status = Status::ProposedRemoval;
-            removed.insert(part);
-        }
-        Status::ProposedAddition | Status::ProposedRemoval => {
-            problems.push(DraftProblem::ChangeOfProposal { part })
-        }
+) -> bool {
+    let removable = match status {
+        Status::Observed => true,
+        Status::ProposedUpdate { .. } => updated.contains(&part),
+        Status::ProposedAddition | Status::ProposedRemoval => false,
+    };
+    if removable {
+        *status = Status::ProposedRemoval;
+        removed.insert(part);
+    } else {
+        problems.push(DraftProblem::ChangeOfProposal { part });
     }
+    removable
 }
 
 #[cfg(test)]
