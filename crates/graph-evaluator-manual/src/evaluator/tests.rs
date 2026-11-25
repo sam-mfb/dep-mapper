@@ -178,6 +178,11 @@ fn unsubmitted_answers_are_kept_and_a_later_run_resumes_them_without_the_agent()
         .evaluate(&fixture::graph())
         .unwrap_err();
     assert!(error.message.contains("were not submitted"));
+    assert!(
+        error
+            .message
+            .contains("finish with `srs eval submit`, then evaluate again")
+    );
 
     // The work happens between runs, as with `srs eval` in a terminal.
     let store = DirStore::new(&scratch.0);
