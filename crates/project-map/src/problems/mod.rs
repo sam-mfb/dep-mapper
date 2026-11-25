@@ -1,9 +1,11 @@
 //! Checking that the parts of a map fit together. `map-builder` guarantees
 //! this for the maps it builds; maps written by hand need the check.
 //!
-//! "In code" means observed, or observed and proposed for removal. A part in
-//! code cannot rest on a proposed part or cite a proposal note. A proposed
-//! part can rest on parts in code, but not on one proposed for removal.
+//! A part is in code unless it is a proposed addition. A part in code cannot
+//! rest on an addition, and neither its evidence nor its review as found in
+//! code can cite a proposal note. A proposed review (an addition's, or the
+//! one an update carries) can cite notes. A proposed addition or update can
+//! rest on parts in code, but not on one proposed for removal.
 
 use crate::{
     CitationId, DependencyId, EvidenceKind, HopSupport, LayerName, MapRoute, MapRouteEnd, ModuleId,
@@ -31,15 +33,17 @@ pub enum MapProblem {
         hop: usize,
         dependency: DependencyId,
     },
-    /// A part in code rests on a proposed part.
-    ObservedRestsOnProposed { part: MapPart, proposed: MapPart },
-    /// A part in code cites a proposal note.
+    /// A part in code rests on a proposed addition.
+    ObservedRestsOnAddition { part: MapPart, addition: MapPart },
+    /// A part's evidence, or its review as found in code, cites a proposal note.
     ObservedCitesProposal { part: MapPart, citation: CitationId },
     /// A proposed route has a hop that is not proposed, or a route in code
     /// has a proposed hop.
     HopStatusMismatch { route: RouteId, hop: usize },
-    /// A proposed part rests on a part proposed for removal.
+    /// A proposed addition or update rests on a part proposed for removal.
     ProposedRestsOnRemoval { part: MapPart, removed: MapPart },
+    /// A proposed update reaches the same decision as the review in code.
+    UpdateChangesNothing { part: MapPart },
     /// A module's layer is not one of the map's layers.
     UnlistedLayer { module: ModuleId, layer: LayerName },
 }
@@ -51,33 +55,46 @@ impl ProjectMap {
         let mut problems = vec![];
         for (id, module) in &self.modules {
             let part = MapPart::Module(id.clone());
-            self.check_citations(
+            self.check_reviews(
                 &part,
                 &module.status,
-                review_citations(&module.description),
+                &module.description,
+                vec![],
                 &mut problems,
             );
-            if let Review::Judged { judgment, .. } = &module.description
-                && let Some(layer) = &judgment.layer
-                && !self.layers.contains(layer)
-            {
-                problems.push(MapProblem::UnlistedLayer {
-                    module: id.clone(),
-                    layer: layer.clone(),
-                });
+            let proposed = match &module.status {
+                Status::ProposedUpdate { proposed } => Some(proposed),
+                _ => None,
+            };
+            let layers: BTreeSet<&LayerName> = std::iter::once(&module.description)
+                .chain(proposed)
+                .filter_map(|review| match review {
+                    Review::Judged { judgment, .. } => judgment.layer.as_ref(),
+                    Review::Unreviewed | Review::Deferred { .. } => None,
+                })
+                .collect();
+            for layer in layers {
+                if !self.layers.contains(layer) {
+                    problems.push(MapProblem::UnlistedLayer {
+                        module: id.clone(),
+                        layer: layer.clone(),
+                    });
+                }
             }
         }
         for (id, dependency) in &self.dependencies {
             let part = MapPart::Dependency(id.clone());
             for module in BTreeSet::from([&id.from, &id.to]) {
-                self.check_module(&part, &dependency.status, module, &mut problems);
+                self.check_module(&part, class(&dependency.status), module, &mut problems);
             }
-            let cited = dependency
-                .evidence
-                .iter()
-                .chain(review_citations(&dependency.description))
-                .collect();
-            self.check_citations(&part, &dependency.status, cited, &mut problems);
+            let evidence = dependency.evidence.iter().collect();
+            self.check_reviews(
+                &part,
+                &dependency.status,
+                &dependency.description,
+                evidence,
+                &mut problems,
+            );
         }
         for (id, route) in &self.routes {
             self.check_route(id, route, &mut problems);
@@ -87,6 +104,7 @@ impl ProjectMap {
 
     fn check_route(&self, id: &RouteId, route: &MapRoute, problems: &mut Vec<MapProblem>) {
         let part = MapPart::Route(id.clone());
+        let status = class(&route.status);
         let modules: BTreeSet<&ModuleId> = route
             .origin
             .module()
@@ -94,12 +112,12 @@ impl ProjectMap {
             .chain(route.hops.iter().filter_map(|hop| hop.to.module()))
             .collect();
         for module in modules {
-            self.check_module(&part, &route.status, module, problems);
+            self.check_module(&part, status, module, problems);
         }
         let mut dependencies = BTreeSet::new();
         for (index, hop) in route.hops.iter().enumerate() {
             let proposed_hop = hop.support == HopSupport::Proposed;
-            if proposed_hop == route.status.in_code() {
+            if proposed_hop != route.status.is_addition() {
                 problems.push(MapProblem::HopStatusMismatch {
                     route: id.clone(),
                     hop: index,
@@ -119,16 +137,16 @@ impl ProjectMap {
             }
         }
         for dependency in dependencies {
-            let status = &self.dependencies[&dependency].status;
+            let other = class(&self.dependencies[&dependency].status);
             check_rests_on(
                 &part,
-                &route.status,
-                MapPart::Dependency(dependency),
                 status,
+                MapPart::Dependency(dependency),
+                other,
                 problems,
             );
         }
-        let cited = route
+        let evidence = route
             .use_site
             .iter()
             .chain(route.hops.iter().map(|hop| &hop.evidence))
@@ -136,15 +154,43 @@ impl ProjectMap {
                 MapRouteEnd::Stopped { at, .. } => Some(at),
                 MapRouteEnd::ReachedUse => None,
             })
-            .chain(review_citations(&route.description))
             .collect();
-        self.check_citations(&part, &route.status, cited, problems);
+        self.check_reviews(&part, &route.status, &route.description, evidence, problems);
+    }
+
+    /// Checks what a part cites, and that an update changes its judgment.
+    /// `evidence` is what the part cites outside its reviews.
+    fn check_reviews<D: PartialEq>(
+        &self,
+        part: &MapPart,
+        status: &Status<D>,
+        description: &Review<D>,
+        evidence: Vec<&CitationId>,
+        problems: &mut Vec<MapProblem>,
+    ) {
+        let mut in_code = vec![];
+        let mut proposed = vec![];
+        if status.in_code() {
+            in_code.extend(evidence);
+            in_code.extend(review_citations(description));
+        } else {
+            proposed.extend(evidence);
+            proposed.extend(review_citations(description));
+        }
+        if let Status::ProposedUpdate { proposed: update } = status {
+            proposed.extend(review_citations(update));
+            if same_decision(update, description) {
+                problems.push(MapProblem::UpdateChangesNothing { part: part.clone() });
+            }
+        }
+        self.check_citations(part, true, in_code, problems);
+        self.check_citations(part, false, proposed, problems);
     }
 
     fn check_module(
         &self,
         part: &MapPart,
-        status: &Status,
+        status: Class,
         module: &ModuleId,
         problems: &mut Vec<MapProblem>,
     ) {
@@ -153,7 +199,7 @@ impl ProjectMap {
                 part,
                 status,
                 MapPart::Module(module.clone()),
-                &found.status,
+                class(&found.status),
                 problems,
             ),
             None => problems.push(MapProblem::MissingModule {
@@ -163,10 +209,11 @@ impl ProjectMap {
         }
     }
 
+    /// `in_code`: whether the citations must not name proposal notes.
     fn check_citations(
         &self,
         part: &MapPart,
-        status: &Status,
+        in_code: bool,
         cited: Vec<&CitationId>,
         problems: &mut Vec<MapProblem>,
     ) {
@@ -176,39 +223,67 @@ impl ProjectMap {
                     part: part.clone(),
                     citation: citation.clone(),
                 }),
-                Some(evidence) if status.in_code() && evidence.kind == EvidenceKind::Proposal => {
-                    problems.push(MapProblem::ObservedCitesProposal {
+                Some(evidence) if in_code && evidence.kind == EvidenceKind::Proposal => problems
+                    .push(MapProblem::ObservedCitesProposal {
                         part: part.clone(),
                         citation: citation.clone(),
-                    })
-                }
+                    }),
                 Some(_) => {}
             }
         }
     }
 }
 
+/// A status without the review an update carries.
+#[derive(Clone, Copy)]
+enum Class {
+    Observed,
+    Addition,
+    Update,
+    Removal,
+}
+
+fn class<D>(status: &Status<D>) -> Class {
+    match status {
+        Status::Observed => Class::Observed,
+        Status::ProposedAddition => Class::Addition,
+        Status::ProposedUpdate { .. } => Class::Update,
+        Status::ProposedRemoval => Class::Removal,
+    }
+}
+
 fn check_rests_on(
     part: &MapPart,
-    status: &Status,
+    status: Class,
     other: MapPart,
-    other_status: &Status,
+    other_status: Class,
     problems: &mut Vec<MapProblem>,
 ) {
     match (status, other_status) {
-        (Status::Observed | Status::ProposedRemoval, Status::Proposed) => {
-            problems.push(MapProblem::ObservedRestsOnProposed {
+        (Class::Observed | Class::Update | Class::Removal, Class::Addition) => {
+            problems.push(MapProblem::ObservedRestsOnAddition {
                 part: part.clone(),
-                proposed: other,
+                addition: other,
             })
         }
-        (Status::Proposed, Status::ProposedRemoval) => {
+        (Class::Addition | Class::Update, Class::Removal) => {
             problems.push(MapProblem::ProposedRestsOnRemoval {
                 part: part.clone(),
                 removed: other,
             })
         }
         _ => {}
+    }
+}
+
+/// Whether two reviews reach the same decision: equal judgments, or the same
+/// state without a judgment.
+fn same_decision<D: PartialEq>(a: &Review<D>, b: &Review<D>) -> bool {
+    match (a, b) {
+        (Review::Judged { judgment: a, .. }, Review::Judged { judgment: b, .. }) => a == b,
+        (Review::Unreviewed, Review::Unreviewed) => true,
+        (Review::Deferred { .. }, Review::Deferred { .. }) => true,
+        _ => false,
     }
 }
 

@@ -199,7 +199,7 @@ pub fn sharsheret() -> ProjectMap {
                     },
                 );
                 let supporting = std::iter::once(used.clone()).chain(supporting).collect();
-                (Status::Proposed, note, supporting)
+                (Status::ProposedAddition, note, supporting)
             } else {
                 (Status::Observed, used.clone(), supporting)
             };

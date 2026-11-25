@@ -4,8 +4,8 @@
 //! Layout, file encoding and the rules for matching judgments belong to consumers.
 //!
 //! A map can also hold proposals. Each module, dependency and route has a
-//! `Status`: observed in code, proposed, or observed and proposed for
-//! removal. A map made only of proposals has no `source`.
+//! `Status`: observed in code, or a proposed addition, update or removal.
+//! A map made only of proposals has no `source`.
 //! `ProjectMap::problems` checks that the parts of a map fit together.
 
 mod layers;
@@ -44,28 +44,41 @@ pub struct MapSource {
     pub configuration: String,
 }
 
-/// Whether a part of the map exists in code. A part proposed for removal
-/// exists in code; a proposed part does not.
+/// Whether a part of the map exists in code, and what is proposed for it.
+/// `D` is the part's description: `ModuleDescription` for a module,
+/// `RouteDescription` for a dependency or route. For a part in code, the
+/// part's own `description` is the review of the part as it is in code.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Status {
+pub enum Status<D> {
     Observed,
-    Proposed,
+    /// Not in code: proposed as a new part. Its `description` is proposed too.
+    ProposedAddition,
+    /// In code, with `proposed` as its new review.
+    ProposedUpdate {
+        proposed: Review<D>,
+    },
+    /// In code and proposed for removal.
     ProposedRemoval,
 }
 
-impl Status {
-    /// Whether the part exists in code: observed, or proposed for removal.
+impl<D> Status<D> {
+    /// Whether the part exists in code: every status but an addition.
     pub fn in_code(&self) -> bool {
-        match self {
-            Status::Observed | Status::ProposedRemoval => true,
-            Status::Proposed => false,
-        }
+        !self.is_addition()
+    }
+
+    pub fn is_addition(&self) -> bool {
+        matches!(self, Status::ProposedAddition)
+    }
+
+    pub fn is_removal(&self) -> bool {
+        matches!(self, Status::ProposedRemoval)
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MapModule {
-    pub status: Status,
+    pub status: Status<ModuleDescription>,
     pub name: String,
     pub surface: Vec<SurfaceItem>,
     pub description: Review<ModuleDescription>,
@@ -91,7 +104,7 @@ pub struct ModuleDescription {
 /// Its modules are given by its key in `ProjectMap::dependencies`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MapDependency {
-    pub status: Status,
+    pub status: Status<RouteDescription>,
     /// Facts behind the dependency, such as imports, references and calls.
     pub evidence: Vec<CitationId>,
     /// The architectural uses assigned to the dependency as a whole.
@@ -100,8 +113,8 @@ pub struct MapDependency {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MapRoute {
-    /// A proposed route has only proposed hops; a route in code has none.
-    pub status: Status,
+    /// A proposed addition has only proposed hops; a route in code has none.
+    pub status: Status<RouteDescription>,
     /// Identifies the same use across alternate or incomplete routes.
     pub use_site: Option<CitationId>,
     pub origin: RoutePoint,

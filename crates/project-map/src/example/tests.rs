@@ -26,7 +26,7 @@ fn one_route_is_proposed_and_everything_else_is_observed() {
     let proposed: Vec<&str> = map
         .routes
         .iter()
-        .filter(|(_, route)| route.status == Status::Proposed)
+        .filter(|(_, route)| route.status == Status::ProposedAddition)
         .map(|(id, _)| id.0.as_str())
         .collect();
     assert_eq!(proposed, [PROPOSED_ROUTE]);
