@@ -3,7 +3,7 @@
 
 use project_graph::GraphingError;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -14,7 +14,8 @@ pub struct Workspace {
     /// package names. Crates in neither list come with the toolchain.
     pub third_party: BTreeMap<String, String>,
     /// For every package in the build, the packages it depends on directly.
-    pub depends_on: BTreeMap<String, Vec<String>>,
+    /// Every version of a package is merged under its name.
+    pub depends_on: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl Workspace {
@@ -25,12 +26,16 @@ impl Workspace {
     /// `serde` for `serde_core` or `clap` for `clap_builder`, if there is
     /// exactly one such. Otherwise `None`.
     pub fn reached_through(&self, member: &str, package: &str) -> Option<String> {
-        let direct: Vec<&String> = self
+        // Third-party dependencies only: a workspace member is a module of
+        // the graph, not a name for an outside package. Each package once,
+        // however many names the source gives it.
+        let direct: BTreeSet<&String> = self
             .members
             .iter()
             .find(|m| m.name == member)?
             .dependencies
             .values()
+            .filter(|d| !d.member)
             .map(|d| &d.package)
             .collect();
         if direct.iter().any(|d| *d == package) {
@@ -48,7 +53,11 @@ impl Workspace {
             only(
                 through
                     .into_iter()
-                    .filter(|d| package.starts_with(d.as_str()))
+                    .filter(|d| {
+                        package
+                            .strip_prefix(d.as_str())
+                            .is_some_and(|rest| rest.starts_with(['_', '-']))
+                    })
                     .collect(),
             )
         })
@@ -173,19 +182,19 @@ pub fn parse(json: &str) -> Result<Workspace, GraphingError> {
             dependencies,
         });
     }
-    let depends_on = nodes
-        .iter()
-        .filter_map(|node| {
-            let name = name_of.get(node["id"].as_str()?)?;
-            let deps = node["deps"]
+    let mut depends_on: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for node in nodes {
+        let Some(name) = node["id"].as_str().and_then(|id| name_of.get(id)) else {
+            continue;
+        };
+        depends_on.entry(name.to_string()).or_default().extend(
+            node["deps"]
                 .as_array()
                 .into_iter()
                 .flatten()
-                .filter_map(|dep| name_of.get(dep["pkg"].as_str()?).map(|n| n.to_string()))
-                .collect();
-            Some((name.to_string(), deps))
-        })
-        .collect();
+                .filter_map(|dep| name_of.get(dep["pkg"].as_str()?).map(|n| n.to_string())),
+        );
+    }
     Ok(Workspace {
         root,
         members,
