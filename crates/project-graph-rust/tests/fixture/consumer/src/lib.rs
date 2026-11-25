@@ -54,3 +54,19 @@ pub fn write_generic<B: Backups>(backups: Option<B>) -> u32 {
 pub fn first_tick() -> clock::Tick {
     clock::Tick(1)
 }
+
+/// Calls a caller's closure with the supplier it was given, through a
+/// generic closure type.
+pub fn with_backups<F: FnOnce(&dyn Backups) -> u32>(backups: &dyn Backups, f: F) -> u32 {
+    f(backups)
+}
+
+/// Passes the supplier as a closure's second argument.
+pub fn with_count<F: FnOnce(u32, &dyn Backups) -> u32>(backups: &dyn Backups, f: F) -> u32 {
+    f(1, backups)
+}
+
+/// Uses whatever a caller's factory closure makes.
+pub fn build_with<F: FnOnce() -> Box<dyn Backups>>(make: F) -> u32 {
+    make().write()
+}

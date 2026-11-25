@@ -5,40 +5,10 @@
 # `srs draft preview docs/architecture/sharsheret.toml`.
 # crates/map-persist/FORMAT.md describes the format.
 #
-# The updates below restate module concerns. A concern states the module's
-# own responsibility and never names who uses it.
+# The analyzed map currently states every module's concern by its own
+# responsibility, without naming who uses it, so nothing needs restating.
+# Add proposed modules, dependencies, routes, updates or removals below.
 
 format = 1
 kind = "draft"
 base = "sharsheret-map.toml"
-
-[update.modules.graph-evaluator]
-concern = "Defines the architectural judgments about a project graph (module decisions, clusters and relationships) and how they are obtained."
-reason = "The analyzed concern names who implements the contract (\"the contract an evaluator implements\"). This one states the module's own responsibility."
-primary = "note:concern-rule"
-
-[update.modules.project-graph]
-concern = "Records the source evidence for one project build: its modules, build units, items, facts and the routes values take between packages. Defines how a graph is built for a selected build."
-reason = "The analyzed concern names who implements the contract (\"the contract a language grapher implements\"). This one states the module's own responsibility."
-primary = "note:concern-rule"
-
-[update.modules.project-map]
-concern = "Describes a reviewed project's modules, dependencies and routes, and drafts of proposed changes to them, in language-independent terms that people can read."
-reason = "The analyzed concern names what the map is used for (\"held as plain data for storage and display\"), which belongs to its consumers. This one states the module's own responsibility."
-primary = "note:concern-rule"
-
-[update.modules.graph-evaluator-llm]
-concern = "Obtains architectural judgments about a project graph from a language model."
-kind = "effect"
-layer = "evaluation"
-reason = "The analyzed map defers this module because the build it analyzed did not include it. `srs map --evaluator llm` has used it since #39."
-primary = "note:llm-evaluator"
-supporting = ["note:concern-rule"]
-
-[evidence."note:concern-rule"]
-kind = "proposal"
-summary = "A module's concern states what the module itself is responsible for. It never names the modules that use it; those relationships belong to dependencies and routes."
-
-[evidence."note:llm-evaluator"]
-kind = "proposal"
-summary = "graph-evaluator-llm calls the Claude API to evaluate a graph. mapper constructs it for `srs map --evaluator llm` (PR #39), after the analyzed map was produced."
