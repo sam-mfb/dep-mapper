@@ -28,6 +28,22 @@ fn the_status_tells_a_browser_the_version_and_problems() {
     let status: serde_json::Value = serde_json::from_str(&shown.status_json()).unwrap();
     assert_eq!(
         status,
-        serde_json::json!({ "version": 1, "page": false, "problems": ["a \"quoted\" problem"] })
+        serde_json::json!({ "version": 1, "page": null, "problems": ["a \"quoted\" problem"] })
     );
+}
+
+#[test]
+fn the_status_names_the_latest_page_even_after_problems() {
+    // A browser that saw page 1 and then missed everything until now must
+    // learn that the last good page is newer than its own.
+    let mut shown = Shown::new();
+    shown.show_page("one".into());
+    shown.show_page("two".into());
+    shown.show_problems(vec!["bad".into()]);
+    let status: serde_json::Value = serde_json::from_str(&shown.status_json()).unwrap();
+    assert_eq!(
+        (status["version"].as_u64(), status["page"].as_u64()),
+        (Some(3), Some(2))
+    );
+    assert_eq!(shown.page_version(), 2);
 }

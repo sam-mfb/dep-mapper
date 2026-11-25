@@ -44,22 +44,23 @@ pub const OUTER_PAGE: &str = r#"<!doctype html>
     try { place = frame.contentWindow.location.hash; } catch (_) { /* not loaded yet */ }
     frame.src = "/map?v=" + version + place;
   }
+  // `status.page` is the version of the last good page, or null before any.
+  // The frame reloads whenever that differs from the page it shows, even
+  // while there are problems: the browser may have missed the newer page
+  // while disconnected. Problems alone leave the frame as it is.
   function show(status) {
     list.replaceChildren(...status.problems.map((problem) => {
       const item = document.createElement("li");
       item.textContent = problem;
       return item;
     }));
+    const hasPage = status.page !== null;
     document.getElementById("problems").hidden = status.problems.length === 0;
-    document.getElementById("waiting").hidden = status.page;
-    frame.hidden = !status.page;
-    // Only a new page reloads the frame; problems leave the last page shown.
-    if (status.page && status.problems.length === 0 && status.version !== shown) {
-      shown = status.version;
-      load(status.version);
-    } else if (status.page && shown === -1) {
-      shown = status.version;
-      load(status.version);
+    document.getElementById("waiting").hidden = hasPage;
+    frame.hidden = !hasPage;
+    if (hasPage && status.page !== shown) {
+      shown = status.page;
+      load(status.page);
     }
   }
   // The browser reconnects by itself if the connection drops.

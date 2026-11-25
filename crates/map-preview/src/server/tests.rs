@@ -66,14 +66,14 @@ fn a_browser_hears_of_every_change() {
     let mut reader = BufReader::new(stream);
     assert_eq!(
         next_event(&mut reader),
-        serde_json::json!({ "version": 0, "page": false, "problems": [] })
+        serde_json::json!({ "version": 0, "page": null, "problems": [] })
     );
     preview.show_page("<p>one</p>".into());
     assert_eq!(next_event(&mut reader)["version"], 1);
     preview.show_problems(vec!["3:7: unknown role".into()]);
     assert_eq!(
         next_event(&mut reader),
-        serde_json::json!({ "version": 2, "page": true, "problems": ["3:7: unknown role"] })
+        serde_json::json!({ "version": 2, "page": 1, "problems": ["3:7: unknown role"] })
     );
 }
 
