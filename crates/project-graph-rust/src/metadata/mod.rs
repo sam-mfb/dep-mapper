@@ -13,6 +13,66 @@ pub struct Workspace {
     /// Library crate names of packages outside the workspace, mapped to their
     /// package names. Crates in neither list come with the toolchain.
     pub third_party: BTreeMap<String, String>,
+    /// For every package in the build, the packages it depends on directly.
+    pub depends_on: BTreeMap<String, Vec<String>>,
+}
+
+impl Workspace {
+    /// The direct dependency of `member` through which it reaches
+    /// `package`: `package` itself when `member` depends on it directly,
+    /// otherwise the one direct dependency that depends on it, directly or
+    /// not. When several do, the one whose name `package` starts with, as
+    /// `serde` for `serde_core` or `clap` for `clap_builder`, if there is
+    /// exactly one such. Otherwise `None`.
+    pub fn reached_through(&self, member: &str, package: &str) -> Option<String> {
+        let direct: Vec<&String> = self
+            .members
+            .iter()
+            .find(|m| m.name == member)?
+            .dependencies
+            .values()
+            .map(|d| &d.package)
+            .collect();
+        if direct.iter().any(|d| *d == package) {
+            return Some(package.to_string());
+        }
+        let through: Vec<&String> = direct
+            .into_iter()
+            .filter(|d| self.reaches(d, package))
+            .collect();
+        let only = |candidates: Vec<&String>| match candidates.as_slice() {
+            [one] => Some(one.to_string()),
+            _ => None,
+        };
+        only(through.clone()).or_else(|| {
+            only(
+                through
+                    .into_iter()
+                    .filter(|d| package.starts_with(d.as_str()))
+                    .collect(),
+            )
+        })
+    }
+
+    fn reaches(&self, from: &str, to: &str) -> bool {
+        let mut seen = std::collections::BTreeSet::new();
+        let mut stack = vec![from];
+        while let Some(at) = stack.pop() {
+            if at == to {
+                return true;
+            }
+            if seen.insert(at) {
+                stack.extend(
+                    self.depends_on
+                        .get(at)
+                        .into_iter()
+                        .flatten()
+                        .map(String::as_str),
+                );
+            }
+        }
+        false
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -113,10 +173,24 @@ pub fn parse(json: &str) -> Result<Workspace, GraphingError> {
             dependencies,
         });
     }
+    let depends_on = nodes
+        .iter()
+        .filter_map(|node| {
+            let name = name_of.get(node["id"].as_str()?)?;
+            let deps = node["deps"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|dep| name_of.get(dep["pkg"].as_str()?).map(|n| n.to_string()))
+                .collect();
+            Some((name.to_string(), deps))
+        })
+        .collect();
     Ok(Workspace {
         root,
         members,
         third_party,
+        depends_on,
     })
 }
 

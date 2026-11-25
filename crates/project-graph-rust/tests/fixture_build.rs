@@ -300,3 +300,20 @@ fn an_implementation_passed_into_an_async_fn_is_traced_through_its_coroutine() {
     assert!(kinds.contains(&&FactKind::Pass), "{kinds:?}");
     assert!(kinds.contains(&&FactKind::Capture), "{kinds:?}");
 }
+
+#[test]
+fn a_type_from_an_indirect_dependency_is_named_through_the_declared_one() {
+    let names: Vec<&String> = graph()
+        .facts
+        .values()
+        .filter_map(|f| match &f.object {
+            Endpoint::External(name) if name.contains("Tick") => Some(name),
+            _ => None,
+        })
+        .collect();
+    assert!(!names.is_empty());
+    assert!(
+        names.iter().all(|n| n.as_str() == "clock::tick::Tick"),
+        "{names:?}"
+    );
+}

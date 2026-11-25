@@ -52,3 +52,36 @@ fn output_that_is_not_cargo_metadata_is_an_error() {
     assert!(parse("{}").unwrap_err().message.contains("workspace_root"));
     assert!(parse("not json").is_err());
 }
+
+#[test]
+fn an_indirect_dependency_is_reached_through_the_one_direct_dependency_that_leads_to_it() {
+    let mut workspace = parse(FIXTURE).unwrap();
+    assert_eq!(
+        workspace.reached_through("consumer", "clock"),
+        Some("clock".into())
+    );
+    workspace
+        .depends_on
+        .insert("clock".into(), vec!["tick".into()]);
+    assert_eq!(
+        workspace.reached_through("consumer", "tick"),
+        Some("clock".into())
+    );
+    // Two direct dependencies lead to it and neither names it: neither is chosen.
+    workspace
+        .depends_on
+        .insert("supplier".into(), vec!["tick".into()]);
+    assert_eq!(workspace.reached_through("consumer", "tick"), None);
+    // Two lead to it and one names it, as `serde` does `serde_core`.
+    workspace
+        .depends_on
+        .insert("clock".into(), vec!["clock_core".into()]);
+    workspace
+        .depends_on
+        .insert("supplier".into(), vec!["clock_core".into()]);
+    assert_eq!(
+        workspace.reached_through("consumer", "clock_core"),
+        Some("clock".into())
+    );
+    assert_eq!(workspace.reached_through("consumer", "elsewhere"), None);
+}
