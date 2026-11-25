@@ -933,3 +933,57 @@ fn reduce_gives_elements_to_its_second_parameter_not_its_accumulator() {
         "no array element reaches the accumulator: {accumulator:#?}"
     );
 }
+
+const PATHS: &str = "@sample/backup-os/src/paths.ts";
+
+#[test]
+fn namespace_members_are_items_visible_when_exported() {
+    let items = &graph().items;
+    let check = |name: &str, kind: ItemKind, visibility: Visibility| {
+        let found = &items[&id(PATHS, name)];
+        assert_eq!(
+            (&found.kind, &found.visibility),
+            (&kind, &visibility),
+            "{name}"
+        );
+    };
+    check("Paths", ItemKind::Module, Visibility::Exported);
+    check("Paths.folder", ItemKind::Function, Visibility::Exported);
+    check("Paths.root", ItemKind::Function, Visibility::Internal);
+    check("Paths.Folder", ItemKind::Type, Visibility::Exported);
+    check("Paths.Folder.path", ItemKind::Method, Visibility::Exported);
+    // `namespace Limits.Disk` nests Disk in Limits.
+    check("Paths.Limits", ItemKind::Module, Visibility::Exported);
+    check("Paths.Limits.Disk", ItemKind::Module, Visibility::Exported);
+    check(
+        "Paths.Limits.Disk.quota",
+        ItemKind::Value,
+        Visibility::Exported,
+    );
+}
+
+#[test]
+fn calls_into_a_namespace_reach_its_members() {
+    let where_ = item("@sample/app/src/paths.ts", "where");
+    let call = |callee: Endpoint| {
+        only_fact(|f| {
+            f.subject == where_ && f.object == callee && matches!(f.kind, FactKind::Call(_))
+        })
+    };
+    let (folder, fact) = call(item(PATHS, "Paths.folder"));
+    assert_eq!(fact.kind, FactKind::Call(Dispatch::Direct));
+    // A call into another package is a direct-use route.
+    assert!(
+        graph()
+            .routes
+            .contains_key(&RouteId(format!("use:{}", folder.0)))
+    );
+    let (path, _) = call(item(PATHS, "Paths.Folder.path"));
+    let routes = routes_to(path);
+    assert_eq!(routes.len(), 1);
+    assert_eq!(routes[0].origin, item(PATHS, "Paths.Folder"));
+    // Inside the namespace, the class's method calls the namespace's function.
+    only_fact(|f| {
+        f.subject == item(PATHS, "Paths.Folder.path") && f.object == item(PATHS, "Paths.folder")
+    });
+}

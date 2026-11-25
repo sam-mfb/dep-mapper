@@ -49,11 +49,14 @@ export function collectItems(project: Project, emit: Emit): void {
           name: parent ? `${parent.name}.${name}` : name,
           kind,
           parent: parent?.id ?? null,
+          // A namespace member is visible outside the namespace only when it says `export`.
           isPrivate:
-            hasModifier(node, ts.SyntaxKind.PrivateKeyword) ||
-            hasModifier(node, ts.SyntaxKind.ProtectedKeyword) ||
-            ((node as ts.NamedDeclaration).name !== undefined &&
-              ts.isPrivateIdentifier((node as ts.NamedDeclaration).name!)),
+            parent?.kind === "module"
+              ? !exportedFromNamespace(node)
+              : hasModifier(node, ts.SyntaxKind.PrivateKeyword) ||
+                hasModifier(node, ts.SyntaxKind.ProtectedKeyword) ||
+                ((node as ts.NamedDeclaration).name !== undefined &&
+                  ts.isPrivateIdentifier((node as ts.NamedDeclaration).name!)),
         });
       }
       project.items.set(node, id);
@@ -62,43 +65,52 @@ export function collectItems(project: Project, emit: Emit): void {
       return found.get(id)!;
     };
 
-    for (const statement of file.statements) {
-      if (ts.isClassDeclaration(statement)) {
-        const owner = add(statement, statement.name?.text ?? "default", "type", null);
-        for (const member of statement.members) {
-          if (ts.isConstructorDeclaration(member)) {
-            add(member, "constructor", "method", owner);
-          } else if (
-            (ts.isMethodDeclaration(member) || ts.isGetAccessor(member) || ts.isSetAccessor(member)) &&
-            (ts.isIdentifier(member.name) || ts.isPrivateIdentifier(member.name))
-          ) {
-            add(member, member.name.text, "method", owner);
+    const declare = (statements: readonly ts.Statement[], scope: Found | null): void => {
+      for (const statement of statements) {
+        if (ts.isClassDeclaration(statement)) {
+          const owner = add(statement, statement.name?.text ?? "default", "type", scope);
+          for (const member of statement.members) {
+            if (ts.isConstructorDeclaration(member)) {
+              add(member, "constructor", "method", owner);
+            } else if (
+              (ts.isMethodDeclaration(member) || ts.isGetAccessor(member) || ts.isSetAccessor(member)) &&
+              (ts.isIdentifier(member.name) || ts.isPrivateIdentifier(member.name))
+            ) {
+              add(member, member.name.text, "method", owner);
+            }
           }
-        }
-        recordSubclass(project, statement);
-      } else if (ts.isInterfaceDeclaration(statement)) {
-        const owner = add(statement, statement.name.text, "type", null);
-        for (const member of statement.members) {
-          if (ts.isMethodSignature(member) && ts.isIdentifier(member.name)) {
-            add(member, member.name.text, "method", owner);
+          recordSubclass(project, statement);
+        } else if (ts.isInterfaceDeclaration(statement)) {
+          const owner = add(statement, statement.name.text, "type", scope);
+          for (const member of statement.members) {
+            if (ts.isMethodSignature(member) && ts.isIdentifier(member.name)) {
+              add(member, member.name.text, "method", owner);
+            }
           }
-        }
-      } else if (ts.isTypeAliasDeclaration(statement) || ts.isEnumDeclaration(statement)) {
-        add(statement, statement.name.text, "type", null);
-      } else if (ts.isFunctionDeclaration(statement)) {
-        add(statement, statement.name?.text ?? "default", "function", null);
-      } else if (ts.isVariableStatement(statement)) {
-        for (const declaration of statement.declarationList.declarations) {
-          if (!ts.isIdentifier(declaration.name)) continue;
-          const init = declaration.initializer;
-          const isFunction = init !== undefined && (ts.isArrowFunction(init) || ts.isFunctionExpression(init));
-          const item = add(declaration, declaration.name.text, isFunction ? "function" : "value", null);
-          if (isFunction) {
-            project.items.set(init, item.id);
+        } else if (ts.isModuleDeclaration(statement) && ts.isIdentifier(statement.name)) {
+          // A namespace; `namespace A.B {}` nests B in A.
+          const namespace = add(statement, statement.name.text, "module", scope);
+          const inner = statement.body;
+          if (inner && ts.isModuleBlock(inner)) declare(inner.statements, namespace);
+          else if (inner && ts.isModuleDeclaration(inner)) declare([inner], namespace);
+        } else if (ts.isTypeAliasDeclaration(statement) || ts.isEnumDeclaration(statement)) {
+          add(statement, statement.name.text, "type", scope);
+        } else if (ts.isFunctionDeclaration(statement)) {
+          add(statement, statement.name?.text ?? "default", "function", scope);
+        } else if (ts.isVariableStatement(statement)) {
+          for (const declaration of statement.declarationList.declarations) {
+            if (!ts.isIdentifier(declaration.name)) continue;
+            const init = declaration.initializer;
+            const isFunction = init !== undefined && (ts.isArrowFunction(init) || ts.isFunctionExpression(init));
+            const item = add(declaration, declaration.name.text, isFunction ? "function" : "value", scope);
+            if (isFunction) {
+              project.items.set(init, item.id);
+            }
           }
         }
       }
-    }
+    };
+    declare(file.statements, null);
   }
 
   const exported = exportedItems(project);
@@ -142,6 +154,16 @@ export function collectItems(project: Project, emit: Emit): void {
       declaration: project.span(declaration),
     });
   }
+}
+
+/**
+ * Whether a declaration inside a namespace is marked `export`. The inner
+ * names of a dotted namespace, `B` in `namespace A.B {}`, are always exported.
+ */
+function exportedFromNamespace(node: ts.Node): boolean {
+  if (ts.isModuleDeclaration(node) && ts.isModuleDeclaration(node.parent)) return true;
+  const holder = ts.isVariableDeclaration(node) ? node.parent.parent : node;
+  return hasModifier(holder, ts.SyntaxKind.ExportKeyword);
 }
 
 function fileVisibility(project: Project, pkg: Package, file: ts.SourceFile): Visibility {
