@@ -282,14 +282,18 @@ class FileFacts {
     const declaration = this.checker.calledDeclaration(call);
     const target = declaration && this.project.endpointOf(declaration);
     const owner: Endpoint = { item: this.ownerOf(call) };
+    // A call through a callback parameter calls whatever function was given,
+    // even when the parameter's type names a project function (`typeof f`).
+    const callback = this.callbackParameter(call.expression);
+    if (callback) {
+      this.write(owner, { kind: "call", dispatch: "indirect" }, { unresolved: call.expression.getText(this.file) }, call);
+      call.arguments.forEach((arg, index) => {
+        this.flow(arg, { place: { owner: callback.owner, projection: `${callback.name}(${index})` } }, "pass", null);
+      });
+      return;
+    }
     if (!declaration || !target) {
       this.write(owner, { kind: "call", dispatch: "indirect" }, { unresolved: call.expression.getText(this.file) }, call);
-      const callback = this.callbackParameter(call.expression);
-      if (callback) {
-        call.arguments.forEach((arg, index) => {
-          this.flow(arg, { place: { owner: callback.owner, projection: `${callback.name}(${index})` } }, "pass", null);
-        });
-      }
       return;
     }
     const dispatch: Dispatch = "external" in target ? "foreign" : this.dispatchOf(declaration);

@@ -974,3 +974,34 @@ fn a_callbacks_returned_value_comes_back_through_its_result() {
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].1.object, place(CALLBACKS, "withBackups", "return"));
 }
+
+#[test]
+fn a_callback_parameter_typed_as_a_project_function_still_fills_its_slots() {
+    // Into the closure's parameter.
+    let into = callback_route("given.prune(5)");
+    assert_eq!(into.origin, item(OS, "OsBackups"));
+    assert_eq!(into.hops[0].to, place(CALLBACKS, "withTyped", "use(0)"));
+    // And back out through the callback's result.
+    let (id, _) = only_fact(|f| {
+        matches!(f.kind, FactKind::Call(_))
+            && f.site
+                .as_ref()
+                .is_some_and(|s| text(s).ends_with(".write(\"typed\")"))
+    });
+    let out = routes_to(id);
+    assert_eq!(out.len(), 1, "{out:#?}");
+    assert_eq!(out[0].origin, item(OS, "OsBackups"));
+    assert!(
+        out[0]
+            .hops
+            .iter()
+            .any(|h| h.to == place(CALLBACKS, "withTyped", "use return"))
+    );
+    // The call through `use` is indirect, not a call of sameBackups.
+    assert!(
+        facts_where(|f| {
+            f.subject == item(CALLBACKS, "withTyped") && f.object == item(CALLBACKS, "sameBackups")
+        })
+        .is_empty()
+    );
+}
