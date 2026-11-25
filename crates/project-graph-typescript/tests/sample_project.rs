@@ -1,0 +1,562 @@
+//! Builds the graph for `sample/` with the real collector and checks its
+//! modules, items, facts and routes. Needs Node and the collector's
+//! dependencies (`npm ci` in `collector/`).
+//!
+//! The sample: `backup-api` declares the `Backups` interface. `backup-os`
+//! implements it as `OsBackups`. `installer` holds a `Backups` and calls
+//! `write` on it. `app` builds an `Installer` with either `OsBackups` or its
+//! own `MemoryBackups`, which implements `Backups` without saying so, and
+//! also calls `OsBackups.prune` itself. `clock` is a third-party package.
+
+use project_graph::*;
+use project_graph_typescript::{
+    AS_WRITTEN, NodeCollector, RevisionError, SourceRevision, TraceLimits, TypeScriptGrapher,
+};
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
+struct FixedRevision;
+
+impl SourceRevision for FixedRevision {
+    fn revision(&self, _root: &Path) -> Result<String, RevisionError> {
+        Ok("fixture".into())
+    }
+}
+
+fn sample_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("sample")
+}
+
+fn selection(configuration: &str) -> BuildSelection {
+    BuildSelection {
+        root: sample_root(),
+        target: "tsconfig.json".into(),
+        configuration: configuration.into(),
+    }
+}
+
+fn grapher() -> TypeScriptGrapher {
+    TypeScriptGrapher::new(
+        Box::new(NodeCollector::bundled(PathBuf::from("node"))),
+        Box::new(FixedRevision),
+        TraceLimits::STANDARD,
+    )
+}
+
+fn graph() -> &'static ProjectGraph {
+    static GRAPH: OnceLock<ProjectGraph> = OnceLock::new();
+    GRAPH.get_or_init(|| {
+        grapher()
+            .build_graph(&selection(AS_WRITTEN))
+            .expect("the sample builds")
+    })
+}
+
+const API: &str = "@sample/backup-api/src/index.ts";
+const OS: &str = "@sample/backup-os/src/os.ts";
+const INSTALLER: &str = "@sample/installer/src/index.ts";
+const MAIN: &str = "@sample/app/src/main.ts";
+
+fn id(file: &str, name: &str) -> ItemId {
+    ItemId(format!("{file}#{name}"))
+}
+
+fn item(file: &str, name: &str) -> Endpoint {
+    Endpoint::Item(id(file, name))
+}
+
+fn place(file: &str, owner: &str, projection: &str) -> Endpoint {
+    Endpoint::Place {
+        owner: id(file, owner),
+        projection: projection.into(),
+    }
+}
+
+/// The source text a span covers.
+fn text(site: &SourceSpan) -> String {
+    let source = std::fs::read(sample_root().join(&site.file)).unwrap();
+    String::from_utf8(source[site.bytes.clone()].to_vec()).unwrap()
+}
+
+fn facts_where(test: impl Fn(&Fact) -> bool) -> Vec<(&'static FactId, &'static Fact)> {
+    graph().facts.iter().filter(|(_, f)| test(f)).collect()
+}
+
+fn only_fact(test: impl Fn(&Fact) -> bool) -> (&'static FactId, &'static Fact) {
+    let found = facts_where(test);
+    assert_eq!(found.len(), 1, "expected one fact, found {found:#?}");
+    found[0]
+}
+
+fn hop_kinds(route: &Route) -> Vec<&'static FactKind> {
+    route
+        .hops
+        .iter()
+        .map(|hop| &graph().facts[&hop.fact].kind)
+        .collect()
+}
+
+#[test]
+fn the_graph_names_the_selected_build() {
+    let graph = graph();
+    assert_eq!(graph.build.project, "backup-sample");
+    assert_eq!(graph.build.source_revision, "fixture");
+    assert!(selection(AS_WRITTEN).describes(&graph.build));
+    assert!(graph.gaps.is_empty(), "{:#?}", graph.gaps);
+}
+
+#[test]
+fn another_configuration_is_refused() {
+    let error = grapher().build_graph(&selection("debug")).unwrap_err();
+    assert!(error.message.contains("configuration must be \"tsconfig\""));
+}
+
+#[test]
+fn each_workspace_package_is_a_module_with_one_unit() {
+    let graph = graph();
+    let modules: Vec<_> = graph
+        .modules
+        .iter()
+        .map(|(id, m)| (id.0.as_str(), m.root.as_str()))
+        .collect();
+    assert_eq!(
+        modules,
+        [
+            ("@sample/app", "packages/app"),
+            ("@sample/backup-api", "packages/backup-api"),
+            ("@sample/backup-os", "packages/backup-os"),
+            ("@sample/installer", "packages/installer"),
+        ]
+    );
+    let unit = &graph.units[&UnitId("@sample/installer:tsconfig.json".into())];
+    assert_eq!(unit.settings["typescript"], "6.0.3");
+    assert_eq!(unit.settings["strict"], "true");
+}
+
+#[test]
+fn items_carry_kind_visibility_signature_and_declaration() {
+    let items = &graph().items;
+    let check = |item: &ItemId, kind: ItemKind, visibility: Visibility| {
+        let found = &items[item];
+        assert_eq!(
+            (&found.kind, &found.visibility),
+            (&kind, &visibility),
+            "{item:?}"
+        );
+    };
+    check(&id(API, "Backups"), ItemKind::Type, Visibility::Exported);
+    check(
+        &id(API, "Backups.write"),
+        ItemKind::Method,
+        Visibility::Exported,
+    );
+    check(&id(API, "Label"), ItemKind::Type, Visibility::Exported);
+    // Exported from the package through index.ts's re-export.
+    check(&id(OS, "OsBackups"), ItemKind::Type, Visibility::Exported);
+    check(&id(OS, "stamp"), ItemKind::Function, Visibility::Internal);
+    check(
+        &id(INSTALLER, "Installer.constructor"),
+        ItemKind::Method,
+        Visibility::Exported,
+    );
+    check(
+        &id(INSTALLER, "installWith"),
+        ItemKind::Function,
+        Visibility::Exported,
+    );
+    check(
+        &id(MAIN, "MemoryBackups"),
+        ItemKind::Type,
+        Visibility::Internal,
+    );
+    check(&ItemId(OS.into()), ItemKind::Module, Visibility::Internal);
+    check(
+        &ItemId("@sample/backup-os/src/index.ts".into()),
+        ItemKind::Module,
+        Visibility::Exported,
+    );
+
+    let write = &items[&id(OS, "OsBackups.write")];
+    assert_eq!(write.module, ModuleId("@sample/backup-os".into()));
+    assert_eq!(
+        write.signature.as_deref(),
+        Some("write(name: string): string")
+    );
+    let declaration = write.declaration.as_ref().unwrap();
+    assert!(text(declaration).starts_with("write(name: string): string {"));
+}
+
+#[test]
+fn imports_record_how_the_name_is_used() {
+    let usage = |file: &str, name: &str| {
+        let (_, fact) = only_fact(|f| {
+            f.subject == Endpoint::Item(ItemId(file.into()))
+                && matches!(&f.kind, FactKind::Import { local_name, .. } if local_name == name)
+        });
+        match &fact.kind {
+            FactKind::Import { usage, .. } => usage.clone(),
+            _ => unreachable!(),
+        }
+    };
+    assert_eq!(usage(OS, "Label"), ImportUse::Unused);
+    assert_eq!(usage(OS, "Backups"), ImportUse::TypeOnly);
+    assert_eq!(usage(OS, "now"), ImportUse::Value);
+    assert_eq!(usage(MAIN, "OsBackups"), ImportUse::Value);
+    assert_eq!(usage(MAIN, "Backups"), ImportUse::TypeOnly);
+
+    let (_, now) = only_fact(
+        |f| matches!(&f.kind, FactKind::Import { local_name, .. } if local_name == "now"),
+    );
+    assert_eq!(now.object, Endpoint::External("clock#now".into()));
+}
+
+#[test]
+fn imports_inside_one_package_are_not_facts() {
+    assert!(
+        facts_where(
+            |f| matches!(&f.kind, FactKind::Import { .. } | FactKind::Reexport { .. })
+                && f.object == item(OS, "OsBackups")
+                && f.subject == Endpoint::Item(ItemId("@sample/backup-os/src/index.ts".into()))
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn a_reexport_names_what_it_exposes() {
+    let (_, fact) = only_fact(|f| matches!(f.kind, FactKind::Reexport { .. }));
+    assert_eq!(fact.subject, Endpoint::Item(ItemId(INSTALLER.into())));
+    assert_eq!(fact.object, item(API, "Backups"));
+    assert_eq!(
+        fact.kind,
+        FactKind::Reexport {
+            exported_name: "Backups".into()
+        }
+    );
+}
+
+#[test]
+fn declared_and_structural_implementations_are_both_facts() {
+    let implements = |class: Endpoint| {
+        only_fact(|f| {
+            f.kind == FactKind::Implements && f.subject == class && f.object == item(API, "Backups")
+        })
+        .1
+    };
+    let declared = implements(item(OS, "OsBackups"));
+    assert_eq!(text(declared.site.as_ref().unwrap()), "Backups");
+    let witnessed = implements(item(MAIN, "MemoryBackups"));
+    assert_eq!(
+        text(witnessed.site.as_ref().unwrap()),
+        "new MemoryBackups()"
+    );
+}
+
+#[test]
+fn calls_record_their_dispatch() {
+    let call = |caller: Endpoint, callee: Endpoint| {
+        let (_, fact) = only_fact(|f| {
+            matches!(f.kind, FactKind::Call(_)) && f.subject == caller && f.object == callee
+        });
+        match &fact.kind {
+            FactKind::Call(dispatch) => dispatch.clone(),
+            _ => unreachable!(),
+        }
+    };
+    assert_eq!(
+        call(
+            item(INSTALLER, "Installer.install"),
+            item(API, "Backups.write")
+        ),
+        Dispatch::Contract
+    );
+    assert_eq!(
+        call(item(MAIN, "main"), item(OS, "OsBackups.prune")),
+        Dispatch::Direct
+    );
+    assert_eq!(
+        call(item(OS, "stamp"), Endpoint::External("clock#now".into())),
+        Dispatch::Foreign
+    );
+    // No constructor is written, so the call names the class.
+    assert_eq!(
+        call(item(MAIN, "main"), item(OS, "OsBackups")),
+        Dispatch::Direct
+    );
+    assert_eq!(
+        call(item(MAIN, "main"), item(INSTALLER, "Installer.constructor")),
+        Dispatch::Direct
+    );
+}
+
+#[test]
+fn a_package_dependency_outside_the_workspace_is_external() {
+    let (_, fact) = only_fact(|f| {
+        f.kind == FactKind::DeclaredDependency
+            && f.subject == Endpoint::Module(ModuleId("@sample/app".into()))
+            && f.object == Endpoint::External("clock".into())
+    });
+    let site = fact.site.as_ref().unwrap();
+    assert_eq!(site.file, "packages/app/package.json");
+    assert_eq!(text(site), "\"clock\"");
+}
+
+#[test]
+fn an_implementation_entering_an_interface_slot_is_a_conditional_coercion() {
+    let (id, fact) = only_fact(|f| f.kind == FactKind::Coerce);
+    assert_eq!(fact.subject, place(MAIN, "main", "os"));
+    assert_eq!(fact.object, place(MAIN, "main", "backups"));
+    assert_eq!(text(fact.site.as_ref().unwrap()), "os");
+    let hop = graph()
+        .routes
+        .values()
+        .flat_map(|r| &r.hops)
+        .find(|h| &h.fact == id)
+        .unwrap();
+    assert_eq!(
+        hop.support,
+        Support::Possible {
+            condition: Some("!dryRun".into())
+        }
+    );
+}
+
+/// The call `this.backups.write(name)` inside `Installer.install`.
+fn install_call() -> &'static FactId {
+    only_fact(|f| {
+        f.subject == item(INSTALLER, "Installer.install") && f.object == item(API, "Backups.write")
+    })
+    .0
+}
+
+fn routes_to(call: &FactId) -> Vec<&'static Route> {
+    graph()
+        .routes
+        .iter()
+        .filter(|(id, r)| id.0.starts_with("value:") && r.use_site.as_ref() == Some(call))
+        .map(|(_, r)| r)
+        .collect()
+}
+
+#[test]
+fn both_providers_reach_the_installers_contract_call() {
+    let routes = routes_to(install_call());
+    assert_eq!(routes.len(), 2);
+    let from = |origin: Endpoint| routes.iter().find(|r| r.origin == origin).unwrap();
+
+    let memory = from(item(MAIN, "MemoryBackups"));
+    assert_eq!(memory.end, RouteEnd::ReachedUse);
+    assert_eq!(
+        hop_kinds(memory),
+        [
+            &FactKind::Construct,
+            &FactKind::Pass,
+            &FactKind::Store,
+            &FactKind::Pass
+        ]
+    );
+    let stops: Vec<_> = memory.hops.iter().map(|h| h.to.clone()).collect();
+    assert_eq!(
+        stops,
+        [
+            place(MAIN, "main", "backups"),
+            place(INSTALLER, "Installer.constructor", "backups"),
+            place(INSTALLER, "Installer", "backups"),
+            place(API, "Backups.write", "self"),
+        ]
+    );
+    assert_eq!(
+        memory.hops[0].support,
+        Support::Possible {
+            condition: Some("dryRun".into())
+        }
+    );
+
+    let os = from(item(OS, "OsBackups"));
+    assert_eq!(
+        hop_kinds(os),
+        [
+            &FactKind::Construct,
+            &FactKind::Coerce,
+            &FactKind::Pass,
+            &FactKind::Store,
+            &FactKind::Pass
+        ]
+    );
+}
+
+#[test]
+fn the_program_also_uses_its_provider_directly() {
+    let (prune, _) = only_fact(|f| {
+        f.object == item(OS, "OsBackups.prune") && matches!(f.kind, FactKind::Call(_))
+    });
+    let routes = routes_to(prune);
+    assert_eq!(routes.len(), 1);
+    assert_eq!(routes[0].origin, item(OS, "OsBackups"));
+    assert_eq!(
+        hop_kinds(routes[0]),
+        [&FactKind::Construct, &FactKind::Pass]
+    );
+    let direct = &graph().routes[&RouteId(format!("use:{}", prune.0))];
+    assert_eq!(direct.hops[0].to, item(MAIN, "main"));
+}
+
+#[test]
+fn a_receiver_nobody_supplies_stops_the_trace() {
+    let (call, _) = only_fact(|f| {
+        f.subject == item(INSTALLER, "installWith") && matches!(f.kind, FactKind::Call(_))
+    });
+    let routes = routes_to(call);
+    assert_eq!(routes.len(), 1);
+    assert_eq!(routes[0].origin, place(INSTALLER, "installWith", "backups"));
+    let RouteEnd::Stopped { reason, .. } = &routes[0].end else {
+        panic!("expected a stopped route")
+    };
+    assert_eq!(
+        reason,
+        "no recorded value enters backups in @sample/installer/src/index.ts#installWith"
+    );
+}
+
+#[test]
+fn each_implementer_is_a_receiver_candidate_for_the_contract_call() {
+    let call = install_call();
+    let bounds: Vec<_> =
+        facts_where(|f| matches!(&f.kind, FactKind::ReceiverBound { call: c, .. } if c == call))
+            .into_iter()
+            .map(|(_, f)| (f.object.clone(), f.kind.clone()))
+            .collect();
+    assert_eq!(bounds.len(), 2);
+    for (object, kind) in bounds {
+        assert!(object == item(OS, "OsBackups") || object == item(MAIN, "MemoryBackups"));
+        assert!(matches!(
+            kind,
+            FactKind::ReceiverBound {
+                basis: ReceiverBasis::BuildCandidate,
+                ..
+            }
+        ));
+    }
+}
+
+#[test]
+fn direct_uses_between_packages_are_one_hop_routes() {
+    let graph = graph();
+    let unused = only_fact(
+        |f| matches!(&f.kind, FactKind::Import { local_name, .. } if local_name == "Label"),
+    )
+    .0;
+    let route = &graph.routes[&RouteId(format!("use:{}", unused.0))];
+    assert_eq!(route.origin, item(API, "Label"));
+    assert_eq!(route.hops[0].to, Endpoint::Item(ItemId(OS.into())));
+    // A call inside one package is not a direct-use route.
+    let stamp = only_fact(|f| f.object == item(OS, "stamp")).0;
+    assert!(
+        !graph
+            .routes
+            .contains_key(&RouteId(format!("use:{}", stamp.0)))
+    );
+}
+
+#[test]
+fn every_route_cites_facts_in_the_graph() {
+    let graph = graph();
+    for (id, route) in &graph.routes {
+        for hop in &route.hops {
+            assert!(
+                graph.facts.contains_key(&hop.fact),
+                "{id:?} cites {:?}",
+                hop.fact
+            );
+        }
+        if let Some(call) = &route.use_site {
+            assert!(graph.facts.contains_key(call), "{id:?} uses {call:?}");
+        }
+    }
+}
+
+#[test]
+fn a_missing_tsconfig_is_a_graphing_error() {
+    let mut selection = selection(AS_WRITTEN);
+    selection.target = "missing.json".into();
+    let error = grapher().build_graph(&selection).unwrap_err();
+    assert!(
+        error.message.contains("the TypeScript collector failed"),
+        "{}",
+        error.message
+    );
+    assert!(error.message.contains("missing.json"), "{}", error.message);
+}
+
+#[test]
+fn a_collector_without_its_dependencies_says_how_to_install_them() {
+    let collector = NodeCollector {
+        node: PathBuf::from("node"),
+        collector: std::env::temp_dir().join("srs-no-such-collector"),
+    };
+    let grapher = TypeScriptGrapher::new(
+        Box::new(collector),
+        Box::new(FixedRevision),
+        TraceLimits::STANDARD,
+    );
+    let error = grapher.build_graph(&selection(AS_WRITTEN)).unwrap_err();
+    assert!(error.message.contains("run `npm ci`"), "{}", error.message);
+}
+
+#[test]
+fn workspace_files_reached_by_imports_are_analyzed() {
+    let mut app_only = selection(AS_WRITTEN);
+    app_only.target = "tsconfig.app.json".into();
+    let narrow = grapher()
+        .build_graph(&app_only)
+        .expect("the app-only build");
+    let full = graph();
+    assert!(narrow.gaps.is_empty(), "{:#?}", narrow.gaps);
+    assert_eq!(
+        narrow.items.keys().collect::<Vec<_>>(),
+        full.items.keys().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        narrow.facts.keys().collect::<Vec<_>>(),
+        full.facts.keys().collect::<Vec<_>>()
+    );
+    assert!(narrow.items.contains_key(&id(OS, "OsBackups")));
+}
+
+/// Copies the sample into a fresh temporary directory.
+fn sample_copy(name: &str) -> PathBuf {
+    fn copy(from: &Path, to: &Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for entry in std::fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let target = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy(&entry.path(), &target);
+            } else {
+                std::fs::copy(entry.path(), target).unwrap();
+            }
+        }
+    }
+    let dir = std::env::temp_dir().join(format!("srs-sample-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    copy(&sample_root(), &dir);
+    dir
+}
+
+#[test]
+fn builds_of_different_source_under_one_revision_get_different_ids() {
+    let root = sample_copy("fingerprint");
+    let probe = root.join("packages/backup-api/src/probe.ts");
+    let build = || {
+        let mut selection = selection(AS_WRITTEN);
+        selection.root = root.clone();
+        grapher().build_graph(&selection).unwrap().id
+    };
+    std::fs::write(&probe, "export const probeOne = 1;\n").unwrap();
+    let one = build();
+    assert_eq!(build(), one);
+    std::fs::write(&probe, "export const probeTwo = 2;\n").unwrap();
+    let two = build();
+    std::fs::remove_dir_all(&root).unwrap();
+    assert_ne!(one, two);
+}

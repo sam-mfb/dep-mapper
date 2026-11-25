@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "types": [],
+    "lib": ["ES2022", "DOM"],
+    "paths": {
+      "@sample/backup-api": ["./packages/backup-api/src/index.ts"],
+      "@sample/backup-os": ["./packages/backup-os/src/index.ts"],
+      "@sample/installer": ["./packages/installer/src/index.ts"],
+      "clock": ["./vendor/clock/index.d.ts"]
+    }
+  },
+  "include": ["packages/*/src/**/*.ts"]
+}

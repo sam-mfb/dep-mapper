@@ -1,14 +1,14 @@
 use super::*;
-use crate::fixture;
+use crate::testing;
 use crate::workbook::{ByteOffsets, Presentation, present};
 
 fn workbook() -> Workbook {
     present(
-        &fixture::graph(),
+        &testing::graph(),
         &Presentation {
             page_size: 10,
             source: &ByteOffsets,
-            command: "srs eval",
+            command: Some("srs eval"),
         },
     )
 }

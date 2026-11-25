@@ -1,5 +1,5 @@
 use super::*;
-use crate::fixture;
+use crate::testing;
 
 struct EveryTenBytes;
 
@@ -14,11 +14,11 @@ impl SourceLines for EveryTenBytes {
 
 fn workbook(page_size: usize) -> Workbook {
     present(
-        &fixture::graph(),
+        &testing::graph(),
         &Presentation {
             page_size,
             source: &ByteOffsets,
-            command: "srs eval",
+            command: Some("srs eval"),
         },
     )
 }
@@ -100,11 +100,11 @@ fn long_lists_are_paged_and_each_page_repeats_the_heading_and_instructions() {
 #[test]
 fn spans_show_lines_when_the_source_is_available_and_byte_offsets_otherwise() {
     let with_lines = present(
-        &fixture::graph(),
+        &testing::graph(),
         &Presentation {
             page_size: 10,
             source: &EveryTenBytes,
-            command: "srs eval",
+            command: Some("srs eval"),
         },
     );
     assert!(
@@ -125,4 +125,28 @@ fn a_workbook_survives_being_written_out_and_read_back() {
     let workbook = workbook(10);
     let text = serde_json::to_string(&workbook).unwrap();
     assert_eq!(serde_json::from_str::<Workbook>(&text).unwrap(), workbook);
+}
+
+#[test]
+fn without_a_command_pieces_hold_the_evidence_and_no_command_lines() {
+    let workbook = present(
+        &testing::graph(),
+        &Presentation {
+            page_size: 10,
+            source: &ByteOffsets,
+            command: None,
+        },
+    );
+    for piece in &workbook.pieces {
+        for page in &piece.pages {
+            assert!(
+                !page.contains("srs eval") && !page.contains("To record"),
+                "{page}"
+            );
+        }
+    }
+    let module = &workbook.piece(&PieceId::module("app")).unwrap().pages[0];
+    assert!(module.contains("item:app::main") && module.contains("route:r-wire"));
+    let clusters = &workbook.piece(&PieceId::clusters()).unwrap().pages[0];
+    assert!(clusters.contains("Every cluster a module judgment names must be listed."));
 }
