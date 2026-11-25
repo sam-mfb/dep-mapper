@@ -1,12 +1,12 @@
 use super::*;
 use crate::testing::FixedEvaluator;
 use project_graph::{
-    Build, BuildUnit, Cited, Connection, ConnectionId, Endpoint, Evidence, EvidenceId, Fact, Hop,
-    Module, Route, RouteEnd, RouteId, Support, UnitId,
+    Build, BuildUnit, Cited, Endpoint, Fact, FactId, FactKind, Hop, Module, Route, RouteEnd,
+    RouteId, Support, UnitId,
 };
 
 #[test]
-fn evaluation_is_scoped_to_one_snapshot_and_interprets_one_of_two_connections() {
+fn evaluation_is_scoped_to_one_snapshot_and_interprets_one_of_two_routes() {
     let module = ModuleId("kashkeshet".into());
     let claude = ModuleId("kkt-claude".into());
     let unit = UnitId("kkt".into());
@@ -44,13 +44,12 @@ fn evaluation_is_scoped_to_one_snapshot_and_interprets_one_of_two_connections() 
             },
         )]),
         routes: BTreeMap::new(),
-        connections: BTreeMap::new(),
-        evidence: BTreeMap::new(),
+        facts: BTreeMap::new(),
         gaps: vec![],
     };
-    let agent = ConnectionId("ClaudeCommand/add_server via agent parts".into());
-    let install = ConnectionId("ClaudeCommand/add_server via install parts".into());
-    for (connection, site, file, bytes) in [
+    let agent = RouteId("ClaudeCommand/add_server via agent parts".into());
+    let install = RouteId("ClaudeCommand/add_server via install parts".into());
+    for (route, site, file, bytes) in [
         (
             &agent,
             "agent_parts",
@@ -81,13 +80,13 @@ fn evaluation_is_scoped_to_one_snapshot_and_interprets_one_of_two_connections() 
             owner: parts,
             projection: "client_command".into(),
         };
-        let fact = EvidenceId(format!("{site}.client_command"));
-        graph.evidence.insert(
+        let fact = FactId(format!("{site}.client_command"));
+        graph.facts.insert(
             fact.clone(),
-            Evidence {
+            Fact {
                 unit: unit.clone(),
                 subject: origin.clone(),
-                kind: Fact::Store,
+                kind: FactKind::Store,
                 object: field.clone(),
                 site: Some(project_graph::SourceSpan {
                     file: file.into(),
@@ -95,24 +94,14 @@ fn evaluation_is_scoped_to_one_snapshot_and_interprets_one_of_two_connections() 
                 }),
             },
         );
-        graph.connections.insert(
-            connection.clone(),
-            Connection {
-                user: module.clone(),
-                used: claude.clone(),
-                evidence: vec![fact.clone()],
-            },
-        );
         graph.routes.insert(
-            RouteId(connection.0.clone()),
+            route.clone(),
             Route {
                 origin,
                 use_site: None,
-                // The partial route stops inside kashkeshet.
-                connection: None,
                 hops: vec![Hop {
                     to: field,
-                    evidence: fact.clone(),
+                    fact: fact.clone(),
                     support: Support::Established,
                 }],
                 end: RouteEnd::Stopped {
@@ -131,7 +120,7 @@ fn evaluation_is_scoped_to_one_snapshot_and_interprets_one_of_two_connections() 
             reason: "The program supplies the client command in the agent parts field.".into(),
             evidence: vec![
                 GraphRef::from(agent.clone()),
-                GraphRef::from(EvidenceId("agent_parts.client_command".into())),
+                GraphRef::from(FactId("agent_parts.client_command".into())),
             ],
         }],
     };
@@ -140,7 +129,7 @@ fn evaluation_is_scoped_to_one_snapshot_and_interprets_one_of_two_connections() 
     let answer = evaluator.evaluate(&graph).unwrap();
     assert!(matches!(
         graph.resolve(&answer.relationships[0].evidence[0]),
-        Some(Cited::Connection(found)) if found == &graph.connections[&agent]
+        Some(Cited::Route(found)) if found == &graph.routes[&agent]
     ));
     let another_build = ProjectGraph {
         id: GraphId("kkt/other:fixture".into()),

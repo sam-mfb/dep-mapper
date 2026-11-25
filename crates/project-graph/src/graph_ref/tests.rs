@@ -1,5 +1,5 @@
 use super::*;
-use crate::{Build, Endpoint, Fact, ModuleId, UnitId};
+use crate::{Build, Endpoint, FactKind, Hop, ModuleId, RouteEnd, Support, UnitId};
 use std::collections::BTreeMap;
 
 fn graph() -> ProjectGraph {
@@ -27,23 +27,27 @@ fn graph() -> ProjectGraph {
                 declaration: None,
             },
         )]),
-        evidence: BTreeMap::from([(
-            EvidenceId(shared.into()),
-            Evidence {
+        facts: BTreeMap::from([(
+            FactId(shared.into()),
+            Fact {
                 unit: UnitId("unit".into()),
                 subject: Endpoint::Module(user.clone()),
-                kind: Fact::Construct,
+                kind: FactKind::Construct,
                 object: Endpoint::Item(ItemId(shared.into())),
                 site: None,
             },
         )]),
-        routes: BTreeMap::new(),
-        connections: BTreeMap::from([(
-            ConnectionId(shared.into()),
-            Connection {
-                user,
-                used,
-                evidence: vec![EvidenceId(shared.into())],
+        routes: BTreeMap::from([(
+            RouteId(shared.into()),
+            Route {
+                use_site: Some(FactId(shared.into())),
+                origin: Endpoint::Module(used),
+                hops: vec![Hop {
+                    to: Endpoint::Module(user),
+                    fact: FactId(shared.into()),
+                    support: Support::Established,
+                }],
+                end: RouteEnd::ReachedUse,
             },
         )]),
         gaps: vec![],
@@ -54,18 +58,18 @@ fn graph() -> ProjectGraph {
 fn a_reference_resolves_to_what_it_names_even_when_ids_share_text() {
     let graph = graph();
     let shared = "shared";
-    let connection = GraphRef::from(ConnectionId(shared.into()));
-    let evidence = GraphRef::from(EvidenceId(shared.into()));
+    let route = GraphRef::from(RouteId(shared.into()));
+    let fact = GraphRef::from(FactId(shared.into()));
     let item = GraphRef::from(ItemId(shared.into()));
-    assert_ne!(connection, evidence);
-    assert_ne!(evidence, item);
+    assert_ne!(route, fact);
+    assert_ne!(fact, item);
     assert!(matches!(
-        graph.resolve(&connection),
-        Some(Cited::Connection(found)) if found.user == ModuleId("user".into())
+        graph.resolve(&route),
+        Some(Cited::Route(found)) if found.end == RouteEnd::ReachedUse
     ));
     assert!(matches!(
-        graph.resolve(&evidence),
-        Some(Cited::Evidence(found)) if found.kind == Fact::Construct
+        graph.resolve(&fact),
+        Some(Cited::Fact(found)) if found.kind == FactKind::Construct
     ));
     assert!(matches!(
         graph.resolve(&item),
