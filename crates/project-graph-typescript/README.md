@@ -62,3 +62,22 @@ Not yet covered: arrays kept per variable rather than per element type, other co
 - `installer` holds a `Backups` and calls `write` on it.
 - `app` builds the installer with either `OsBackups` or its own `MemoryBackups`, which implements `Backups` without saying so.
 - `vendor/clock` stands for a third-party package.
+
+## Mapping a real project
+
+This is how [manypkg](https://github.com/Thinkmill/manypkg) (MIT, four packages) was mapped, with Claude Code answering the evaluation workbook. Keep the clone and the outputs outside this repository.
+
+```sh
+git clone https://github.com/Thinkmill/manypkg.git ~/src/manypkg
+# Install dependencies without running their scripts. The project's own
+# build step is not needed: imports between its packages resolve to source.
+(cd ~/src/manypkg && npm install --ignore-scripts)
+
+cargo build -p mapper
+PATH="$PWD/target/debug:$PATH" srs map ~/src/manypkg \
+    --language typescript --target tsconfig.json --configuration tsconfig \
+    --evaluator manual --workbook ~/srs-out/manypkg/workbook --agent claude \
+    --out ~/srs-out/manypkg/map.toml --page ~/srs-out/manypkg/map.html
+```
+
+`--agent claude` runs Claude Code in the project directory with read access and `srs eval`, so `srs` must be on `PATH`. On manypkg at 97e2ab9 the graph has 155 items, about 2,150 facts and no gaps, and the run takes about five minutes. Without Claude, leave out `--agent` and answer the workbook with `srs eval` (see the mapper README).

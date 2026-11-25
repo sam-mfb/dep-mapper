@@ -192,6 +192,11 @@ pub enum FlowKind {
     /// The value a call returns, at the call.
     Return,
     Capture,
+    /// An argument of a call into the standard library, standing for the
+    /// value the call returns: the library is assumed to pass it through,
+    /// as `Option::unwrap`, `Arc::clone` and `?` do. Recorded only when the
+    /// two types name a type or trait in common. An approximation.
+    Through,
 }
 
 /// One move of a value in a function body.
@@ -212,6 +217,8 @@ pub struct ReceiverRecord {
     pub owner: Def,
     /// The trait method, as in the matching `CallRecord`.
     pub contract: Def,
+    /// The trait that declares it.
+    pub contract_trait: Def,
     pub receiver: Node,
     pub span: Span,
 }
