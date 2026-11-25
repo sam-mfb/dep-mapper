@@ -65,3 +65,21 @@ export function reassign(): string {
   second.prune(0);
   return picked.write("reassigned") + spare.write("held") + first.write("in order");
 }
+
+// A name bound by destructuring, reassigned through a shorthand pattern.
+export function rebind(): string {
+  const holder: Holder = { backups: new OsBackups() };
+  let { backups } = holder;
+  ({ backups } = holder);
+  return backups.write("rebound");
+}
+
+// An assignment written inside a shorthand default is a real assignment.
+export function lateFallback(): Backups {
+  const holder: Holder = { backups: new OsBackups() };
+  let late: Backups = new FallbackBackups();
+  let spare: Backups;
+  ({ spare = (late = quietBackups) } = holder);
+  spare.prune(3);
+  return late;
+}

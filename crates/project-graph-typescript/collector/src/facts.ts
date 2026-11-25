@@ -587,7 +587,14 @@ class FileFacts {
 
   /** The slot a variable or parameter name refers to, as seen from where the name is used. */
   private variableSlot(id: ts.Identifier): Endpoint | undefined {
-    const symbol = this.checker.symbolAt(id);
+    return this.slotOfSymbol(this.checker.symbolAt(id), id);
+  }
+
+  /**
+   * The slot of the variable, parameter or bound name a symbol stands for,
+   * as seen from `use`.
+   */
+  private slotOfSymbol(symbol: ts.Symbol | undefined, use: ts.Node): Endpoint | undefined {
     if (!symbol) return undefined;
     const resolved = this.checker.resolveAlias(symbol);
     const declaration = resolved.valueDeclaration ?? resolved.declarations?.[0];
@@ -601,7 +608,7 @@ class FileFacts {
     const name = (declaration as ts.NamedDeclaration).name;
     if (!isLocal || !name || !ts.isIdentifier(name)) return undefined;
     if (declaration.getSourceFile() !== this.file) return undefined;
-    return this.captureInto(declaration, this.placeOf(declaration, name.text), name.text, id);
+    return this.captureInto(declaration, this.placeOf(declaration, name.text), name.text, use);
   }
 
   /** The place of a local, parameter or bound name where it is declared. */
@@ -735,22 +742,17 @@ class FileFacts {
 
   /** The variable a shorthand property in an assignment pattern writes to. */
   private shorthandSlot(property: ts.ShorthandPropertyAssignment): Endpoint | undefined {
-    const declaration = this.checker.shorthandValue(property)?.valueDeclaration;
-    if (!declaration || !(ts.isVariableDeclaration(declaration) || ts.isParameter(declaration))) return undefined;
-    if (!ts.isIdentifier(declaration.name) || declaration.getSourceFile() !== this.file) return undefined;
-    const item = this.project.items.get(declaration);
-    if (item) return { item };
-    const name = declaration.name.text;
-    return this.captureInto(declaration, this.placeOf(declaration, name), name, property);
+    return this.slotOfSymbol(this.checker.shorthandValue(property), property);
   }
 
   /**
    * `[a, b = d] = value`, following the same rules as an array binding
    * pattern: over an array literal, each supplied element moves into its
    * target by position and replaces the default (unless its type admits
-   * undefined); from the first spread on, and over any other value, each
-   * target reads from the element place of the value's type and a default
-   * is only possible. Rest elements are not followed.
+   * undefined); from the first spread on, positions are unknown, so a
+   * target's value is not followed and its default is only possible, as in
+   * `arrayPattern`. Over any other value, each target reads from the element
+   * place of the value's type. Rest elements are not followed.
    */
   private arrayAssignmentPattern(pattern: ts.ArrayLiteralExpression, value: ts.Expression): void {
     const literal = skipOuter(value);
@@ -948,7 +950,6 @@ function insideAssignmentPattern(node: ts.Node): boolean {
       ts.isArrayLiteralExpression(parent) ||
       ts.isObjectLiteralExpression(parent) ||
       ts.isPropertyAssignment(parent) ||
-      ts.isShorthandPropertyAssignment(parent) ||
       ts.isParenthesizedExpression(parent)
     ) {
       continue;

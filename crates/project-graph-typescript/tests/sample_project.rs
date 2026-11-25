@@ -999,3 +999,27 @@ fn an_array_pattern_in_an_assignment_reads_the_element_place() {
     }));
     assert!(!supports.contains(&Support::Established));
 }
+
+#[test]
+fn a_shorthand_pattern_reassigns_a_name_bound_by_destructuring() {
+    let backups = place(REGISTRY, "rebind", "backups");
+    let into: Vec<_> = facts_where(|f| f.object == backups)
+        .into_iter()
+        .map(|(_, f)| (f.kind.clone(), f.subject.clone()))
+        .collect();
+    let field = place(REGISTRY, "Holder", "backups");
+    // One read when declared, one when reassigned.
+    assert_eq!(
+        into,
+        [(FactKind::Read, field.clone()), (FactKind::Read, field)],
+        "{into:#?}"
+    );
+}
+
+#[test]
+fn an_assignment_inside_a_shorthand_default_is_recorded() {
+    let late = place(REGISTRY, "lateFallback", "late");
+    let quiet = Endpoint::Item(id(REGISTRY, "quietBackups"));
+    let stores = facts_where(|f| f.object == late && f.subject == quiet);
+    assert_eq!(stores.len(), 1, "{stores:#?}");
+}
