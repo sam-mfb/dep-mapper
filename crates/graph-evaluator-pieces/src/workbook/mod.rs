@@ -109,6 +109,14 @@ pub fn present(graph: &ProjectGraph, presentation: &Presentation) -> Workbook {
     let refs = refs(graph, &text);
     let groups = route_groups(graph);
 
+    let piece_of: BTreeMap<RouteId, String> = groups
+        .iter()
+        .flat_map(|(modules, routes)| {
+            let id = routes_piece_id(modules);
+            routes.iter().map(move |route| (route.clone(), id.clone()))
+        })
+        .collect();
+
     let mut pieces = Vec::new();
     for (id, module) in &graph.modules {
         let touching: Vec<&RouteId> = graph
@@ -122,7 +130,7 @@ pub fn present(graph: &ProjectGraph, presentation: &Presentation) -> Workbook {
             subject: PieceSubject::Module {
                 module: id.0.clone(),
             },
-            pages: text.module_pages(id, &touching, presentation.page_size),
+            pages: text.module_pages(id, &touching, &piece_of, presentation.page_size),
         });
     }
     pieces.push(Piece {
@@ -134,14 +142,7 @@ pub fn present(graph: &ProjectGraph, presentation: &Presentation) -> Workbook {
     for (modules, routes) in &groups {
         let names: Vec<String> = modules.iter().map(|m| text.module_name(m)).collect();
         pieces.push(Piece {
-            id: PieceId(format!(
-                "routes/{}",
-                modules
-                    .iter()
-                    .map(|m| m.0.as_str())
-                    .collect::<Vec<_>>()
-                    .join("+")
-            )),
+            id: PieceId(routes_piece_id(modules)),
             title: match names.as_slice() {
                 [one] => format!("Routes within or leaving {one}"),
                 _ => format!("Routes between {}", names.join(" and ")),
@@ -165,6 +166,11 @@ pub fn present(graph: &ProjectGraph, presentation: &Presentation) -> Workbook {
             .collect(),
         refs,
     }
+}
+
+fn routes_piece_id(modules: &[ModuleId]) -> String {
+    let names: Vec<&str> = modules.iter().map(|m| m.0.as_str()).collect();
+    format!("routes/{}", names.join("+"))
 }
 
 fn route_handle(route: &RouteId) -> String {
