@@ -25,5 +25,6 @@ export function main(dryRun: boolean): string {
   console.log(systemClock.now());
   const later = installLater({ backups: os, name: "later" });
   later();
+  const [spare] = [os];
   return installer.install("tools");
 }
