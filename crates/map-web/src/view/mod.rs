@@ -27,8 +27,14 @@ pub struct View {
 
 #[derive(Debug, Serialize)]
 pub struct Meta {
-    pub graph_id: String,
     pub project: String,
+    /// Absent when the map holds only proposals.
+    pub source: Option<SourceMeta>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SourceMeta {
+    pub graph_id: String,
     pub revision: String,
     pub target: String,
     pub configuration: String,
@@ -101,7 +107,9 @@ pub struct PointView {
 pub struct HopView {
     pub to: PointView,
     pub evidence: String,
-    pub established: bool,
+    /// "established", "possible" or "proposed".
+    pub support: &'static str,
+    /// Present only for a possible hop with a stated condition.
     pub condition: Option<String>,
     pub role: Option<String>,
 }
@@ -162,11 +170,13 @@ pub fn view(map: &ProjectMap) -> View {
         .collect();
     View {
         meta: Meta {
-            graph_id: map.graph_id.0.clone(),
             project: map.project.clone(),
-            revision: map.source_revision.0.clone(),
-            target: map.target.clone(),
-            configuration: map.configuration.clone(),
+            source: map.source.as_ref().map(|source| SourceMeta {
+                graph_id: source.graph_id.0.clone(),
+                revision: source.source_revision.0.clone(),
+                target: source.target.clone(),
+                configuration: source.configuration.clone(),
+            }),
         },
         layers,
         groups: groups(&crates, &edges),
@@ -300,14 +310,15 @@ fn route_view(id: &RouteId, route: &project_map::MapRoute) -> Route {
             .hops
             .iter()
             .map(|hop| {
-                let (established, condition) = match &hop.support {
-                    HopSupport::Established => (true, None),
-                    HopSupport::Possible { condition } => (false, condition.clone()),
+                let (support, condition) = match &hop.support {
+                    HopSupport::Established => ("established", None),
+                    HopSupport::Possible { condition } => ("possible", condition.clone()),
+                    HopSupport::Proposed => ("proposed", None),
                 };
                 HopView {
                     to: point_view(&hop.to.point()),
                     evidence: citation(&hop.evidence),
-                    established,
+                    support,
                     condition,
                     role: hop.role.as_ref().map(|role| role_slug(role).to_string()),
                 }
