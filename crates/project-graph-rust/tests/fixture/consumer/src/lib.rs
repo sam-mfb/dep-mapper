@@ -18,3 +18,7 @@ mod inner {
     #[allow(unused_imports)]
     pub use store::helper as inner_helper;
 }
+
+pub fn make<T: store::Build>(seed: u32) -> T {
+    T::build(seed)
+}

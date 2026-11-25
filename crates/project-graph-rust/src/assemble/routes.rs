@@ -5,8 +5,9 @@
 //! tracer, with endpoints named as in the rest of the graph:
 //!
 //! - a local, argument or returned value is a place in the function's item,
-//!   such as `consume` `_3`, `argument 0` or `returned`, prefixed by the
-//!   closure it belongs to, if any;
+//!   such as `consume` `_3`, `backups _5` (a named variable keeps its index,
+//!   since shadowed variables share a name), `argument 0` or `returned`,
+//!   prefixed by the closure it belongs to, if any;
 //! - a struct field is a place in the struct's item, named by the field. It
 //!   stands for that field in every instance, so moves through it are
 //!   possible, not established;
@@ -163,10 +164,14 @@ impl Resolver<'_> {
                 function,
                 local,
                 name,
-            } => self.place_in(
-                function,
-                &name.clone().unwrap_or_else(|| format!("_{local}")),
-            ),
+            } => {
+                // Shadowed variables share a name: the index tells them apart.
+                let label = match name {
+                    Some(name) => format!("{name} _{local}"),
+                    None => format!("_{local}"),
+                };
+                self.place_in(function, &label)
+            }
             r::Node::Param { function, index } => {
                 self.place_in(function, &format!("argument {index}"))
             }

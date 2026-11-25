@@ -210,3 +210,40 @@ fn a_cycle_of_moves_ends() {
     let traces = traced(&flows, place("consume", "receiver"));
     assert!(matches!(&traces[..], [Trace::Reached { .. }]));
 }
+
+#[test]
+fn a_longer_established_path_is_found_past_a_shorter_possible_one() {
+    // The possible path reaches the temporary `_4` in one move through a
+    // field; the established path needs two copies to get there.
+    let flows = vec![
+        flow(
+            item("OsBackups"),
+            place("main", "boxed"),
+            Some(FactKind::Coerce),
+        ),
+        Flow {
+            joins_instances: true,
+            ..flow(
+                place("main", "boxed"),
+                place("consume", "_4"),
+                Some(FactKind::Read),
+            )
+        },
+        flow(place("main", "boxed"), place("main", "_7"), None),
+        flow(
+            place("main", "_7"),
+            place("consume", "_4"),
+            Some(FactKind::Pass),
+        ),
+        flow(place("consume", "_4"), place("consume", "receiver"), None),
+    ];
+    let traces = traced(&flows, place("consume", "receiver"));
+    assert_eq!(
+        traces,
+        [Trace::Reached {
+            origin: item("OsBackups"),
+            path: vec![0, 2, 3, 4],
+            possible: false,
+        }]
+    );
+}

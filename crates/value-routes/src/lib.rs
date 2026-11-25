@@ -131,12 +131,15 @@ struct Graph<'a> {
     into: &'a HashMap<usize, Vec<usize>>,
 }
 
-/// A search state: where the value is, and the calls it is known to have
-/// come back from, innermost last.
+/// A search state: where the value is, the calls it is known to have come
+/// back from, innermost last, and whether the path from here to the
+/// receiver joins instances. Keeping the last apart means a shorter possible
+/// path never hides an established one.
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct State<'a> {
     at: usize,
     returns: Vec<&'a str>,
+    possible: bool,
 }
 
 impl<'a> Graph<'a> {
@@ -144,6 +147,7 @@ impl<'a> Graph<'a> {
         let start = State {
             at: receiver,
             returns: Vec::new(),
+            possible: false,
         };
         // For each state reached, the flow taken from it toward the receiver.
         let mut came_by: HashMap<State<'a>, Option<(usize, State<'a>)>> = HashMap::new();
@@ -187,7 +191,7 @@ impl<'a> Graph<'a> {
                 }
                 if matches!(flow.from, Endpoint::Item(_)) {
                     let path = path_from(&came_by, &state, index);
-                    let possible = path.iter().any(|&i| self.flows[i].joins_instances);
+                    let possible = state.possible || flow.joins_instances;
                     let key = Nodes::key(&flow.from);
                     // Keep a path that does not join instances over one that does.
                     let better = match origins.get(&key) {
@@ -210,6 +214,7 @@ impl<'a> Graph<'a> {
                 let next = State {
                     at: self.ends[index].0,
                     returns,
+                    possible: state.possible || flow.joins_instances,
                 };
                 if !came_by.contains_key(&next) {
                     came_by.insert(next.clone(), Some((index, state.clone())));
