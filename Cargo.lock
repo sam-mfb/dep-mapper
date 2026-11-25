@@ -384,6 +384,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "graph-evaluator",
+ "graph-evaluator-llm",
  "graph-evaluator-manual",
  "map-builder",
  "map-draft",
