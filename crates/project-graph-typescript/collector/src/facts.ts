@@ -717,7 +717,10 @@ class FileFacts {
   /** The slot a property access reads or writes, when the property is a field. */
   private fieldSlot(access: ts.PropertyAccessExpression): Endpoint | undefined {
     const declaration = this.checker.symbolAt(access.name)?.valueDeclaration;
-    return declaration && this.fieldOf(declaration, access.name.text);
+    if (!declaration) return undefined;
+    // A value exported from a namespace, `Paths.value`, is its own item.
+    if (ts.isVariableDeclaration(declaration)) return this.project.endpointOf(declaration);
+    return this.fieldOf(declaration, access.name.text);
   }
 
   /** The place of a field, given the property's declaration. */

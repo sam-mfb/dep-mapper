@@ -38,9 +38,20 @@ export function collectItems(project: Project, emit: Emit): void {
     project.fileItems.set(file, fileId);
     const add = (node: ts.Node, name: string, kind: ItemKind, parent: Found | null) => {
       const id = parent ? `${parent.id}.${name}` : `${fileId}#${name}`;
+      // A namespace member is visible outside the namespace only when it
+      // says `export`. Membership comes from the syntax, since a namespace
+      // can merge with a class, function or enum of the same name.
+      const isPrivate = inNamespace(node)
+        ? !exportedFromNamespace(node)
+        : hasModifier(node, ts.SyntaxKind.PrivateKeyword) ||
+          hasModifier(node, ts.SyntaxKind.ProtectedKeyword) ||
+          ((node as ts.NamedDeclaration).name !== undefined &&
+            ts.isPrivateIdentifier((node as ts.NamedDeclaration).name!));
       const existing = found.get(id);
       if (existing) {
         existing.nodes.push(node);
+        // A merged declaration is visible if any of its parts is.
+        existing.isPrivate &&= isPrivate;
       } else {
         found.set(id, {
           nodes: [node],
@@ -49,14 +60,7 @@ export function collectItems(project: Project, emit: Emit): void {
           name: parent ? `${parent.name}.${name}` : name,
           kind,
           parent: parent?.id ?? null,
-          // A namespace member is visible outside the namespace only when it says `export`.
-          isPrivate:
-            parent?.kind === "module"
-              ? !exportedFromNamespace(node)
-              : hasModifier(node, ts.SyntaxKind.PrivateKeyword) ||
-                hasModifier(node, ts.SyntaxKind.ProtectedKeyword) ||
-                ((node as ts.NamedDeclaration).name !== undefined &&
-                  ts.isPrivateIdentifier((node as ts.NamedDeclaration).name!)),
+          isPrivate,
         });
       }
       project.items.set(node, id);
@@ -156,6 +160,12 @@ export function collectItems(project: Project, emit: Emit): void {
   }
 }
 
+/** Whether a declaration is a statement of a namespace body. */
+function inNamespace(node: ts.Node): boolean {
+  const statement = ts.isVariableDeclaration(node) ? node.parent.parent : node;
+  return ts.isModuleBlock(statement.parent) || ts.isModuleDeclaration(statement.parent);
+}
+
 /**
  * Whether a declaration inside a namespace is marked `export`. The inner
  * names of a dotted namespace, `B` in `namespace A.B {}`, are always exported.
@@ -212,7 +222,9 @@ function signature(node: ts.Node): string | null {
   const file = node.getSourceFile();
   const start = node.getStart(file);
   let end = node.getEnd();
-  if (ts.isClassDeclaration(node) || ts.isInterfaceDeclaration(node) || ts.isEnumDeclaration(node)) {
+  if (ts.isModuleDeclaration(node)) {
+    end = node.name.getEnd();
+  } else if (ts.isClassDeclaration(node) || ts.isInterfaceDeclaration(node) || ts.isEnumDeclaration(node)) {
     end = node.members.pos - 1;
   } else if (ts.isFunctionLike(node) && "body" in node && node.body) {
     end = node.body.getStart(file);

@@ -1,2 +1,2 @@
 export { OsBackups } from "./os.ts";
-export { Paths } from "./paths.ts";
+export { Paths, Shelf } from "./paths.ts";

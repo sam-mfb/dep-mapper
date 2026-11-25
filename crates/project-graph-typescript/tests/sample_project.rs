@@ -960,6 +960,36 @@ fn namespace_members_are_items_visible_when_exported() {
         ItemKind::Value,
         Visibility::Exported,
     );
+    assert_eq!(
+        items[&id(PATHS, "Paths")].signature.as_deref(),
+        Some("export namespace Paths")
+    );
+    // A class merged with a namespace: the namespace's own rules decide its members.
+    check("Shelf", ItemKind::Type, Visibility::Exported);
+    check("Shelf.slots", ItemKind::Value, Visibility::Exported);
+    check("Shelf.label", ItemKind::Function, Visibility::Internal);
+    check("Shelf.size", ItemKind::Method, Visibility::Exported);
+}
+
+#[test]
+fn a_value_exported_from_a_namespace_is_an_origin() {
+    let (call, _) = only_fact(|f| {
+        matches!(f.kind, FactKind::Call(_))
+            && f.site
+                .as_ref()
+                .is_some_and(|s| text(s) == "Paths.defaultBackups.write(\"default\")")
+    });
+    let routes = routes_to(call);
+    assert_eq!(routes.len(), 1, "{routes:#?}");
+    // A top-level value is an origin, like quietBackups; inside a namespace too.
+    assert_eq!(routes[0].origin, item(PATHS, "Paths.defaultBackups"));
+    assert_eq!(routes[0].end, RouteEnd::ReachedUse);
+    // Its own value comes from the constructor.
+    only_fact(|f| {
+        f.kind == FactKind::Construct
+            && f.subject == item(OS, "OsBackups")
+            && f.object == item(PATHS, "Paths.defaultBackups")
+    });
 }
 
 #[test]
