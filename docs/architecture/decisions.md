@@ -29,9 +29,9 @@ The module boundaries, dependency arrangements and review workflow for sharshere
 | Level | Packages |
 | --- | --- |
 | Program | `mapper` |
-| Map | `project-map`, `map-builder`, `map-web`, `map-persist`, `map-draft`, `map-preview` |
+| Mapping | `project-map`, `map-builder`, `map-web`, `map-persist`, `map-draft`, `map-preview` |
 | Evaluation | `graph-evaluator`, `graph-evaluator-pieces`, `graph-evaluator-llm`, `graph-evaluator-manual` |
-| Evidence | `project-graph`, `project-graph-rust`, `project-graph-typescript` |
+| Graphing | `project-graph`, `project-graph-rust`, `project-graph-rust-records`, `project-graph-typescript`, `value-routes` |
 
 ## Three core types
 
@@ -67,6 +67,6 @@ A draft is a file of proposals. It is laid over a saved base map, or it stands a
 
 `srs draft check` reports a draft's problems with file, line and column. `srs draft render` writes its page. `srs draft preview` serves the page through `map-preview` and reloads the browser when the draft or its base changes. A draft with problems leaves the last good page shown, with the problems listed above it.
 
-sharsheret's own architecture map is the draft `docs/architecture/sharsheret.toml`, made only of proposals. Edit it when the architecture changes, and check it with `srs draft check`. The Rust map in `project_map::example` is a fixture for tests.
+sharsheret's own architecture map is `docs/architecture/sharsheret-map.toml`, which `srs map` produces from sharsheret's code; `crates/mapper/README.md` gives the command to refresh it. Planned changes go in the draft `docs/architecture/sharsheret.toml`, laid over that map. The draft holds only what should differ from the code, so it stays small and still applies after the map is refreshed. Today it restates four module concerns. Check it with `srs draft check` and preview it with `srs draft preview`. The Rust map in `project_map::example` is a fixture for tests.
 
 On the architecture map, a solid gray “used by” arrow covers use of a type, value or operation. The dashed wiring arrow shows where `mapper` binds the selected implementation. “Supplies input to” identifies the caller and recipient.

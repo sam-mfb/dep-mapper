@@ -77,6 +77,7 @@ pub fn graph(workspace: &Workspace, crates: &[Vec<r::Record>], snapshot: Snapsho
         workspace,
         units: &units,
         items: &graph.items,
+        from: None,
     };
     let mut facts = BTreeSet::new();
     for (unit, records) in units.iter(crates) {
@@ -257,13 +258,25 @@ impl Units {
     }
 }
 
+#[derive(Clone, Copy)]
 struct Resolver<'a> {
     workspace: &'a Workspace,
     units: &'a Units,
     items: &'a BTreeMap<ItemId, Item>,
+    /// The package whose source is being resolved, which decides how an
+    /// outside definition is named.
+    from: Option<&'a str>,
 }
 
-impl Resolver<'_> {
+impl<'a> Resolver<'a> {
+    /// This resolver, for definitions named in `unit`'s source.
+    fn at(self, unit: &'a Unit) -> Self {
+        Resolver {
+            from: Some(&unit.record.package),
+            ..self
+        }
+    }
+
     /// The endpoint naming `def`, and the module it belongs to when it is in
     /// the project. `None` for definitions from the toolchain's crates.
     fn endpoint(&self, def: &r::Def) -> Option<(Endpoint, Option<ModuleId>)> {
@@ -284,22 +297,34 @@ impl Resolver<'_> {
             }
         }
         let package = self.workspace.third_party.get(&def.crate_name)?;
-        Some((Endpoint::External(external_name(package, def)), None))
+        let through = self
+            .from
+            .and_then(|member| self.workspace.reached_through(member, package));
+        Some((
+            Endpoint::External(external_name(through.as_deref(), package, def)),
+            None,
+        ))
     }
 }
 
-/// A third-party definition's name, starting with its package so a reader
-/// can tell which package it belongs to: `serde::de::Deserialize`, or
+/// A third-party definition's name. It starts with the dependency the
+/// project declares, `through`, when that is known, then the package that
+/// defines it: `serde::de::Deserialize` for a direct dependency,
+/// `serde::serde_core::de::Deserialize` for one reached through `serde`, or
 /// `thiserror::<&T as thiserror::AsDisplay>::as_display` for an
 /// implementation's method.
-fn external_name(package: &str, def: &r::Def) -> String {
+fn external_name(through: Option<&str>, package: &str, def: &r::Def) -> String {
     let in_crate = def
         .name
         .strip_prefix(&def.crate_name)
         .and_then(|rest| rest.strip_prefix("::"));
-    match in_crate {
+    let defined = match in_crate {
         Some(rest) => format!("{package}::{rest}"),
         None => format!("{package}::{}", def.name),
+    };
+    match through {
+        Some(direct) if direct != package => format!("{direct}::{defined}"),
+        _ => defined,
     }
 }
 
@@ -360,6 +385,7 @@ fn declared_dependencies(workspace: &Workspace, unit: &Unit) -> Vec<Ordered> {
 }
 
 fn fact(resolve: &Resolver, unit: &Unit, record: &r::Record) -> Option<Ordered> {
+    let resolve = resolve.at(unit);
     let root = &resolve.workspace.root;
     let (subject, kind, object, span) = match record {
         r::Record::Use(u) => (
