@@ -22,7 +22,7 @@
 //! The search is bounded by [`Limits`]. A trace that hits a bound says so.
 
 use project_graph::{Endpoint, Fact};
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 
 /// One move of a value from `from` to `to`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -249,13 +249,11 @@ fn path_from<'a>(
     state: &State<'a>,
     first: usize,
 ) -> Vec<usize> {
+    // `came_by` links each state to one discovered before it, so this ends.
+    // A flow can appear twice: one function's move, used inside two calls.
     let mut path = vec![first];
-    let mut seen = HashSet::new();
     let mut at = state;
     while let Some(Some((index, toward))) = came_by.get(at) {
-        if !seen.insert(*index) {
-            break;
-        }
         path.push(*index);
         at = toward;
     }
