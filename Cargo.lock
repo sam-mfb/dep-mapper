@@ -20,7 +20,12 @@ dependencies = [
 name = "graph-evaluator-manual"
 version = "0.1.0"
 dependencies = [
+ "graph-evaluator",
  "graph-evaluator-pieces",
+ "project-graph",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
