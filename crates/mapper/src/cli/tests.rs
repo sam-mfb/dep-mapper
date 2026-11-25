@@ -75,17 +75,21 @@ fn map_args(extra: &[&str]) -> Vec<String> {
 
 #[test]
 fn the_manual_evaluator_takes_its_workbook() {
-    let Command::Map(command) =
-        parse(map_args(&["--evaluator", "manual", "--workbook", "wb"])).unwrap()
-    else {
-        panic!("a map command")
+    let evaluator = |extra: &[&str]| {
+        let args = [&["--evaluator", "manual", "--workbook", "wb"], extra].concat();
+        let Command::Map(command) = parse(map_args(&args)).unwrap() else {
+            panic!("a map command")
+        };
+        command.evaluator
     };
-    assert_eq!(
-        command.evaluator,
-        EvaluatorChoice::Manual {
-            workbook: "wb".into()
-        }
-    );
+    let manual = |agent| EvaluatorChoice::Manual {
+        workbook: "wb".into(),
+        agent,
+    };
+    assert_eq!(evaluator(&[]), manual(Agent::None));
+    assert_eq!(evaluator(&["--agent", "none"]), manual(Agent::None));
+    assert_eq!(evaluator(&["--agent", "wait"]), manual(Agent::Wait));
+    assert_eq!(evaluator(&["--agent", "claude"]), manual(Agent::Claude));
 }
 
 #[test]
@@ -99,7 +103,9 @@ fn the_manual_evaluator_without_a_workbook_is_a_mistake() {
 fn a_workbook_for_another_evaluator_is_a_mistake() {
     let outcome = parse(map_args(&["--evaluator", "llm", "--workbook", "wb"])).unwrap_err();
     assert!(!outcome.requested);
-    assert!(outcome.text.contains("--workbook applies only"));
+    assert!(outcome.text.contains("apply only to --evaluator manual"));
+    let outcome = parse(map_args(&["--evaluator", "llm", "--agent", "wait"])).unwrap_err();
+    assert!(outcome.text.contains("apply only to --evaluator manual"));
 }
 
 #[test]

@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-fn srs(args: &[&str]) -> Output {
+fn srs<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_srs"))
         .args(args)
         .output()
@@ -25,8 +25,11 @@ fn sample() -> String {
         .to_string()
 }
 
-fn scratch() -> PathBuf {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("typescript_manual");
+/// An empty directory of its own for each test, as tests run in parallel.
+fn scratch(test: &str) -> PathBuf {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join("typescript_manual")
+        .join(test);
     if dir.exists() {
         std::fs::remove_dir_all(&dir).expect("old scratch directory removed");
     }
@@ -34,38 +37,10 @@ fn scratch() -> PathBuf {
     dir
 }
 
-#[test]
-fn a_typescript_project_is_mapped_after_its_workbook_is_answered() {
-    let dir = scratch();
-    let workbook = dir.join("workbook").display().to_string();
-    let out = dir.join("map.toml");
-    let page = dir.join("map.html");
-    let map_args = [
-        "map",
-        &sample(),
-        "--language",
-        "typescript",
-        "--target",
-        "tsconfig.json",
-        "--configuration",
-        "tsconfig",
-        "--evaluator",
-        "manual",
-        "--workbook",
-        &workbook,
-        "--out",
-        &out.display().to_string(),
-        "--page",
-        &page.display().to_string(),
-    ];
-
-    let first = srs(&map_args);
-    assert_eq!(first.status.code(), Some(1), "{}", text(&first.stderr));
-    assert!(text(&first.stderr).contains("were not submitted"));
-    assert!(!out.exists());
-
+/// Records a few answers in the workbook and submits them, as a person would.
+fn answer(workbook: &str) {
     let eval = |args: &[&str]| {
-        let output = srs(&[&["eval", "--workbook", &workbook], args].concat());
+        let output = srs(&[&["eval", "--workbook", workbook], args].concat());
         assert!(output.status.success(), "{}", text(&output.stdout));
         text(&output.stdout)
     };
@@ -96,6 +71,72 @@ fn a_typescript_project_is_mapped_after_its_workbook_is_answered() {
         "route:use:call@packages/installer/src/index.ts:227",
     ]);
     eval(&["submit"]);
+}
+
+fn map_args(workbook: &str, out: &Path, extra: &[&str]) -> Vec<String> {
+    let sample = sample();
+    let base = [
+        "map",
+        sample.as_str(),
+        "--language",
+        "typescript",
+        "--target",
+        "tsconfig.json",
+        "--configuration",
+        "tsconfig",
+        "--evaluator",
+        "manual",
+        "--workbook",
+        workbook,
+        "--out",
+        &out.display().to_string(),
+    ];
+    base.iter()
+        .chain(extra)
+        .map(|arg| arg.to_string())
+        .collect()
+}
+
+#[test]
+fn with_agent_wait_one_run_waits_for_the_answers() {
+    let dir = scratch("wait");
+    let workbook = dir.join("workbook").display().to_string();
+    let out = dir.join("map.toml");
+    let child = Command::new(env!("CARGO_BIN_EXE_srs"))
+        .args(map_args(&workbook, &out, &["--agent", "wait"]))
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("srs starts");
+    // The workbook exists once the request is shown.
+    let index = Path::new(&workbook).join("workbook.json");
+    for _ in 0..600 {
+        if index.exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    answer(&workbook);
+    let output = child.wait_with_output().expect("srs finishes");
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    assert!(text(&output.stderr).contains("Waiting for the answers to be submitted"));
+    assert!(out.exists());
+}
+
+#[test]
+fn a_typescript_project_is_mapped_after_its_workbook_is_answered() {
+    let dir = scratch("two-runs");
+    let workbook = dir.join("workbook").display().to_string();
+    let out = dir.join("map.toml");
+    let page = dir.join("map.html");
+    let map_args = map_args(&workbook, &out, &["--page", &page.display().to_string()]);
+
+    let first = srs(&map_args);
+    assert_eq!(first.status.code(), Some(1), "{}", text(&first.stderr));
+    assert!(text(&first.stderr).contains("were not submitted"));
+    assert!(!out.exists());
+
+    answer(&workbook);
 
     let second = srs(&map_args);
     assert!(second.status.success(), "{}", text(&second.stderr));
@@ -120,24 +161,9 @@ fn a_typescript_project_is_mapped_after_its_workbook_is_answered() {
 
 #[test]
 fn an_answer_the_checks_refuse_exits_with_status_1() {
-    let dir = scratch().join("refused");
+    let dir = scratch("refused");
     let workbook = dir.join("workbook").display().to_string();
-    srs(&[
-        "map",
-        &sample(),
-        "--language",
-        "typescript",
-        "--target",
-        "tsconfig.json",
-        "--configuration",
-        "tsconfig",
-        "--evaluator",
-        "manual",
-        "--workbook",
-        &workbook,
-        "--out",
-        &dir.join("map.toml").display().to_string(),
-    ]);
+    srs(&map_args(&workbook, &dir.join("map.toml"), &[]));
     let refused = srs(&[
         "eval",
         "--workbook",

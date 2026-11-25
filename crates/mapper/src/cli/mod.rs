@@ -2,7 +2,7 @@
 //! the program's own commands; the argument parser stays inside this module.
 
 use crate::eval::EvalCommand;
-use crate::implementations::{EvaluatorChoice, Language};
+use crate::implementations::{Agent, EvaluatorChoice, Language};
 use crate::run::MapCommand;
 use clap::error::ErrorKind;
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
@@ -94,6 +94,11 @@ struct MapArgs {
     /// answers. Running again with the same directory resumes it.
     #[arg(long)]
     workbook: Option<PathBuf>,
+    /// For the manual evaluator: who answers while this command runs. `none`
+    /// stops after writing the workbook; run again once it is submitted.
+    /// `wait` waits for a submission. `claude` runs Claude Code.
+    #[arg(long, value_enum)]
+    agent: Option<AgentArg>,
     /// Save the map to this file, to reopen without analysis.
     #[arg(long)]
     out: PathBuf,
@@ -112,6 +117,13 @@ enum LanguageArg {
 }
 
 #[derive(Clone, Copy, ValueEnum)]
+enum AgentArg {
+    None,
+    Wait,
+    Claude,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
 enum EvaluatorArg {
     Manual,
     Llm,
@@ -120,18 +132,26 @@ enum EvaluatorArg {
 impl MapArgs {
     fn into_command(self) -> Result<MapCommand, clap::Error> {
         let evaluator = match (self.evaluator, self.workbook) {
-            (EvaluatorArg::Manual, Some(workbook)) => EvaluatorChoice::Manual { workbook },
+            (EvaluatorArg::Manual, Some(workbook)) => EvaluatorChoice::Manual {
+                workbook,
+                // Without --agent, the workbook is left for a later run.
+                agent: match self.agent {
+                    None | Some(AgentArg::None) => Agent::None,
+                    Some(AgentArg::Wait) => Agent::Wait,
+                    Some(AgentArg::Claude) => Agent::Claude,
+                },
+            },
             (EvaluatorArg::Manual, None) => {
                 return Err(Cli::command().error(
                     ErrorKind::MissingRequiredArgument,
                     "--evaluator manual needs --workbook <dir>",
                 ));
             }
-            (EvaluatorArg::Llm, None) => EvaluatorChoice::Llm,
-            (EvaluatorArg::Llm, Some(_)) => {
+            (EvaluatorArg::Llm, None) if self.agent.is_none() => EvaluatorChoice::Llm,
+            (EvaluatorArg::Llm, _) => {
                 return Err(Cli::command().error(
                     ErrorKind::ArgumentConflict,
-                    "--workbook applies only to --evaluator manual",
+                    "--workbook and --agent apply only to --evaluator manual",
                 ));
             }
         };

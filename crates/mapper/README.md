@@ -6,7 +6,8 @@
 
 ```sh
 srs map <root> --language <rust|typescript> --target <target> --configuration <settings> \
-    --evaluator <manual|llm> [--workbook <dir>] --out <map.toml> [--page <map.html>] [--serve <address>]
+    --evaluator <manual|llm> [--workbook <dir>] [--agent <none|wait|claude>] \
+    --out <map.toml> [--page <map.html>] [--serve <address>]
 ```
 
 | Option | Meaning |
@@ -15,6 +16,7 @@ srs map <root> --language <rust|typescript> --target <target> --configuration <s
 | `--language` | Selects the grapher. TypeScript is available now. Rust will be once project-graph-rust merges. |
 | `--target`, `--configuration` | The build to analyze, in the grapher's terms. For TypeScript, the target is the tsconfig file, relative to the root, and the configuration is `tsconfig`. |
 | `--evaluator` | Who judges the graph. `manual` needs `--workbook`. The LLM evaluator is not available yet. |
+| `--agent` | For `manual`: who answers while `srs map` runs. `none` (the default when the option is left out) stops after writing the workbook. `wait` shows the request and checks every 5 seconds for a submission, for up to 4 hours. `claude` runs Claude Code in the project directory; `srs` must be on `PATH` for it to run `srs eval`. |
 | `--out` | Where to save the map. map-persist writes it, and it can be reopened without analysis. |
 | `--page` | Also write the map-web page to this file. |
 | `--serve` | Also serve the page at this address, such as `127.0.0.1:8080`, until stopped. |
@@ -23,7 +25,7 @@ Problems the map builder finds while joining the evaluation to the graph are pri
 
 ## The manual evaluator and `srs eval`
 
-The manual evaluator writes a workbook into the `--workbook` directory: instructions, one readable piece per module and per pair of modules, and the answers so far. For now `srs map` stops after writing it, with a message that the answers are not submitted. Answer with `srs eval`, then run the same `srs map` command again. It resumes the workbook and, once the answers are submitted, builds the map.
+The manual evaluator writes a workbook into the `--workbook` directory: instructions, one readable piece per module and per pair of modules, and the answers so far. Someone answers it with `srs eval` and finishes with `srs eval ... submit`. With `--agent wait` or `--agent claude`, one `srs map` run waits for that and then builds the map. With `--agent none`, `srs map` stops after writing the workbook, with a message that the answers are not submitted. Run the same command again after they are: it resumes the workbook and builds the map. A run that stops without a submission keeps the answers recorded so far.
 
 ```sh
 srs eval --workbook <dir> help        # the answer commands
@@ -49,4 +51,4 @@ $srs map crates/project-graph-typescript/sample --language typescript --target t
 # and run the same srs map command again
 ```
 
-`tests/typescript_manual.rs` runs these steps with a few answers and checks the saved map.
+`tests/typescript_manual.rs` runs these steps with a few answers and checks the saved map, both as two runs and as one run with `--agent wait`.
