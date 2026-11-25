@@ -52,7 +52,7 @@ pub(super) fn modules() -> Vec<ModuleRow> {
                 "build_map",
                 ItemKind::Function,
                 Some(
-                    "fn build_map(graph: &ProjectGraph, evaluation: &GraphEvaluation) -> ProjectMap",
+                    "fn build_map(graph: &ProjectGraph, evaluation: &GraphEvaluation) -> Result<MapBuild, GraphMismatch>",
                 ),
             )],
         },
@@ -112,15 +112,51 @@ pub(super) fn modules() -> Vec<ModuleRow> {
             kind: ModuleKind::Composition,
             concern: "Coordinates collection, review, map construction and publication.",
             ownership: "Gets a ProjectGraph from the selected language grapher and passes it to Graph evaluator for a GraphEvaluation. Supplies both to Map builder, then sends the resulting ProjectMap to Map persist and Map web.",
-            surface: vec![("main", ItemKind::Function, None)],
+            surface: vec![(
+                "srs map",
+                ItemKind::Function,
+                Some(
+                    "srs map <root> --language <rust|typescript> --target <target> --configuration <settings> --evaluator <manual|llm> --out <file> [--page <file>] [--serve <address>]",
+                ),
+            )],
         },
         ModuleRow {
             key: "graph-evaluator-llm",
             layer: "Evaluation",
             kind: ModuleKind::Effect,
             concern: "Obtains an architectural judgment from a language model.",
-            ownership: "Owns model interaction and interpretation of the API response. Provider-specific requests and responses stay inside this module.",
+            ownership: "Owns model interaction and interpretation of the API response. Provider-specific requests and responses stay inside this module, behind its own model-client contract; Mapper injects the HTTP transport.",
             surface: vec![("LlmEvaluator", ItemKind::Type, None)],
+        },
+        ModuleRow {
+            key: "graph-evaluator-pieces",
+            layer: "Evaluation",
+            kind: ModuleKind::Logic,
+            concern: "Presents a project graph as pieces with citable handles, and checks answers and assembles them into a GraphEvaluation.",
+            ownership: "Owns the written handles, the cut into module, cluster and module-pair pieces, the rules that refuse or warn about an answer, and assembly. It has no effects; evaluators supply the source lines and keep the answers.",
+            surface: vec![
+                (
+                    "present",
+                    ItemKind::Function,
+                    Some(
+                        "fn present(graph: &ProjectGraph, presentation: &Presentation) -> Workbook",
+                    ),
+                ),
+                (
+                    "record",
+                    ItemKind::Function,
+                    Some(
+                        "fn record(workbook: &Workbook, answers: &Answers, edit: Edit) -> Result<Recorded, Refused>",
+                    ),
+                ),
+                (
+                    "assemble",
+                    ItemKind::Function,
+                    Some(
+                        "fn assemble(workbook: &Workbook, answers: &Answers) -> Result<Assembled, Vec<Finding>>",
+                    ),
+                ),
+            ],
         },
         ModuleRow {
             key: "graph-evaluator-manual",
@@ -187,6 +223,24 @@ pub(super) fn dependencies() -> Vec<DependencyRow> {
             to: "graph-evaluator-llm",
             role: UseRole::Wires,
             detail: "Constructs this reviewer when the LLM workflow is selected.",
+        },
+        DependencyRow {
+            from: "graph-evaluator-pieces",
+            to: "graph-evaluator",
+            role: UseRole::DirectUse,
+            detail: "Builds the GraphEvaluation from checked answers.",
+        },
+        DependencyRow {
+            from: "graph-evaluator-manual",
+            to: "graph-evaluator-pieces",
+            role: UseRole::DirectUse,
+            detail: "Presents the workbook and checks each recorded answer with the shared pieces.",
+        },
+        DependencyRow {
+            from: "graph-evaluator-llm",
+            to: "graph-evaluator-pieces",
+            role: UseRole::DirectUse,
+            detail: "Asks the model about one piece at a time and checks its answers with the shared rules.",
         },
         DependencyRow {
             from: "graph-evaluator-manual",
