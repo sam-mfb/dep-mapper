@@ -10,15 +10,20 @@ use graph_evaluator_manual::runners::{
 };
 use graph_evaluator_manual::store::DirStore;
 use project_graph::{BuildSelection, ProjectGrapher};
+use project_graph_rust::{PINNED_TOOLCHAIN, RustGrapher, ToolchainCargo, build_driver};
 use project_graph_typescript::{GitRevision, NodeCollector, TraceLimits, TypeScriptGrapher};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use thiserror::Error;
 
 /// The language of the project to map. Each has its own grapher.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Language {
-    Rust,
+    Rust {
+        /// Where the grapher builds its rustc driver and compiles the
+        /// project, kept between runs.
+        cache: PathBuf,
+    },
     TypeScript,
 }
 
@@ -58,7 +63,7 @@ pub const WAIT_LIMIT: Duration = Duration::from_secs(4 * 60 * 60);
 /// Supplies the selected grapher and evaluator. Both are asked for before
 /// any analysis starts, so a missing piece or setting fails early.
 pub trait Implementations {
-    fn grapher(&self, language: Language) -> Result<Box<dyn ProjectGrapher>, Unavailable>;
+    fn grapher(&self, language: &Language) -> Result<Box<dyn ProjectGrapher>, Unavailable>;
     /// `selection` is the build being mapped, for evaluators that read the
     /// project's source.
     fn evaluator(
@@ -104,9 +109,18 @@ fn shell_word(text: &str) -> String {
 pub struct Installed;
 
 impl Implementations for Installed {
-    fn grapher(&self, language: Language) -> Result<Box<dyn ProjectGrapher>, Unavailable> {
+    fn grapher(&self, language: &Language) -> Result<Box<dyn ProjectGrapher>, Unavailable> {
         match language {
-            Language::Rust => Err(Unavailable("project-graph-rust is not built yet".into())),
+            Language::Rust { cache } => {
+                // Builds the driver the first time; later runs reuse it.
+                let driver = build_driver(PINNED_TOOLCHAIN, &cache.join("driver"))
+                    .map_err(|e| Unavailable(format!("building the Rust grapher's driver: {e}")))?;
+                Ok(Box::new(RustGrapher::new(ToolchainCargo {
+                    toolchain: PINNED_TOOLCHAIN.into(),
+                    driver,
+                    work_dir: cache.join("work"),
+                })))
+            }
             Language::TypeScript => Ok(Box::new(TypeScriptGrapher::new(
                 Box::new(NodeCollector::bundled("node".into())),
                 Box::new(GitRevision { git: "git".into() }),
