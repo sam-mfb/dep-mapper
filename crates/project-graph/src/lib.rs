@@ -2,6 +2,8 @@
 //! this snapshot. The grapher assigns them and retains separate route IDs for
 //! different wiring sites, even when their supplier and consumer coincide.
 //! Route hops follow the capability or value from its origin toward a consumer.
+//! Routes are how the graph groups its facts. A direct use, such as an import
+//! or a call, is a route of one hop.
 
 mod graph_ref;
 
@@ -17,11 +19,9 @@ pub struct UnitId(pub String);
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ItemId(pub String);
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct EvidenceId(pub String);
+pub struct FactId(pub String);
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RouteId(pub String);
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ConnectionId(pub String);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProjectGraph {
@@ -31,10 +31,8 @@ pub struct ProjectGraph {
     pub modules: BTreeMap<ModuleId, Module>,
     pub units: BTreeMap<UnitId, BuildUnit>,
     pub items: BTreeMap<ItemId, Item>,
-    pub evidence: BTreeMap<EvidenceId, Evidence>,
+    pub facts: BTreeMap<FactId, Fact>,
     pub routes: BTreeMap<RouteId, Route>,
-    /// The ways modules are connected, each of which can be judged.
-    pub connections: BTreeMap<ConnectionId, Connection>,
     /// Missing coverage can apply to a whole unit before any route is discovered.
     pub gaps: Vec<CoverageGap>,
 }
@@ -115,17 +113,17 @@ pub enum Endpoint {
 /// the caller and the object is the called operation. For a value transfer
 /// they are the source and destination. Several facts may cite one span.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Evidence {
+pub struct Fact {
     pub unit: UnitId,
     pub subject: Endpoint,
-    pub kind: Fact,
+    pub kind: FactKind,
     pub object: Endpoint,
     /// Build inventories and compiler-generated facts can lack source text.
     pub site: Option<SourceSpan>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Fact {
+pub enum FactKind {
     DeclaredDependency,
     Import {
         local_name: String,
@@ -141,7 +139,7 @@ pub enum Fact {
     /// The object identifies a receiver item or its package at this call.
     /// A receiver bound can be known even when its handoff route is incomplete.
     ReceiverBound {
-        call: EvidenceId,
+        call: FactId,
         basis: ReceiverBasis,
     },
     Construct,
@@ -182,9 +180,7 @@ pub enum Dispatch {
 pub struct Route {
     /// The use being explained, when known. Alternative and stopped traces
     /// can belong to the same call site; a supply with no known use has none.
-    pub use_site: Option<EvidenceId>,
-    /// The connection this route traces, when it joins two project modules.
-    pub connection: Option<ConnectionId>,
+    pub use_site: Option<FactId>,
     pub origin: Endpoint,
     pub hops: Vec<Hop>,
     pub end: RouteEnd,
@@ -195,7 +191,7 @@ pub struct Route {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Hop {
     pub to: Endpoint,
-    pub evidence: EvidenceId,
+    pub fact: FactId,
     pub support: Support,
 }
 
@@ -213,21 +209,9 @@ pub enum RouteEnd {
     ReachedUse,
     /// The last explained endpoint can be the origin if no hop was recovered.
     Stopped {
-        at: EvidenceId,
+        at: FactId,
         reason: String,
     },
-}
-
-/// One way a module uses another. The use can be in `user`'s own code or
-/// arrive through other modules, as when a capability `used` supplies is
-/// handed to `user`. Two modules can be connected in several ways; how the
-/// grapher groups facts into connections is its own choice.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Connection {
-    pub user: ModuleId,
-    pub used: ModuleId,
-    /// The facts that establish the connection.
-    pub evidence: Vec<EvidenceId>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

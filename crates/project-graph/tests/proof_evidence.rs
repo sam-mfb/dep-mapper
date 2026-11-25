@@ -21,19 +21,19 @@ fn item(key: &str) -> Endpoint {
 fn adjacent_calls_and_reexports_keep_their_own_targets_and_source() {
     let unit = UnitId("console/bin".into());
     let owner = item("console::Bridge::read");
-    let call = |target: &str, text: &str| Evidence {
+    let call = |target: &str, text: &str| Fact {
         unit: unit.clone(),
-        kind: Fact::Call(Dispatch::Direct),
+        kind: FactKind::Call(Dispatch::Direct),
         subject: owner.clone(),
         object: item(target),
         site: Some(span(text)),
     };
     let audit = call("sensor::audit", "instrument::audit()");
     let measure = call("console::sample", "sample()\n    }");
-    let export = Evidence {
+    let export = Fact {
         unit,
         subject: Endpoint::Module(ModuleId("console".into())),
-        kind: Fact::Reexport {
+        kind: FactKind::Reexport {
             exported_name: "sample_value".into(),
         },
         object: item("sensor::measured"),
@@ -51,7 +51,7 @@ fn adjacent_calls_and_reexports_keep_their_own_targets_and_source() {
 
 #[test]
 fn two_possible_providers_can_reach_one_use_and_a_trace_can_stop_before_reaching_it() {
-    let used = EvidenceId("display:panel.active.read".into());
+    let used = FactId("display:panel.active.read".into());
     let endpoint = item("port::display");
     let providers = [
         ("console::Bridge", "adapted"),
@@ -64,10 +64,9 @@ fn two_possible_providers_can_reach_one_use_and_a_trace_can_stop_before_reaching
             let route = Route {
                 origin: item(provider),
                 use_site: Some(used.clone()),
-                connection: None,
                 hops: vec![Hop {
                     to: endpoint.clone(),
-                    evidence: EvidenceId("console:active=choose(adapted)".into()),
+                    fact: FactId("console:active=choose(adapted)".into()),
                     support: Support::Possible {
                         condition: Some(condition.into()),
                     },
@@ -81,11 +80,10 @@ fn two_possible_providers_can_reach_one_use_and_a_trace_can_stop_before_reaching
     assert!(routes.values().all(|r| r.use_site.as_ref() == Some(&used)));
     let stopped = Route {
         origin: item("console::edit"),
-        use_site: Some(EvidenceId("port::after_edit:value.read".into())),
-        connection: None,
+        use_site: Some(FactId("port::after_edit:value.read".into())),
         hops: vec![],
         end: RouteEnd::Stopped {
-            at: EvidenceId("console:edit(&mut slot)".into()),
+            at: FactId("console:edit(&mut slot)".into()),
             reason: "mutable borrow on incoming path".into(),
         },
     };
@@ -95,12 +93,12 @@ fn two_possible_providers_can_reach_one_use_and_a_trace_can_stop_before_reaching
 
 #[test]
 fn identifying_a_receiver_package_does_not_require_inventing_a_handoff() {
-    let call = EvidenceId("agent.rs:105 CredentialSlot::save".into());
-    let bound = Evidence {
+    let call = FactId("agent.rs:105 CredentialSlot::save".into());
+    let bound = Fact {
         unit: UnitId("kkt-agent-commands/lib".into()),
         subject: Endpoint::Unresolved("receiver".into()),
         object: Endpoint::Module(ModuleId("kashkeshet".into())),
-        kind: Fact::ReceiverBound {
+        kind: FactKind::ReceiverBound {
             call: call.clone(),
             basis: ReceiverBasis::UniqueInClosedBuild,
         },
@@ -111,7 +109,6 @@ fn identifying_a_receiver_package_does_not_require_inventing_a_handoff() {
     };
     let partial = Route {
         use_site: Some(call.clone()),
-        connection: None,
         origin: bound.object.clone(),
         hops: vec![],
         end: RouteEnd::Stopped {
@@ -119,7 +116,7 @@ fn identifying_a_receiver_package_does_not_require_inventing_a_handoff() {
             reason: "No source-backed handoff recovered for this use.".into(),
         },
     };
-    let Fact::ReceiverBound { call: site, .. } = bound.kind else {
+    let FactKind::ReceiverBound { call: site, .. } = bound.kind else {
         panic!("expected receiver bound")
     };
     assert_eq!(partial.use_site.as_ref(), Some(&site));

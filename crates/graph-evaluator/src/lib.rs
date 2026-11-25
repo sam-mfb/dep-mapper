@@ -1,9 +1,9 @@
 //! The decision a human or model makes about a particular graph snapshot.
 //! Evaluators receive the graph by reference. They judge each module, and
-//! interpret the graph's connections as relationships: what the connections
-//! mean in the architecture. A connection records how modules are joined in
-//! the code; a relationship records what that means, and can draw on several
-//! connections. One connection can carry several relationships.
+//! interpret the graph's evidence as relationships: what it means in the
+//! architecture. The graph records how modules are joined in the code; a
+//! relationship records what that means, and can draw on several routes. One
+//! route can carry several relationships.
 //!
 //! A module the evaluation does not mention is unreviewed. An explicit
 //! deferral records that it was considered and why it remains undecided.
@@ -34,8 +34,8 @@ pub struct GraphEvaluation {
     /// Cluster names in the intended reading order.
     pub clusters: Clusters,
     pub modules: BTreeMap<ModuleId, Decision<ModuleJudgment>>,
-    /// Relationships found in the graph's connections. A connection can carry
-    /// several relationships or none.
+    /// Relationships found in the graph's evidence. A route can carry several
+    /// relationships or none.
     pub relationships: Vec<Relationship>,
 }
 
@@ -73,9 +73,9 @@ pub enum ModuleKind {
     Contract,
 }
 
-/// What one or more connections mean in the architecture. The connections it
-/// cites are the ones it interprets. For example, "B adapts A for C" cites B's
-/// connection to A, its connection to C, and the facts inside B that join them.
+/// What some of the graph's evidence means in the architecture. The routes it
+/// cites are the ones it interprets. For example, "B adapts A for C" cites the
+/// route from A through B to C and the facts inside B that do the adapting.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Relationship {
     pub kind: RelationshipKind,
