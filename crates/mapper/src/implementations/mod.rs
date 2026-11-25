@@ -3,7 +3,7 @@
 //! tests supply stand-ins.
 
 use graph_evaluator::GraphEvaluator;
-use project_graph::ProjectGrapher;
+use project_graph::{BuildSelection, ProjectGrapher};
 use thiserror::Error;
 
 /// The language of the project to map. Each has its own grapher.
@@ -22,10 +22,17 @@ pub enum EvaluatorChoice {
     Llm,
 }
 
-/// Supplies the selected grapher and evaluator.
+/// Supplies the selected grapher and evaluator. Both are asked for before
+/// any analysis starts, so a missing piece or setting fails early.
 pub trait Implementations {
     fn grapher(&self, language: Language) -> Result<Box<dyn ProjectGrapher>, Unavailable>;
-    fn evaluator(&self, choice: EvaluatorChoice) -> Result<Box<dyn GraphEvaluator>, Unavailable>;
+    /// `selection` is the build being mapped, for evaluators that read the
+    /// project's source.
+    fn evaluator(
+        &self,
+        choice: EvaluatorChoice,
+        selection: &BuildSelection,
+    ) -> Result<Box<dyn GraphEvaluator>, Unavailable>;
 }
 
 /// The selected implementation cannot be supplied, such as one not built yet
@@ -46,7 +53,11 @@ impl Implementations for Installed {
         Err(Unavailable(format!("{name} is not built yet")))
     }
 
-    fn evaluator(&self, choice: EvaluatorChoice) -> Result<Box<dyn GraphEvaluator>, Unavailable> {
+    fn evaluator(
+        &self,
+        choice: EvaluatorChoice,
+        _selection: &BuildSelection,
+    ) -> Result<Box<dyn GraphEvaluator>, Unavailable> {
         let name = match choice {
             EvaluatorChoice::Manual => "graph-evaluator-manual",
             EvaluatorChoice::Llm => "graph-evaluator-llm",

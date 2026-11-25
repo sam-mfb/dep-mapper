@@ -62,7 +62,7 @@ pub fn build(
     implementations: &dyn Implementations,
 ) -> Result<MapBuild, MapError> {
     let grapher = implementations.grapher(command.language)?;
-    let evaluator = implementations.evaluator(command.evaluator)?;
+    let evaluator = implementations.evaluator(command.evaluator, &command.selection)?;
     let graph = grapher.build_graph(&command.selection)?;
     let evaluation = evaluator.evaluate(&graph)?;
     Ok(map_builder::build_map(&graph, &evaluation)?)

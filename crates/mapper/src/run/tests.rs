@@ -61,6 +61,7 @@ impl Implementations for StandIns {
     fn evaluator(
         &self,
         _choice: EvaluatorChoice,
+        _selection: &BuildSelection,
     ) -> Result<Box<dyn graph_evaluator::GraphEvaluator>, Unavailable> {
         Ok(Box::new(FixedEvaluator(evaluation())))
     }
