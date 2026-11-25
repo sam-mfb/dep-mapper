@@ -270,6 +270,7 @@ fn fact_kind(kind: records::FactKind) -> FactKind {
         K::Pass => FactKind::Pass,
         K::Return => FactKind::Return,
         K::Coerce => FactKind::Coerce,
+        K::Capture => FactKind::Capture,
     }
 }
 

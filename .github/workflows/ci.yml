@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      # rust-toolchain.toml is the source of truth for the toolchain:
+      # rustup reads it and installs the pinned channel and components.
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+
+      - name: Cache the build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Lint with warnings denied
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+
+      - name: Cache the build
+        uses: Swatinem/rust-cache@v2
+
+      # project-graph-typescript is not on main yet. When it lands, its
+      # tests drive the TypeScript collector through Node, so install
+      # Node and the collector's pinned dependencies first.
+      - name: Install Node for the TypeScript grapher
+        if: hashFiles('crates/project-graph-typescript/collector/package.json') != ''
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: crates/project-graph-typescript/collector/package-lock.json
+
+      - name: Install the TypeScript collector dependencies
+        if: hashFiles('crates/project-graph-typescript/collector/package.json') != ''
+        working-directory: crates/project-graph-typescript/collector
+        run: npm ci
+
+      # project-graph-rust is not on main yet. When it lands, its tests
+      # build a rustc driver, which needs the rustc-dev component of
+      # the pinned toolchain.
+      - name: Install rustc-dev for the Rust grapher
+        if: hashFiles('crates/project-graph-rust/Cargo.toml') != ''
+        run: rustup component add rustc-dev
+
+      - name: Run all workspace tests
+        run: cargo test --workspace --locked

@@ -1,0 +1,20 @@
+[package]
+name = "graph-evaluator-pieces"
+description = "Presents a project graph as pieces with citable handles, and checks answers and assembles them into a GraphEvaluation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+graph-evaluator.workspace = true
+project-graph.workspace = true
+serde = { version = "1.0.228", features = ["derive"] }
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json = "1.0.145"
+
+[features]
+testing = []

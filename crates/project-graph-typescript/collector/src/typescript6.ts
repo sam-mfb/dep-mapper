@@ -36,6 +36,7 @@ export function openTypeScript6(configPath: string): Checker {
       symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol,
     calledDeclaration: (call) => checker.getResolvedSignature(call)?.declaration as ts.Declaration | undefined,
     typeAt: (node) => checker.getTypeAtLocation(node),
+    propertyOf: (type, name) => checker.getPropertyOfType(type, name),
     slotType: (expression) => checker.getContextualType(expression),
     exportsOf: (file) => {
       const module = checker.getSymbolAtLocation(file);

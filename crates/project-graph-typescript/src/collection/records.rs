@@ -107,6 +107,7 @@ pub enum FactKind {
     Pass,
     Return,
     Coerce,
+    Capture,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
