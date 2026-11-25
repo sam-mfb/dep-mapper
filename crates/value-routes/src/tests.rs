@@ -247,3 +247,46 @@ fn a_longer_established_path_is_found_past_a_shorter_possible_one() {
         }]
     );
 }
+
+#[test]
+fn a_path_through_one_function_called_twice_keeps_both_passes() {
+    // `b = echo(echo(new B()))`: echo's move from its argument to its return
+    // is used once inside each call.
+    let call = |from, to, link| Flow {
+        call: Some(link),
+        ..flow(from, to, Some(FactKind::Pass))
+    };
+    let flows = vec![
+        flow(item("B"), place("main", "fresh"), Some(FactKind::Construct)),
+        call(
+            place("main", "fresh"),
+            place("echo", "x"),
+            CallLink::Argument("inner".into()),
+        ),
+        flow(place("echo", "x"), place("echo", "return"), None),
+        call(
+            place("echo", "return"),
+            place("main", "between"),
+            CallLink::Returned("inner".into()),
+        ),
+        call(
+            place("main", "between"),
+            place("echo", "x"),
+            CallLink::Argument("outer".into()),
+        ),
+        call(
+            place("echo", "return"),
+            place("main", "b"),
+            CallLink::Returned("outer".into()),
+        ),
+    ];
+    let traces = traced(&flows, place("main", "b"));
+    assert_eq!(
+        traces,
+        [Trace::Reached {
+            origin: item("B"),
+            path: vec![0, 1, 2, 3, 4, 2, 5],
+            possible: false,
+        }]
+    );
+}
