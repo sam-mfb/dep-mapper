@@ -82,10 +82,13 @@ pub fn map(
     for problem in &built.problems {
         outputs.note(&describe(problem));
     }
-    let page = map_web::page(&built.map);
-    let saved = map_persist::save(&MapDocument::Map(built.map));
+    let saved = map_persist::save(&MapDocument::Map(built.map.clone()));
     write(outputs, &command.out, &saved)?;
     outputs.note(&format!("saved the map to {}", command.out.display()));
+    if command.page.is_none() && command.serve.is_none() {
+        return Ok(());
+    }
+    let page = map_web::page(&built.map);
     if let Some(path) = &command.page {
         write(outputs, path, &page)?;
         outputs.note(&format!("wrote the map page to {}", path.display()));

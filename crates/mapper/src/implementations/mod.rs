@@ -78,9 +78,25 @@ pub struct Unavailable(pub String);
 pub const WORKBOOK_PAGE_SIZE: usize = 40;
 
 /// How a person or agent runs the answer commands for the workbook at
-/// `workbook`.
+/// `workbook`, as shell text. The path is quoted when it holds anything but
+/// letters, digits and `/._-`.
 pub fn eval_command(workbook: &Path) -> String {
-    format!("srs eval --workbook {}", workbook.display())
+    format!(
+        "srs eval --workbook {}",
+        shell_word(&workbook.display().to_string())
+    )
+}
+
+fn shell_word(text: &str) -> String {
+    let plain = !text.is_empty()
+        && text
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c));
+    if plain {
+        text.to_string()
+    } else {
+        format!("'{}'", text.replace('\'', "'\\''"))
+    }
 }
 
 /// The implementations in this build of the program, with the tools they
@@ -139,3 +155,6 @@ impl Implementations for Installed {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

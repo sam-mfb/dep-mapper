@@ -8,7 +8,7 @@ use clap::error::ErrorKind;
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use project_graph::BuildSelection;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// A command the program can run.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -27,8 +27,10 @@ pub struct ParseOutcome {
     pub requested: bool,
 }
 
-/// Parses the program's arguments, starting with the program name.
-pub fn parse<I, T>(args: I) -> Result<Command, ParseOutcome>
+/// Parses the program's arguments, starting with the program name. A
+/// relative workbook path is taken from `current_dir`, so that a worker
+/// started in another directory, such as the project root, finds it.
+pub fn parse<I, T>(args: I, current_dir: &Path) -> Result<Command, ParseOutcome>
 where
     I: IntoIterator<Item = T>,
     T: Into<std::ffi::OsString> + Clone,
@@ -39,9 +41,9 @@ where
     };
     let cli = Cli::try_parse_from(args).map_err(outcome)?;
     Ok(match cli.command {
-        CliCommand::Map(args) => Command::Map(args.into_command().map_err(outcome)?),
+        CliCommand::Map(args) => Command::Map(args.into_command(current_dir).map_err(outcome)?),
         CliCommand::Eval(args) => Command::Eval(EvalCommand {
-            workbook: args.workbook,
+            workbook: current_dir.join(args.workbook),
             arguments: args.arguments,
         }),
     })
@@ -130,10 +132,10 @@ enum EvaluatorArg {
 }
 
 impl MapArgs {
-    fn into_command(self) -> Result<MapCommand, clap::Error> {
+    fn into_command(self, current_dir: &Path) -> Result<MapCommand, clap::Error> {
         let evaluator = match (self.evaluator, self.workbook) {
             (EvaluatorArg::Manual, Some(workbook)) => EvaluatorChoice::Manual {
-                workbook,
+                workbook: current_dir.join(workbook),
                 // Without --agent, the workbook is left for a later run.
                 agent: match self.agent {
                     None | Some(AgentArg::None) => Agent::None,

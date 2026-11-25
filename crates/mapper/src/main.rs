@@ -39,7 +39,14 @@ impl MapOutputs for Terminal {
 }
 
 fn main() -> ExitCode {
-    let command = match cli::parse(std::env::args_os()) {
+    let current_dir = match std::env::current_dir() {
+        Ok(dir) => dir,
+        Err(error) => {
+            eprintln!("srs: cannot read the current directory: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let command = match cli::parse(std::env::args_os(), &current_dir) {
         Ok(command) => command,
         Err(outcome) if outcome.requested => {
             print!("{}", outcome.text);

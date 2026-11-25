@@ -1,5 +1,15 @@
 use super::*;
 
+const CWD: &str = "/home/someone/work";
+
+fn parse<I, T>(args: I) -> Result<Command, ParseOutcome>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString> + Clone,
+{
+    super::parse(args, Path::new(CWD))
+}
+
 #[test]
 fn map_arguments_become_a_map_command() {
     let command = parse([
@@ -83,7 +93,7 @@ fn the_manual_evaluator_takes_its_workbook() {
         command.evaluator
     };
     let manual = |agent| EvaluatorChoice::Manual {
-        workbook: "wb".into(),
+        workbook: "/home/someone/work/wb".into(),
         agent,
     };
     assert_eq!(evaluator(&[]), manual(Agent::None));
@@ -124,10 +134,19 @@ fn eval_passes_its_arguments_through_unchanged() {
     assert_eq!(
         command,
         Command::Eval(EvalCommand {
-            workbook: "wb".into(),
+            workbook: "/home/someone/work/wb".into(),
             arguments: ["judge", "module:core", "--kind", "logic"]
                 .map(String::from)
                 .to_vec(),
         })
     );
+}
+
+#[test]
+fn an_absolute_workbook_path_is_kept() {
+    let Command::Eval(command) = parse(["srs", "eval", "--workbook", "/data/wb", "index"]).unwrap()
+    else {
+        panic!("an eval command")
+    };
+    assert_eq!(command.workbook, Path::new("/data/wb"));
 }
