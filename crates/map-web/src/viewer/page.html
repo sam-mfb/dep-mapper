@@ -458,6 +458,45 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
 .route-detail { margin-top: 4px; }
 .route-detail > summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
 .route-detail h4 { font-size: 12px; margin: 8px 0 2px; color: var(--muted); }
+
+/* Proposals, marked in the Changes view. Dashes already mean unreviewed and
+   some roles, so proposals use other signals: an addition is an unfilled
+   box and a hollow double line; an update has a halo and a line along its
+   arrow; a removal is faded and struck through. */
+:root { --proposal: #0f766e; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --proposal: #2dd4bf; } }
+:root[data-theme="dark"] { --proposal: #2dd4bf; }
+.node.status-addition > rect { fill: var(--bg); stroke: var(--proposal); stroke-width: 2; }
+.node.status-update > rect.halo { fill: none; stroke: var(--proposal); stroke-width: 1.4; }
+.node.status-removal { opacity: .5; }
+.node .strike { stroke: var(--fg); stroke-width: 1.4; }
+.edge.status-addition, .edge.status-addition.focus { stroke-width: 3.8; }
+.edge-inner { fill: none; pointer-events: none; }
+.edge-inner.status-addition { stroke: var(--bg); stroke-width: 1.6; }
+.edge-inner.status-update { stroke: var(--proposal); stroke-width: 1; }
+.edge-inner.status-removal { stroke: var(--fg); stroke-width: .9; }
+.edge.status-removal, .edge-inner.status-removal { opacity: .3; }
+.edge.status-removal.focus, .edge-inner.status-removal.focus { opacity: .5; }
+.edge-inner.faint { opacity: .12; }
+.status-key { display: inline-block; width: 22px; height: 12px; margin-right: 4px; vertical-align: -1px; border-radius: 3px; border: 2px solid var(--proposal); }
+.status-key.status-addition { background: var(--bg); }
+.status-key.status-update { outline: 1.5px solid var(--proposal); outline-offset: 2px; border-color: var(--muted); }
+.status-key.status-removal { border-color: var(--muted); opacity: .5; background: linear-gradient(transparent 45%, var(--fg) 45%, var(--fg) 60%, transparent 60%); }
+.badge.status-badge { background: none; border: 1px solid var(--proposal); color: var(--proposal); }
+.badge.status-removal { border-color: var(--muted); color: var(--muted); text-decoration: line-through; }
+.changes { list-style: none; padding: 0; margin: 4px 0; font-size: 12.5px; }
+.changes li { margin: 2px 0; }
+.rationale-head { font-size: 12px; margin: 8px 0 2px; color: var(--proposal); }
+.evidence.rationale > li { border-left: 2px solid var(--proposal); padding-left: 6px; }
+.flows > li.current-route { background: var(--hit); border-radius: 6px; padding-left: 6px; }
+/* The view control: three choices in one bordered group. */
+.show-set { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; font-size: 12.5px; }
+.show-set[hidden] { display: none; }
+.show-set label { display: inline-flex; align-items: center; padding: 4px 10px; cursor: pointer; background: var(--bg); }
+.show-set label + label { border-left: 1px solid var(--line); }
+.show-set input { position: absolute; opacity: 0; pointer-events: none; }
+.show-set label:has(input:checked) { background: var(--accent); color: var(--panel); }
+.show-set label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
 </style>
 </head>
 <body>
@@ -485,6 +524,11 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
           <div class="menu-all"><button type="button" id="arrows-all">All</button><button type="button" id="arrows-none">None</button></div>
           <span id="role-filters" class="menu-list"></span>
         </div>
+      </div>
+      <div class="show-set" id="show-set" role="radiogroup" aria-label="Which version of the map to show" hidden>
+        <label title="What is in code: additions are left out, updates show the review found in code"><input type="radio" name="show" value="current"> Current</label>
+        <label title="The code after the proposals: removals are left out, updates show their new review"><input type="radio" name="show" value="planned"> Planned</label>
+        <label title="Everything, with additions, updates and removals marked"><input type="radio" name="show" value="changes" checked> Changes</label>
       </div>
       <button type="button" class="reset-view" id="reset-view" title="Every filter, menu and layer as the page starts, and no crate selected">Reset view</button>
     </div>

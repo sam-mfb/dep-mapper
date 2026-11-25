@@ -4,8 +4,8 @@ use crate::*;
 #[test]
 fn records_every_module_dependency_and_route_of_the_proposal() {
     let map = sharsheret();
-    assert_eq!(map.modules.len(), 11);
-    assert_eq!(map.dependencies.len(), 20);
+    assert_eq!(map.modules.len(), 12);
+    assert_eq!(map.dependencies.len(), 23);
     assert_eq!(map.routes.len(), 11);
 }
 
