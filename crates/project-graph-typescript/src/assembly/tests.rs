@@ -26,9 +26,13 @@ fn the_graph_names_the_project_revision_and_selection() {
         TraceLimits::STANDARD,
     )
     .unwrap();
-    assert_eq!(
-        graph.id,
-        GraphId("typescript:demo@abc:tsconfig.json:tsconfig".into())
+    assert!(
+        graph
+            .id
+            .0
+            .starts_with("typescript:demo@abc:tsconfig.json:tsconfig:"),
+        "{}",
+        graph.id.0
     );
     assert_eq!(graph.build.project, "demo");
     assert_eq!(graph.build.source_revision, "abc");
@@ -98,4 +102,27 @@ fn facts_join_their_package_unit_and_conditions_mark_hops_possible() {
     );
     assert_eq!(graph.gaps[0].unit, Some(UnitId("app:tsconfig.json".into())));
     assert_eq!(graph.gaps[0].reason, "TypeScript error: oops");
+}
+
+#[test]
+fn the_graph_id_changes_with_the_contents_and_only_with_them() {
+    let item = |name: &str| {
+        format!(
+            r#"{{"record":"item","id":"app/a.ts#{name}","module":"app","name":"{name}","kind":"value","parent":null,"visibility":"internal","signature":null,"declaration":null}}"#
+        )
+    };
+    let build = |name: &str| {
+        let lines = [
+            PROJECT.to_string(),
+            MODULE.to_string(),
+            item(name),
+            END.to_string(),
+        ];
+        let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
+        assemble(&selected(), records(&lines), TraceLimits::STANDARD)
+            .unwrap()
+            .id
+    };
+    assert_eq!(build("probeOne"), build("probeOne"));
+    assert_ne!(build("probeOne"), build("probeTwo"));
 }

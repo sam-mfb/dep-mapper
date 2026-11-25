@@ -28,7 +28,8 @@ export function openTypeScript6(configPath: string): Checker {
     projectFiles: () =>
       program
         .getSourceFiles()
-        .filter((f) => !f.isDeclarationFile && roots.has(path.resolve(f.fileName))),
+        .filter((f) => !f.isDeclarationFile && !program.isSourceFileFromExternalLibrary(f)),
+    isSelected: (file) => roots.has(path.resolve(file.fileName)),
     isDefaultLibrary: (file) => program.isSourceFileDefaultLibrary(file),
     symbolAt: (node) => checker.getSymbolAtLocation(node),
     resolveAlias: (symbol) =>

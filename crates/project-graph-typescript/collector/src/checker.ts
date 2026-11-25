@@ -17,8 +17,14 @@ export interface Diagnostic {
 }
 
 export interface Checker {
-  /** The source files the selected tsconfig includes, without declaration files. */
+  /**
+   * The program's source files, without declaration files or files from
+   * installed packages: the ones the tsconfig names and the ones they
+   * import.
+   */
   projectFiles(): readonly ts.SourceFile[];
+  /** Whether the tsconfig names the file itself, rather than the program reaching it by an import. */
+  isSelected(file: ts.SourceFile): boolean;
   /** Whether the file is one of the compiler's own library files. */
   isDefaultLibrary(file: ts.SourceFile): boolean;
   /** The symbol a name refers to, before following import aliases. */

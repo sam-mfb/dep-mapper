@@ -24,6 +24,8 @@ export function collectItems(project: Project, emit: Emit): void {
   for (const file of files) {
     const pkg = project.workspace.packageOf(file.fileName);
     if (!pkg) {
+      // A file reached by an import from outside the workspace is external.
+      if (!project.checker.isSelected(file)) continue;
       emit({
         record: "gap",
         module: null,

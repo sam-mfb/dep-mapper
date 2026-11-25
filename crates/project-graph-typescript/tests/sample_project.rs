@@ -502,3 +502,61 @@ fn a_collector_without_its_dependencies_says_how_to_install_them() {
     let error = grapher.build_graph(&selection(AS_WRITTEN)).unwrap_err();
     assert!(error.message.contains("run `npm ci`"), "{}", error.message);
 }
+
+#[test]
+fn workspace_files_reached_by_imports_are_analyzed() {
+    let mut app_only = selection(AS_WRITTEN);
+    app_only.target = "tsconfig.app.json".into();
+    let narrow = grapher()
+        .build_graph(&app_only)
+        .expect("the app-only build");
+    let full = graph();
+    assert!(narrow.gaps.is_empty(), "{:#?}", narrow.gaps);
+    assert_eq!(
+        narrow.items.keys().collect::<Vec<_>>(),
+        full.items.keys().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        narrow.facts.keys().collect::<Vec<_>>(),
+        full.facts.keys().collect::<Vec<_>>()
+    );
+    assert!(narrow.items.contains_key(&id(OS, "OsBackups")));
+}
+
+/// Copies the sample into a fresh temporary directory.
+fn sample_copy(name: &str) -> PathBuf {
+    fn copy(from: &Path, to: &Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for entry in std::fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let target = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy(&entry.path(), &target);
+            } else {
+                std::fs::copy(entry.path(), target).unwrap();
+            }
+        }
+    }
+    let dir = std::env::temp_dir().join(format!("srs-sample-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    copy(&sample_root(), &dir);
+    dir
+}
+
+#[test]
+fn builds_of_different_source_under_one_revision_get_different_ids() {
+    let root = sample_copy("fingerprint");
+    let probe = root.join("packages/backup-api/src/probe.ts");
+    let build = || {
+        let mut selection = selection(AS_WRITTEN);
+        selection.root = root.clone();
+        grapher().build_graph(&selection).unwrap().id
+    };
+    std::fs::write(&probe, "export const probeOne = 1;\n").unwrap();
+    let one = build();
+    assert_eq!(build(), one);
+    std::fs::write(&probe, "export const probeTwo = 2;\n").unwrap();
+    let two = build();
+    std::fs::remove_dir_all(&root).unwrap();
+    assert_ne!(one, two);
+}

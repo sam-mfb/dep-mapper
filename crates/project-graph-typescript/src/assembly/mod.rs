@@ -3,6 +3,10 @@
 //!
 //! Each workspace package is a module with one build unit for the selected
 //! tsconfig. Facts belong to the unit of the package whose source holds them.
+//!
+//! The graph's ID ends with a fingerprint of everything else in the graph,
+//! so two graphs with the same ID hold the same evidence, even when they
+//! come from uncommitted source.
 
 use crate::collection::records::{self, Record};
 use crate::routes::{self, ReceiverUse, TraceLimits};
@@ -10,6 +14,7 @@ use project_graph::{
     Build, BuildUnit, CoverageGap, Dispatch, Endpoint, Fact, FactId, FactKind, GraphId, ImportUse,
     Item, ItemId, ItemKind, Module, ModuleId, ProjectGraph, SourceSpan, UnitId, Visibility,
 };
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
@@ -156,13 +161,10 @@ pub fn assemble(
             (unit_of(&module.0), unit)
         })
         .collect();
-    Ok(ProjectGraph {
-        id: GraphId(format!(
-            "typescript:{name}@{}:{}:{}",
-            selected.source_revision, selected.target, selected.configuration
-        )),
+    let mut graph = ProjectGraph {
+        id: GraphId(String::new()),
         build: Build {
-            project: name,
+            project: name.clone(),
             source_revision: selected.source_revision.clone(),
             target: selected.target.clone(),
             configuration: selected.configuration.clone(),
@@ -173,7 +175,24 @@ pub fn assemble(
         facts,
         routes,
         gaps,
-    })
+    };
+    graph.id = GraphId(format!(
+        "typescript:{}@{}:{}:{}:{}",
+        graph.build.project,
+        selected.source_revision,
+        selected.target,
+        selected.configuration,
+        fingerprint(&graph)
+    ));
+    Ok(graph)
+}
+
+/// The first 16 hex digits of the SHA-256 of the graph's contents. The
+/// graph's maps are ordered, so its debug text is the same for the same
+/// contents.
+fn fingerprint(graph: &ProjectGraph) -> String {
+    let digest = Sha256::digest(format!("{graph:?}").as_bytes());
+    digest.iter().take(8).map(|b| format!("{b:02x}")).collect()
 }
 
 fn known(modules: &BTreeMap<ModuleId, Module>, module: String) -> Result<ModuleId, AssemblyError> {
