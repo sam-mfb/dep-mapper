@@ -6,8 +6,13 @@ import type { Checker, Diagnostic } from "./checker.ts";
 
 export class TsConfigError extends Error {}
 
-/** Opens the program the tsconfig at `configPath` describes. */
-export function openTypeScript6(configPath: string): Checker {
+/**
+ * Opens the program the tsconfig at `configPath` describes. `packageEntries`
+ * maps workspace package names to their source entry files, as absolute
+ * paths: an import of exactly that name that the compiler cannot resolve,
+ * because the package has not been built or installed, resolves to its entry.
+ */
+export function openTypeScript6(configPath: string, packageEntries: ReadonlyMap<string, string>): Checker {
   // Every file the config parser or the compiler reads, apart from the
   // TypeScript package's own files, such as its library declarations, which
   // belong to the TypeScript version and not to the project.
@@ -35,6 +40,21 @@ export function openTypeScript6(configPath: string): Checker {
   const host = ts.createCompilerHost(parsed.options, true);
   const readFile = host.readFile.bind(host);
   host.readFile = (file) => track(file, readFile(file));
+  const cache = ts.createModuleResolutionCache(host.getCurrentDirectory(), host.getCanonicalFileName, parsed.options);
+  host.resolveModuleNameLiterals = (literals, containingFile, redirected, options, containingSourceFile) =>
+    literals.map((literal) => {
+      const mode = ts.getModeForUsageLocation(containingSourceFile, literal, options);
+      const resolved = ts.resolveModuleName(literal.text, containingFile, options, host, cache, redirected, mode);
+      const entry = packageEntries.get(literal.text);
+      if (resolved.resolvedModule || !entry) return resolved;
+      return {
+        resolvedModule: {
+          resolvedFileName: entry,
+          extension: extensionOf(entry),
+          isExternalLibraryImport: false,
+        },
+      };
+    });
   const program = ts.createProgram({
     rootNames: parsed.fileNames,
     options: parsed.options,
@@ -58,6 +78,7 @@ export function openTypeScript6(configPath: string): Checker {
     calledDeclaration: (call) => checker.getResolvedSignature(call)?.declaration as ts.Declaration | undefined,
     typeAt: (node) => checker.getTypeAtLocation(node),
     propertyOf: (type, name) => checker.getPropertyOfType(type, name),
+    elementType: (type) => checker.getIndexTypeOfType(type, ts.IndexKind.Number),
     slotType: (expression) => checker.getContextualType(expression),
     exportsOf: (file) => {
       const module = checker.getSymbolAtLocation(file);
@@ -89,6 +110,13 @@ export function openTypeScript6(configPath: string): Checker {
       };
     },
   };
+}
+
+function extensionOf(file: string): ts.Extension {
+  if (file.endsWith(".tsx")) return ts.Extension.Tsx;
+  if (file.endsWith(".mts")) return ts.Extension.Mts;
+  if (file.endsWith(".cts")) return ts.Extension.Cts;
+  return ts.Extension.Ts;
 }
 
 function flatten(message: string | ts.DiagnosticMessageChain): string {
