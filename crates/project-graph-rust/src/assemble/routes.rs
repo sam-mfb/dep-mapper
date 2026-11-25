@@ -206,10 +206,11 @@ fn closure_flows(resolve: &Resolver, units: &Units, crates: &[Vec<r::Record>]) -
             },
         )
     };
-    let parameter = |closure: &r::Def| r::Node::Param {
-        // A closure's argument 0 is its captured environment.
+    let parameter = |closure: &r::Def, position: usize| r::Node::Param {
+        // A closure's argument 0 is its captured environment; its own
+        // parameters follow.
         function: closure.clone(),
-        index: 1,
+        index: position as u32 + 1,
     };
     let returned = |closure: &r::Def| r::Node::Returned {
         function: closure.clone(),
@@ -220,12 +221,18 @@ fn closure_flows(resolve: &Resolver, units: &Units, crates: &[Vec<r::Record>]) -
             match record {
                 r::Record::ClosureCall(call) => {
                     for closure in closures_reaching(&into, &call.callable) {
-                        flows.extend(through(
-                            unit,
-                            &call.arguments,
-                            parameter(closure),
-                            &call.span,
-                        ));
+                        // The arguments travel as one tuple, which stands
+                        // for each of them.
+                        if let Some(arguments) = &call.arguments {
+                            for position in 0..call.arity as usize {
+                                flows.extend(through(
+                                    unit,
+                                    arguments,
+                                    parameter(closure, position),
+                                    &call.span,
+                                ));
+                            }
+                        }
                         flows.extend(through(
                             unit,
                             &returned(closure),
@@ -235,13 +242,15 @@ fn closure_flows(resolve: &Resolver, units: &Units, crates: &[Vec<r::Record>]) -
                     }
                 }
                 r::Record::ClosureBinding(binding) => {
-                    for other in &binding.others {
-                        flows.extend(through(
-                            unit,
-                            other,
-                            parameter(&binding.closure),
-                            &binding.span,
-                        ));
+                    for (position, others) in binding.parameters.iter().enumerate() {
+                        for other in others {
+                            flows.extend(through(
+                                unit,
+                                other,
+                                parameter(&binding.closure, position),
+                                &binding.span,
+                            ));
+                        }
                     }
                     flows.extend(through(
                         unit,
@@ -270,7 +279,10 @@ fn closures_reaching<'a>(
     let mut queue: VecDeque<&r::Node> = into.get(&start).into_iter().flatten().collect();
     let mut closures = Vec::new();
     while let Some(node) = queue.pop_front() {
-        if seen.len() > MOST_NODES || !seen.insert(node) {
+        if seen.len() >= MOST_NODES {
+            break;
+        }
+        if !seen.insert(node) {
             continue;
         }
         match node {

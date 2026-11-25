@@ -377,14 +377,16 @@ fn a_type_from_an_indirect_dependency_is_named_through_the_declared_one() {
 #[test]
 fn a_closure_called_through_a_generic_parameter_or_by_the_standard_library_is_traced() {
     let graph = graph();
-    // `with_backups(&OsBackups, |b| b.write())` and
-    // `Some(…).map(|b| b.write())`, both inside `main`.
+    // Inside `main`: `with_backups(&OsBackups, |b| b.write())`,
+    // `Some(…).map(|b| b.write())`, `with_count(&OsBackups, |n, b| …)`,
+    // whose receiver is the closure's second parameter, and
+    // `all.iter().fold(0, |total, b| …)`, likewise.
     let calls = find(
         &item("app/bin:app::main"),
         &FactKind::Call(Dispatch::Contract),
         &item("supplier/lib:supplier::Backups::write"),
     );
-    assert_eq!(calls.len(), 2, "{calls:#?}");
+    assert_eq!(calls.len(), 4, "{calls:#?}");
     for call in calls {
         let call_id = graph
             .facts
@@ -406,4 +408,29 @@ fn a_closure_called_through_a_generic_parameter_or_by_the_standard_library_is_tr
             project_graph::Support::Possible { .. }
         ));
     }
+}
+
+#[test]
+fn a_factory_closure_without_arguments_is_traced_through_its_result() {
+    let graph = graph();
+    let call = find(
+        &item("consumer/lib:consumer::build_with"),
+        &FactKind::Call(Dispatch::Contract),
+        &item("supplier/lib:supplier::Backups::write"),
+    );
+    assert_eq!(call.len(), 1);
+    let call_id = graph
+        .facts
+        .iter()
+        .find(|(_, f)| *f == call[0])
+        .map(|(id, _)| id.clone())
+        .unwrap();
+    let reached = graph
+        .routes
+        .values()
+        .filter(|r| r.use_site.as_ref() == Some(&call_id))
+        .filter(|r| r.origin == item("supplier/lib:supplier::OsBackups"))
+        .filter(|r| r.end == project_graph::RouteEnd::ReachedUse)
+        .count();
+    assert_eq!(reached, 1);
 }

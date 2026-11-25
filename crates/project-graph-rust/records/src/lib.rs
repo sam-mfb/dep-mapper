@@ -235,9 +235,9 @@ pub struct ClosureBindingRecord {
     /// The argument position, from zero, that receives the closure.
     pub index: u32,
     pub closure: Def,
-    /// The call's other arguments whose types share a type or trait with the
-    /// closure's parameters.
-    pub others: Vec<Node>,
+    /// For each of the closure's parameters, in order, the call's other
+    /// arguments whose types share a type or trait with that parameter.
+    pub parameters: Vec<Vec<Node>>,
     pub destination: Node,
     pub span: Span,
 }
@@ -249,8 +249,10 @@ pub struct ClosureCallRecord {
     /// Where the called value is held, traced back within the body: often
     /// a parameter of the function.
     pub callable: Node,
-    /// The arguments, passed as one tuple.
-    pub arguments: Node,
+    /// The arguments, passed as one tuple; `None` when there are none.
+    pub arguments: Option<Node>,
+    /// How many arguments the tuple holds.
+    pub arity: u32,
     pub destination: Node,
     pub span: Span,
 }

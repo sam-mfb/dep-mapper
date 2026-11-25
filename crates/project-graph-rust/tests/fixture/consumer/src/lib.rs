@@ -60,3 +60,13 @@ pub fn first_tick() -> clock::Tick {
 pub fn with_backups<F: FnOnce(&dyn Backups) -> u32>(backups: &dyn Backups, f: F) -> u32 {
     f(backups)
 }
+
+/// Passes the supplier as a closure's second argument.
+pub fn with_count<F: FnOnce(u32, &dyn Backups) -> u32>(backups: &dyn Backups, f: F) -> u32 {
+    f(1, backups)
+}
+
+/// Uses whatever a caller's factory closure makes.
+pub fn build_with<F: FnOnce() -> Box<dyn Backups>>(make: F) -> u32 {
+    make().write()
+}

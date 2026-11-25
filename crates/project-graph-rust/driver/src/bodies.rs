@@ -491,13 +491,25 @@ impl<'tcx> BodyReader<'tcx> {
                 .is_some_and(|t| tcx.fn_trait_kind_from_def_id(t).is_some())
             && let [callable, arguments] = args
             && let Some((callable, r::FlowKind::Copy)) = self.operand(callable)
-            && let Some((arguments, r::FlowKind::Copy)) = self.operand(arguments)
         {
+            let arity = arguments
+                .ty(self.body.locals())
+                .ok()
+                .map(|ty| match *internal(tcx, ty).kind() {
+                    rustc_middle::ty::Tuple(fields) => fields.len() as u32,
+                    _ => 1,
+                })
+                .unwrap_or(0);
+            let arguments = match self.operand(arguments) {
+                Some((node, r::FlowKind::Copy)) => Some(node),
+                _ => None,
+            };
             let callable = self.root(callable);
             self.records
                 .push(r::Record::ClosureCall(r::ClosureCallRecord {
                     callable,
                     arguments,
+                    arity,
                     destination: destination.clone(),
                     span: at.clone(),
                 }));
@@ -514,18 +526,22 @@ impl<'tcx> BodyReader<'tcx> {
             else {
                 continue;
             };
-            let others = args
+            let parameters = inputs
                 .iter()
-                .enumerate()
-                .filter(|(other, _)| *other != position)
-                .filter(|(_, other)| {
-                    other
-                        .ty(self.body.locals())
-                        .is_ok_and(|ty| !self.mentions(ty).is_disjoint(&inputs))
-                })
-                .filter_map(|(_, other)| match self.operand(other) {
-                    Some((node, r::FlowKind::Copy)) => Some(node),
-                    _ => None,
+                .map(|input| {
+                    args.iter()
+                        .enumerate()
+                        .filter(|(other, _)| *other != position)
+                        .filter(|(_, other)| {
+                            other
+                                .ty(self.body.locals())
+                                .is_ok_and(|ty| !self.mentions(ty).is_disjoint(input))
+                        })
+                        .filter_map(|(_, other)| match self.operand(other) {
+                            Some((node, r::FlowKind::Copy)) => Some(node),
+                            _ => None,
+                        })
+                        .collect()
                 })
                 .collect();
             self.records
@@ -533,16 +549,16 @@ impl<'tcx> BodyReader<'tcx> {
                     function: def(tcx, callee),
                     index: position as u32,
                     closure: def(tcx, closure),
-                    others,
+                    parameters,
                     destination: destination.clone(),
                     span: at.clone(),
                 }));
         }
     }
 
-    /// The closure a value's type is, through references, and what its
-    /// parameters mention.
-    fn closure_of(&self, ty: Ty) -> Option<(rustc_span::def_id::DefId, HashSet<Mention>)> {
+    /// The closure a value's type is, through references, and what each of
+    /// its parameters mentions.
+    fn closure_of(&self, ty: Ty) -> Option<(rustc_span::def_id::DefId, Vec<HashSet<Mention>>)> {
         let mut ty = internal(self.tcx, ty);
         while let rustc_middle::ty::Ref(_, inner, _) = *ty.kind() {
             ty = inner;
@@ -551,7 +567,11 @@ impl<'tcx> BodyReader<'tcx> {
             return None;
         };
         let inputs = args.as_closure().sig().skip_binder().inputs()[0];
-        Some((id, self.mentions_of(inputs)))
+        let parameters = match *inputs.kind() {
+            rustc_middle::ty::Tuple(fields) => fields.iter().map(|f| self.mentions_of(f)).collect(),
+            _ => vec![self.mentions_of(inputs)],
+        };
+        Some((id, parameters))
     }
 
     /// Follows single copies back within this body: a closure is often moved
