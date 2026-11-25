@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/project-graph", "crates/graph-evaluator", "crates/project-map", "crates/map-web", "crates/project-graph-rust", "crates/project-graph-rust/records", "crates/value-routes"]
+members = ["crates/project-graph", "crates/graph-evaluator", "crates/graph-evaluator-manual", "crates/project-map", "crates/map-web", "crates/map-persist", "crates/project-graph-typescript", "crates/map-preview", "crates/project-graph-rust", "crates/project-graph-rust/records", "crates/value-routes"]
 exclude = ["crates/project-graph-rust/driver", "crates/project-graph-rust/tests/fixture"]
 resolver = "3"
 
@@ -10,6 +10,10 @@ license = "MIT"
 repository = "https://github.com/sam-mfb/sharsheret"
 
 [workspace.dependencies]
+graph-evaluator = { path = "crates/graph-evaluator" }
 project-graph = { path = "crates/project-graph" }
 project-map = { path = "crates/project-map" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.2"
 thiserror = "2.0.21"

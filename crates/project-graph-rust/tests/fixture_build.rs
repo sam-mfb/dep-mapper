@@ -204,3 +204,20 @@ fn the_implementation_behind_a_trait_object_call_is_traced_back_to_where_it_was_
         project_graph::Support::Possible { .. }
     ));
 }
+
+#[test]
+fn a_pub_use_other_crates_cannot_reach_is_an_import() {
+    let import = find(
+        &item("consumer/lib:consumer::inner"),
+        &FactKind::Import {
+            local_name: "inner_helper".into(),
+            usage: project_graph::ImportUse::Undetermined,
+        },
+        &item("supplier/lib:supplier::helper"),
+    );
+    assert_eq!(import.len(), 1);
+    assert!(!graph().facts.values().any(|f| matches!(
+        &f.kind,
+        FactKind::Reexport { exported_name } if exported_name == "inner_helper"
+    )));
+}

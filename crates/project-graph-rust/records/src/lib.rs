@@ -94,7 +94,7 @@ pub struct UseRecord {
     pub target: Def,
     /// The name the item binds, which differs from the target's when renamed.
     pub local_name: String,
-    /// A `pub use`, which other crates can name.
+    /// Other crates can name it: a `pub use` reachable from the crate root.
     pub public: bool,
     pub span: Span,
 }

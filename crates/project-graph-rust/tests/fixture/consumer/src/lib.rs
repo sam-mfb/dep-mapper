@@ -12,3 +12,9 @@ pub fn consume(parts: &Parts) -> u32 {
 pub fn file_name() -> &'static str {
     store::DATABASE_FILE
 }
+
+mod inner {
+    // `pub`, but other crates cannot reach it through a private module.
+    #[allow(unused_imports)]
+    pub use store::helper as inner_helper;
+}

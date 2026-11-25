@@ -328,6 +328,8 @@ fn declared_dependencies(workspace: &Workspace, unit: &Unit) -> Vec<Ordered> {
         .externs
         .iter()
         .filter_map(|name| member.dependencies.get(name))
+        // A package can depend on itself, for example to test with features.
+        .filter(|dep| dep.package != unit.record.package)
         .map(|dep| {
             Ordered(Fact {
                 unit: unit.id.clone(),

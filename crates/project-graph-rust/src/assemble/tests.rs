@@ -78,7 +78,12 @@ fn workspace() -> Workspace {
             member("supplier", &[]),
             member(
                 "consumer",
-                &[("store", "supplier", true), ("clock", "clock", false)],
+                &[
+                    ("store", "supplier", true),
+                    ("clock", "clock", false),
+                    // Its tests use it with extra features.
+                    ("consumer", "consumer", true),
+                ],
             ),
         ],
         third_party: [("clock".to_string(), "clock".to_string())].into(),
@@ -100,7 +105,7 @@ fn crates() -> Vec<Vec<r::Record>> {
             item("supplier", SUPPLIER, "::helper", r::ItemKind::Function),
         ],
         vec![
-            unit("consumer", CONSUMER, &["store", "clock"]),
+            unit("consumer", CONSUMER, &["store", "clock", "consumer"]),
             item("consumer", CONSUMER, "", r::ItemKind::Module),
             item("consumer", CONSUMER, "::consume", r::ItemKind::Function),
             item("consumer", CONSUMER, "::local", r::ItemKind::Function),
@@ -248,7 +253,8 @@ fn a_public_use_is_a_reexport_and_a_private_use_is_an_import_of_undetermined_use
 }
 
 #[test]
-fn declared_dependencies_name_the_package_behind_a_renamed_dependency() {
+fn declared_dependencies_name_the_package_behind_a_renamed_dependency_and_skip_the_package_itself()
+{
     let graph = built();
     let declared: BTreeSet<_> = facts_of(&graph, |k| matches!(k, FactKind::DeclaredDependency))
         .into_iter()

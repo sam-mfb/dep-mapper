@@ -1,6 +1,6 @@
 # What sharsheret maps
 
-Sharsheret (shrsh) helps a developer answer “What does this package expose, who has a way to use it, and how does its work reach them?” Its overview is a map of packages. A reader can follow an individual arrow down to the project code that explains it.
+Sharsheret (srs) helps a developer answer “What does this package expose, who has a way to use it, and how does its work reach them?” Its overview is a map of packages. A reader can follow an individual arrow down to the project code that explains it.
 
 ## Agreed scope
 
@@ -47,11 +47,13 @@ A `ProjectGraph` records receiver bounds separately from witnessed handoffs. A r
 
 ## Composition and effects
 
-`mapper` owns the composition. It constructs the grapher for the project’s language and calls it through the `ProjectGrapher` contract in `project-graph` with the selected build. Each language crate builds the `ProjectGraph` end to end: it reads the source and traces its own routes. `project-graph-rust` serves the initial investigation, and `project-graph-typescript` illustrates the same contract for another language.
+`mapper` owns the composition. It constructs the grapher for the project’s language and calls it through the `ProjectGrapher` contract in `project-graph` with the selected build. Each language crate builds the `ProjectGraph` end to end: it reads the source and traces its own routes. `project-graph-rust` serves the initial investigation, and `project-graph-typescript` implements the same contract for another language.
+
+`project-graph-typescript` reads an npm workspace, one module per package, with the build selected by a tsconfig. It runs the TypeScript checker in a Node child process. The child uses the TypeScript 6 API through a small interface of our own, so the move to TypeScript 7 changes one file. It prints items, facts and receiver links as JSON Lines, and the Rust crate assembles the graph and traces the routes.
 
 Analysis is not split into a language reader and a shared grapher. If some route logic turns out to be the same across languages, it goes in a library the language crates call, not in a separate stage of the pipeline.
 
-`mapper` passes the resulting `ProjectGraph` to the selected `graph-evaluator`. The manual implementation presents evidence in the terminal and asks a human to decide. The LLM implementation submits the evidence to a model API. Both return a `GraphEvaluation` through the same contract.
+`mapper` passes the resulting `ProjectGraph` to the selected `graph-evaluator`. The manual implementation writes the graph into a workbook of pieces and hands it, through an injected runner, to an agent harness such as Claude Code or to a person. They read the pieces and record answers with `srs eval` commands, which check each answer and its citations as it is recorded. The evaluator checks every answer again before it returns the evaluation. The LLM implementation submits the evidence to a model API. Both return a `GraphEvaluation` through the same contract.
 
 `mapper` retains the original graph and calls `map-builder` with both values. The transformation `ProjectGraph + GraphEvaluation → ProjectMap` is pure. `mapper` sends the returned map to `map-persist` for storage and `map-web` for display. A saved map can be reopened without rerunning analysis or evaluation.
 

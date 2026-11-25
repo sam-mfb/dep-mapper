@@ -1,0 +1,5 @@
+{
+  "name": "backup-sample",
+  "private": true,
+  "workspaces": ["packages/*"]
+}

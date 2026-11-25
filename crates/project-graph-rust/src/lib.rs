@@ -84,6 +84,16 @@ impl<C: Cargo> ProjectGrapher for RustGrapher<C> {
         let revision = self.cargo.revision(&selection.root)?;
         let names: Vec<String> = workspace.members.iter().map(|m| m.name.clone()).collect();
         let crates = self.cargo.compile(&selection.root, &args, &names)?;
+        // A build that compiled nothing through the driver, for example
+        // because Cargo found it up to date, would give an empty graph.
+        let compiled = crates.iter().any(|records| {
+            matches!(records.first(), Some(Record::Unit(unit)) if unit.package == package)
+        });
+        if !compiled {
+            return Err(GraphingError {
+                message: format!("the build produced no records for `{package}`"),
+            });
+        }
         Ok(assemble::graph(
             &workspace,
             &crates,
