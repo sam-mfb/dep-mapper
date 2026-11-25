@@ -469,3 +469,45 @@ fn long_routes_pieces_are_asked_page_by_page() {
         .collect();
     assert_eq!(asked, ["routes/app+disk page 1", "routes/app+disk page 2"]);
 }
+
+#[test]
+fn a_module_piece_with_several_pages_is_asked_whole() {
+    let mut graph = testing::graph();
+    let main = graph.items[&project_graph::ItemId("app::main".into())].clone();
+    for n in 0..3 {
+        let mut item = main.clone();
+        item.name = format!("helper{n}");
+        graph
+            .items
+            .insert(project_graph::ItemId(format!("app::helper{n}")), item);
+    }
+    let model = FakeModel::new(sensible);
+    let log = RecordedLog::default();
+    let settings = EvaluatorSettings {
+        routes_per_page: 1,
+        ..EvaluatorSettings::recommended()
+    };
+    evaluate_with(&model, &log, settings, &graph).unwrap();
+    let turns = model.first_turns();
+    let app = turns
+        .iter()
+        .find(|t| t.starts_with("Module piece") && t.contains("(module:app)"))
+        .unwrap();
+    for handle in [
+        "item:app::main",
+        "item:app::helper0",
+        "item:app::helper1",
+        "item:app::helper2",
+        "route:r-wire",
+        "route:r-write",
+    ] {
+        assert!(app.contains(handle), "{handle} missing from\n{app}");
+    }
+    let asked = log
+        .0
+        .borrow()
+        .iter()
+        .filter(|e| matches!(e, LogEvent::Asking { piece } if piece == "module:app"))
+        .count();
+    assert_eq!(asked, 1, "one request for the whole module");
+}
