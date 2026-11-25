@@ -362,3 +362,104 @@ fn the_source_build_is_kept_and_a_map_without_one_has_none() {
     map.source = None;
     assert!(view(&map).meta.source.is_none());
 }
+
+#[test]
+fn each_part_keeps_its_status_and_each_note_its_kind() {
+    let mut map = mixed_map();
+    map.modules.get_mut(&ModuleId("new".into())).unwrap().status = Status::ProposedAddition;
+    map.modules
+        .get_mut(&ModuleId("stray".into()))
+        .unwrap()
+        .status = Status::ProposedRemoval;
+    for dependency in map.dependencies.values_mut() {
+        dependency.status = Status::ProposedAddition;
+    }
+    map.routes.get_mut(&RouteId("open".into())).unwrap().status = Status::ProposedRemoval;
+    map.evidence.insert(
+        CitationId("note".into()),
+        MapEvidence {
+            kind: EvidenceKind::Proposal,
+            build_unit: None,
+            summary: "Why.".into(),
+            location: None,
+        },
+    );
+    let view = view(&map);
+    let statuses: Vec<(&str, &str)> = view
+        .crates
+        .iter()
+        .map(|c| (c.name.as_str(), c.status))
+        .collect();
+    assert_eq!(
+        statuses,
+        [
+            ("core", "observed"),
+            ("new", "addition"),
+            ("stray", "removal")
+        ]
+    );
+    assert!(
+        view.edges
+            .iter()
+            .all(|e| e.status == "addition" && e.update.is_none())
+    );
+    assert_eq!(view.routes[0].status, "removal");
+    assert_eq!(view.evidence["fact"].kind, "source");
+    assert_eq!(view.evidence["note"].kind, "proposal");
+}
+
+#[test]
+fn an_update_keeps_the_part_in_code_and_lists_what_changes() {
+    let mut map = mixed_map();
+    let core = map.modules.get_mut(&ModuleId("core".into())).unwrap();
+    let mut proposed = core.description.clone();
+    if let Review::Judged { judgment, .. } = &mut proposed {
+        judgment.kind = ModuleKind::Effect;
+        judgment.layer = Some(LayerName("Elsewhere".into()));
+    }
+    core.status = Status::ProposedUpdate { proposed };
+    let stray = DependencyId {
+        from: ModuleId("stray".into()),
+        to: ModuleId("core".into()),
+    };
+    let dependency = map.dependencies.get_mut(&stray).unwrap();
+    dependency.status = Status::ProposedUpdate {
+        proposed: Review::Deferred {
+            reason: "Unsure.".into(),
+        },
+    };
+    let view = view(&map);
+    let core = crate_named(&view, "core");
+    assert_eq!((core.status, core.kind.as_str()), ("update", "logic"));
+    let update = core.update.as_ref().expect("an update");
+    assert_eq!(update.kind, "effect");
+    // "Elsewhere" is not a listed layer, so the module would be unassigned.
+    assert_eq!(update.layer, UNASSIGNED_LAYER);
+    let changes: Vec<(&str, &str, &str)> = update
+        .changes
+        .iter()
+        .map(|c| (c.field, c.before.as_str(), c.after.as_str()))
+        .collect();
+    assert_eq!(
+        changes,
+        [
+            ("kind", "logic", "effect"),
+            ("layer", "Core", UNASSIGNED_LAYER)
+        ]
+    );
+    let edge = view.edges.iter().find(|e| e.from == "stray").unwrap();
+    let update = edge.update.as_ref().expect("an update");
+    assert_eq!(update.roles, ["unreviewed"]);
+    let changes: Vec<(&str, &str, &str)> = update
+        .changes
+        .iter()
+        .map(|c| (c.field, c.before.as_str(), c.after.as_str()))
+        .collect();
+    assert_eq!(
+        changes,
+        [
+            ("roles", "direct use, other: logs through", ""),
+            ("review", "judged", "deferred")
+        ]
+    );
+}

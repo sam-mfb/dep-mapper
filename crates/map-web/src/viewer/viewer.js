@@ -3,11 +3,15 @@
 "use strict";
 
 (function () {
-  const graph = JSON.parse(document.getElementById("map-data").textContent);
+  // The map as embedded. `graph` is the map as the chosen view shows it
+  // (see derive): in Planned and Changes, an update's new judgment replaces
+  // the one found in code.
+  const source = JSON.parse(document.getElementById("map-data").textContent);
+  let graph = source;
   // The map names its layers; modules whose layer is not listed are in map-web's
   // Unassigned band, which the view adds to the list.
   const concerns = {
-    layers: graph.layers.map((name) => ({ id: name, title: name })),
+    layers: source.layers.map((name) => ({ id: name, title: name })),
     kinds: [
       { id: "logic", title: "Logic", about: "Computes results using its inputs and supplied capabilities." },
       { id: "effect", title: "Effect", about: "Interacts with something outside the program, such as files, a terminal or a network service." },
@@ -61,9 +65,15 @@
   const PAD_X = 16;
   const PAD_Y = 14;
 
-  const crates = new Map(graph.crates.map((c) => [c.name, c]));
+  let crates = new Map();
   const state = {
     selected: null,
+    // The route opened in the panel, kept in the address with the module.
+    route: null,
+    // Which version of the map is shown: "current" (what is in code),
+    // "planned" (the code after the proposals) or "changes" (both, with
+    // every proposal marked).
+    show: "changes",
     // The crates whose checkbox is ticked, by name: they light up their
     // arrows, neighbours and delivery lines. `selected` is the crate the
     // panel shows; clicking a box sets it and highlights nothing. Both are
@@ -75,6 +85,38 @@
     hiddenLayers: new Set(),
     query: "",
   };
+
+  // ---- Proposals ----
+  // A part's status: "observed", or a proposed "addition", "update" or
+  // "removal". Each view shows some of them.
+  const DEFAULT_SHOW = "changes";
+  const SHOWS = {
+    current: ["observed", "update", "removal"],
+    planned: ["observed", "addition", "update"],
+    changes: ["observed", "addition", "update", "removal"],
+  };
+  const STATUS_TAGS = { addition: "new", update: "update", removal: "remove" };
+  const STATUS_WORDS = { addition: "Proposed addition", update: "Proposed update", removal: "Proposed removal" };
+  const hasProposals = [...source.crates, ...source.edges, ...source.routes].some((p) => p.status !== "observed");
+  const statusShown = (status) => SHOWS[state.show].includes(status);
+  // Proposals are marked only in the Changes view.
+  const markOf = (status) => (state.show === "changes" && status !== "observed" ? status : null);
+  // The map as the chosen view shows it. A part with an update takes the
+  // update's judgment, except in Current; `inCode` keeps the part as found.
+  function derive() {
+    const take = (part) => (state.show !== "current" && part.update
+      ? { ...part, ...part.update, inCode: part, changes: part.update.changes }
+      : { ...part, changes: part.update ? part.update.changes : [] });
+    graph = { ...source, crates: source.crates.map(take), edges: source.edges.map(take), routes: source.routes.map(take) };
+    crates = new Map(graph.crates.map((c) => [c.name, c]));
+    // A group keeps only the partners in its head's layer in this view.
+    groupsOf = new Map(Object.entries(graph.groups || {})
+      .filter(([head]) => crates.has(head))
+      .map(([head, partners]) => [head, partners.filter((n) => crates.has(n) && crates.get(n).layer === crates.get(head).layer)])
+      .filter(([, partners]) => partners.length));
+    headOf = new Map([...groupsOf].flatMap(([head, partners]) => partners.map((n) => [n, head])));
+    placed = null;
+  }
 
   const $ = (id) => document.getElementById(id);
   const el = (tag, attrs, ...children) => {
@@ -112,13 +154,13 @@
   // still opens its panel; no arrow or delivery line goes to or from it.
   const crateLayer = (name) => concernOf(name).layer || "";
   const layerShown = (name) => !state.hiddenLayers.has(crateLayer(name));
-  const drawnCrate = (name) => kindShown(name);
+  const drawnCrate = (name) => kindShown(name) && statusShown(concernOf(name).status);
   // A program hidden by the eye on its box is faded like a hidden layer's
   // crates, with no arrow or delivery line from it.
   const programShown = (name) => !state.hiddenPrograms.has(name);
   const visibleCrate = (name) => drawnCrate(name) && layerShown(name) && programShown(name);
   const shownRoles = (e) => e.roles.filter((r) => !state.hiddenRoles.has(r));
-  const visibleEdge = (e) => visibleCrate(e.from) && visibleCrate(e.to) && shownRoles(e).length > 0;
+  const visibleEdge = (e) => statusShown(e.status) && visibleCrate(e.from) && visibleCrate(e.to) && shownRoles(e).length > 0;
 
   // ---- Layout: one band per layer, each band ordered to cut crossings ----
   // A band holds up to PER_LINE units on a line, and wraps onto more
@@ -137,16 +179,17 @@
 
   // The groups, by head, and the head each partner goes under. A group
   // whose crates are not all on the map is ignored.
-  const groupsOf = new Map(Object.entries(graph.groups || {})
-    .filter(([head, partners]) => crates.has(head) && partners.every((n) => crates.has(n))));
-  const headOf = new Map([...groupsOf].flatMap(([head, partners]) => partners.map((n) => [n, head])));
+  // Set by derive for the chosen view.
+  let groupsOf = new Map();
+  let headOf = new Map();
   const groupOf = (name) => {
     const head = headOf.get(name) || name;
     return [head, ...(groupsOf.get(head) || [])];
   };
 
-  // Every box's place is worked out once, from all the crates, and never again: a filter only stops drawing a crate,
-  // leaving its slot empty, so no box moves.
+  // Every box's place is worked out once for each view, from all the crates: a filter only stops drawing a crate,
+  // leaving its slot empty, so no box moves. Choosing another view lays the map out again, since an update
+  // can move a module to another layer.
   let placed = null;
   function layout() {
     if (!placed) placed = computeLayout();
@@ -311,6 +354,9 @@
       el("span", {}, el("strong", {}, "Roles: "), usedRoles().map((role) => [role, ROLES[role]]).map(([role, words]) =>
         el("span", { class: "key-item", title: ROLE_ABOUT[role] }, el("span", { class: `role-key role-${role}` }), words))),
       el("span", { class:"key-item" }, el("span",{class:"route-key"}), "Injected capability"),
+      hasProposals && state.show === "changes" ? el("span", {}, el("strong", {}, "Proposals: "),
+        ["addition", "update", "removal"].map((status) => el("span", { class: "key-item", title: STATUS_WORDS[status] },
+          el("span", { class: `status-key status-${status}` }), STATUS_TAGS[status]))) : "",
       el("span", { class:"muted" }, "Tick a module to see the injections that pass through it."));
   }
 
@@ -393,16 +439,25 @@
       // heads keep the spacing of the ends.
       const roles = shownRoles(e);
       const mid = Math.floor((roles.length - 1) / 2);
+      const mark = markOf(e.status);
       roles.forEach((role, i) => {
+        const d = edgePath(a, b, (i - mid) * STROKE_GAP);
         const path = svg("path", {
-          d: edgePath(a, b, (i - mid) * STROKE_GAP),
-          class: `edge role-${role}`,
+          d,
+          class: `edge role-${role}` + (mark ? ` status-${mark}` : ""),
           "data-edge": `${e.from}>${e.to}`,
           ...(i === mid
             ? (a.lead ? { "marker-start": `url(#head-${roles[0]})`, "data-head": drawnEnds(e)[1] } : { "data-shared": drawnEnds(e)[1] }) : {}),
         });
         edgeLayer.append(path);
         view.edgeNodes.push({ edge: e, path });
+        // A marked proposal's second line along the stroke: the hollow of an
+        // addition's double line, or the line through an update or removal.
+        if (mark) {
+          const inner = svg("path", { d, class: `edge-inner status-${mark}` });
+          edgeLayer.append(inner);
+          view.edgeNodes.push({ edge: e, path: inner });
+        }
       });
       const hit = svg("path", { d: edgePath(a, b), class: "edge-hit", "data-edge": `${e.from}>${e.to}` });
       hit.addEventListener("mousemove", (ev) => {
@@ -423,21 +478,26 @@
     for (const [name, p] of view.position) {
       if (!drawnCrate(name)) continue;
       const c = crates.get(name);
+      const mark = markOf(c.status);
       const g = svg("g", {
         class: "node" +
           (layerShown(name) ? "" : " layer-off") + (programShown(name) ? "" : " program-off") +
-          ` kind-${kindSlug(concernOf(name).kind)}`,
+          ` kind-${kindSlug(concernOf(name).kind)}` + (mark ? ` status-${mark}` : ""),
         transform: `translate(${p.x},${p.y})`,
         tabindex: "0",
         role: "button",
         "aria-label": `${name}: ${concernOf(name).concern || ""}`,
       });
+      // An update's halo, outside the box.
+      if (mark === "update") g.append(svg("rect", { class: "halo", x: -4, y: -4, width: BOX_W + 8, height: BOX_H + 8, rx: 10 }));
       g.append(svg("rect", { width: BOX_W, height: BOX_H }));
       const label = svg("text", { x: LABEL_X, y: 17, class: "name" });
       label.textContent = name;
       const sub = svg("text", { x: LABEL_X, y: 32, class: "sub" });
       sub.textContent = subtitle(c);
       g.append(label, sub);
+      // A removal is struck through its name.
+      if (mark === "removal") g.append(svg("line", { class: "strike", x1: 4, y1: 13, x2: BOX_W - 4, y2: 13 }));
       g.append(pickBox(name));
       if (c.program) g.append(programEye(name));
       g.addEventListener("click", () => select(name));
@@ -715,7 +775,9 @@
   }
 
   function subtitle(c) {
-    return c.kind === "composition" ? "program · composition" : c.kind;
+    const kind = c.kind === "composition" ? "program · composition" : c.kind;
+    const mark = markOf(c.status);
+    return mark ? `${kind} · ${STATUS_TAGS[mark]}` : kind;
   }
 
   // The checkbox in a box's top corner: adds the crate to the selection,
@@ -824,7 +886,7 @@
     const active = new Map();
     for (const route of graph.routes) {
       // Other routes are described in the panel. Only injections add lines to the graph.
-      if (!route.injection) continue;
+      if (!route.injection || !statusShown(route.status)) continue;
       const names = routeNames(route);
       if (!names.some(n=>state.checked.has(n)) || !names.every(visibleCrate)) continue;
       if (state.hiddenRoles.has(route.first_role)) continue;
@@ -907,9 +969,55 @@
   // It highlights nothing and ticks nothing.
   function select(name) {
     state.selected = name;
+    state.route = null;
     paint();
     renderPanel();
-    try { history.replaceState(null, "", name ? `#${name}` : "#"); } catch (_) { /* file:// may refuse */ }
+    writeHash();
+  }
+
+  // The address keeps the selected module, a route opened in the panel and
+  // the view: #module=<name>&route=<id>&view=<view>. A bare #name selects a
+  // module, as older links do.
+  function readHash() {
+    const text = location.hash.slice(1);
+    if (!text) return {};
+    if (!text.includes("=")) return { module: decodeURIComponent(text) };
+    const params = new URLSearchParams(text);
+    return { module: params.get("module"), route: params.get("route"), show: params.get("view") };
+  }
+  function writeHash() {
+    const params = new URLSearchParams();
+    if (state.selected) params.set("module", state.selected);
+    if (state.route) params.set("route", state.route);
+    if (state.show !== DEFAULT_SHOW) params.set("view", state.show);
+    const text = params.toString();
+    try { history.replaceState(null, "", text ? `#${text}` : location.pathname + location.search); } catch (_) { /* file:// may refuse */ }
+  }
+  // Shows what the address names: its view, module and route.
+  function applyHash() {
+    const wanted = readHash();
+    const show = wanted.show && SHOWS[wanted.show] ? wanted.show : DEFAULT_SHOW;
+    if (show !== state.show || !placed) setShowNow(show);
+    const route = wanted.route ? graph.routes.find((r) => r.id === wanted.route) : null;
+    const module = wanted.module && crates.has(wanted.module) ? wanted.module : route ? routeNames(route)[0] : null;
+    state.selected = module;
+    state.route = route && module && routeNames(route).includes(module) ? route.id : null;
+    paint();
+    renderPanel();
+  }
+  // Chooses a view and draws the map for it; the caller renders the panel.
+  function setShowNow(show) {
+    state.show = show;
+    derive();
+    for (const input of document.querySelectorAll("#show-set input")) input.checked = input.value === show;
+    draw();
+    renderResults();
+  }
+  function setShow(show) {
+    if (!SHOWS[show] || show === state.show) return;
+    setShowNow(show);
+    renderPanel();
+    writeHash();
   }
 
   // The ticked crates, at the top of the panel: each opens its own panel,
@@ -947,14 +1055,39 @@
     if (!e) return el("li", { class: "empty" }, `Missing evidence: ${id}`);
     const where = [locationText(e.location), e.unit ? `build unit ${e.unit}` : null].filter(Boolean).join(" · ");
     return el("li", {}, mark ? el("span", { class: "badge" }, mark) : null, " ", prose(e.summary),
-      el("div", { class: "muted mono evidence-where" }, where || "No source location"));
+      el("div", { class: "muted mono evidence-where" }, where || (e.kind === "proposal" ? "Proposal note" : "No source location")));
   }
   // A review: its decision, its reason, and the evidence it cites.
   function reviewBody(review) {
     if (review.status === "unreviewed") return el("p", { class: "empty" }, "No reviewer has judged this yet.");
     if (review.status === "deferred") return el("p", {}, el("strong", {}, "Deferred. "), review.reason);
+    // Source evidence first, then the proposal notes as the rationale.
+    const cited = [[review.primary, "primary"], ...review.supporting.map((id) => [id, null])];
+    const isNote = ([id]) => (graph.evidence[id] || {}).kind === "proposal";
+    const found = cited.filter((c) => !isNote(c));
+    const notes = cited.filter(isNote);
     return el("div", {}, el("p", {}, review.reason),
-      el("ul", { class: "evidence" }, evidenceEntry(review.primary, "primary"), review.supporting.map((id) => evidenceEntry(id, null))));
+      found.length ? el("ul", { class: "evidence" }, found.map(([id, mark]) => evidenceEntry(id, mark))) : null,
+      notes.length ? [el("h4", { class: "rationale-head" }, "Rationale"),
+        el("ul", { class: "evidence rationale" }, notes.map(([id, mark]) => evidenceEntry(id, mark)))] : null);
+  }
+  // A part's status as a badge, unless it is simply in code.
+  function statusBadge(part) {
+    if (part.status === "observed") return null;
+    return el("span", { class: `badge status-badge status-${part.status}`, title: STATUS_WORDS[part.status] }, STATUS_TAGS[part.status]);
+  }
+  // The review a part has in code, and the one an update proposes.
+  const codeReview = (part) => (part.inCode || part).review;
+  const proposedReview = (part) => (part.inCode ? part.review : part.update && part.update.review);
+  // What an update changes, field by field.
+  function changeList(part) {
+    if (!part.changes || !part.changes.length) return null;
+    return el("ul", { class: "changes" }, part.changes.map((c) => el("li", {},
+      el("strong", {}, `${c.field}: `), prose(c.before || "none"), " → ", prose(c.after || "none"))));
+  }
+  // A part's proposed update: what changes, and the update's own review.
+  function updateBody(part) {
+    return el("div", {}, changeList(part), reviewBody(proposedReview(part)));
   }
   // A route's hops in order, each with its support and evidence, then its end.
   function hopList(r) {
@@ -973,12 +1106,23 @@
     return el("button",{class:"crate-link",type:"button",onclick:()=>select(n)},n);
   }
   function routeList(routes) {
-    return el("ul",{class:"flows"},routes.map(r=>el("li",{},
-      el("div",{class:"item-head"},el("strong",{},r.id),r.roles.length?el("span",{class:"muted"},roleWords(r,ROLE_NAMES)):null,reviewBadge(r.review)),
+    // A route's details opened here are kept in the address.
+    const toggled=(r)=>(ev)=>{ if(ev.target.open) state.route=r.id; else if(state.route===r.id) state.route=null; writeHash(); };
+    return el("ul",{class:"flows"},routes.map(r=>el("li",{class:r.id===state.route?"current-route":"","data-route":r.id},
+      el("div",{class:"item-head"},el("strong",{},r.id),r.roles.length?el("span",{class:"muted"},roleWords(r,ROLE_NAMES)):null,statusBadge(r),reviewBadge(r.review)),
       el("div",{},routeNames(r).map((n,i)=>[i?" → ":"",moduleLink(n)])),
       r.review.status==="judged"?el("p",{},r.review.reason):el("p",{class:"muted"},reviewWords(r.review)),
-      el("details",{class:"route-detail"},el("summary",{},`Hops and evidence (${r.hops.length})`),hopList(r),
+      changeList(r),
+      el("details",{class:"route-detail",...(r.id===state.route?{open:""}:{}),ontoggle:toggled(r)},el("summary",{},`Hops and evidence (${r.hops.length})`),hopList(r),
         r.review.status==="judged"?el("div",{},el("h4",{},"Review evidence"),reviewBody(r.review)):null))));
+  }
+  // How many parts each kind of proposal touches, for the overview.
+  function proposalCounts() {
+    if (!hasProposals) return null;
+    const parts = [...source.crates, ...source.edges, ...source.routes];
+    const words = { addition: ["addition", "additions"], update: ["update", "updates"], removal: ["removal", "removals"] };
+    const counts = Object.keys(words).map((s) => [s, parts.filter((p) => p.status === s).length]).filter(([, k]) => k);
+    return el("p", {}, "Proposed: ", counts.map(([s, k], i) => [i ? ", " : "", `${k} ${words[s][k === 1 ? 0 : 1]}`]), ".");
   }
   function renderPanel() {
     const panel=$("panel"), n=state.selected, highlighted=selectionList();
@@ -995,6 +1139,7 @@
             el("li",{},el("strong",{},"Graph. "),el("span",{class:"mono"},graph.meta.source.graph_id))]
           :el("li",{},"Draft: no source analyzed.")),
         open.length?el("p",{},"Awaiting review: ",open.map(([s,k],i)=>[i?", ":"",`${k} ${REVIEW_WORDS[s].toLowerCase()}`]),"."):null,
+        proposalCounts(),
         el("ul",{class:"overview"},concerns.layers.map(l=>el("li",{},el("strong",{},l.title+". "),
           plural(graph.crates.filter(c=>c.layer===l.id).length,"module")))),
         section("gaps","Coverage gaps",graph.gaps.length,()=>el("ul",{class:"evidence"},graph.gaps.map(g=>
@@ -1002,23 +1147,26 @@
         el("p",{}, "Select a module for its surface, review and routes. Tick its corner to highlight its dependencies.")].filter(Boolean));
       return;
     }
-    const c=crates.get(n), routes=graph.routes.filter(r=>routeNames(r).includes(n));
+    const c=crates.get(n), routes=graph.routes.filter(r=>statusShown(r.status)&&routeNames(r).includes(n));
     const neighbors=(edges,other)=>el("ul",{class:"flows"},edges.map(e=>el("li",{},
-      el("div",{class:"item-head"},moduleLink(e[other]),el("span",{class:"muted"},roleWords(e)),reviewBadge(e.review)),
-      el("div",{},e.detail))));
-    const includes=graph.edges.filter(e=>e.from===n), users=graph.edges.filter(e=>e.to===n);
+      el("div",{class:"item-head"},moduleLink(e[other]),el("span",{class:"muted"},roleWords(e)),statusBadge(e),reviewBadge(e.review)),
+      el("div",{},e.detail),changeList(e))));
+    const includes=graph.edges.filter(e=>statusShown(e.status)&&e.from===n), users=graph.edges.filter(e=>statusShown(e.status)&&e.to===n);
     const surface=()=>el("ul",{class:"items"},c.surface.map(item=>el("li",{},
       el("div",{class:"item-head"},el("span",{class:"kind"},item.kind),el("code",{},item.name)),
       item.signature?el("div",{class:"item-doc"},el("code",{},item.signature)):null,
       item.location?el("div",{class:"item-doc mono"},locationText(item.location)):null)));
     panel.replaceChildren(...[el("h2",{},c.name),highlighted,
-      el("div",{class:"badges"},el("span",{class:"badge kind-badge kind-"+kindSlug(c.kind)},"kind: "+c.kind),el("span",{class:"badge"},layerTitle(c.layer)),reviewBadge(c.review)),
+      el("div",{class:"badges"},el("span",{class:"badge kind-badge kind-"+kindSlug(c.kind)},"kind: "+c.kind),el("span",{class:"badge"},layerTitle(c.layer)),statusBadge(c),reviewBadge(c.review)),
       c.concern?el("p",{},c.concern):null, section("surface","Surface",c.surface.length,surface),
-      section("review","Review",1,()=>reviewBody(c.review)),
-      section("wiring","Routes",routes.length,()=>routeList(routes)),
+      section("review",c.status==="addition"?"Proposed review":"Review",1,()=>reviewBody(codeReview(c))),
+      c.status==="update"?section("update","Proposed update",1,()=>updateBody(c),null,true):null,
+      section("wiring","Routes",routes.length,()=>routeList(routes),null,routes.some(r=>r.id===state.route)),
       section("includes","Depends on",includes.length,()=>neighbors(includes,"to")),
       section("included-in","Used by",users.length,()=>neighbors(users,"from"))].filter(Boolean));
     panel.scrollTop=0;
+    const current=panel.querySelector(".current-route");
+    if (current) current.scrollIntoView({block:"nearest"});
   }
 
   // A panel section the viewer opens and closes, with a count beside its
@@ -1081,6 +1229,8 @@
   function hiddenWhy(name) {
     const why = [];
     if (!kindShown(name)) why.push(`its kind, ${crateKind(name)}, is hidden`);
+    const status = concernOf(name).status;
+    if (!statusShown(status)) why.push(`the ${state.show} view leaves out a ${STATUS_WORDS[status].toLowerCase()}`);
     return why.join(", and ");
   }
   const layerTitle = (id) => (concerns.layers.find((l) => l.id === id) || {}).title || id;
@@ -1102,8 +1252,8 @@
 
   document.title = `${graph.meta.project} module map`;
   $("map-title").textContent = document.title;
-  const source = graph.meta.source;
-  $("meta").textContent = source ? [source.revision, source.target, source.configuration].join(" · ") : "Draft: no source analyzed";
+  const built = source.meta.source;
+  $("meta").textContent = built ? [built.revision, built.target, built.configuration].join(" · ") : "Draft: no source analyzed";
 
   $("search").addEventListener("input", (ev) => {
     state.query = ev.target.value.trim().toLowerCase();
@@ -1177,6 +1327,8 @@
     state.hiddenRoles = new Set();
     state.hiddenLayers = new Set();
     state.hiddenPrograms = new Set();
+    if (state.show !== DEFAULT_SHOW) { state.show = DEFAULT_SHOW; derive(); }
+    for (const input of document.querySelectorAll("#show-set input")) input.checked = input.value === DEFAULT_SHOW;
     for (const box of document.querySelectorAll(".menu-panel input[type=checkbox]")) box.checked = box.defaultChecked;
     for (const id of menus) setMenu(id, false);
     $("search").value = "";
@@ -1198,15 +1350,13 @@
     if (ev.target === $("graph") || ev.target.classList.contains("band")) select(null);
   });
 
-  // A link to `#crate` selects that crate, also from the address bar.
-  window.addEventListener("hashchange", () => {
-    const name = resolveHash();
-    if (crates.has(name) && name !== state.selected) select(name);
-  });
-  function resolveHash() { return decodeURIComponent(location.hash.slice(1)); }
-  const initial = resolveHash();
-  draw();
+  // The view control appears only on a map with proposals.
+  $("show-set").hidden = !hasProposals;
+  for (const input of document.querySelectorAll("#show-set input")) {
+    input.addEventListener("change", () => { if (input.checked) setShow(input.value); });
+  }
+  // An address edited by hand, or a link followed, shows what it names.
+  window.addEventListener("hashchange", applyHash);
   window.matchMedia("(max-width: 600px)").addEventListener("change",()=>{ placed=null; draw(); });
-  if (initial && crates.has(initial)) select(initial);
-  else renderPanel();
+  applyHash();
 })();
