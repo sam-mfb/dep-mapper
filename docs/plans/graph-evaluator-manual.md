@@ -37,17 +37,17 @@ Two levels:
 - **Rejected.** A handle that does not resolve. A module that is not in the graph. An unknown module kind or relationship kind. An empty reason. A judgment or relationship with no citations. A cluster that is not in the cluster list.
 - **Warned, then kept.** A module judgment whose citations never touch that module. A relationship that cites no route. A kind that its evidence does not show, such as `Implements` without an `Implements` fact.
 
-The CLI or server applies these checks as each answer arrives. `evaluate` then repeats every check against the in-memory graph, which is authoritative. If a rejected answer remains, `evaluate` returns an `EvaluationError` that lists each problem. It never drops an answer silently. Warnings travel with the workbook for the person reviewing the map.
+The CLI or server applies these checks as each answer arrives. `evaluate` then repeats every check against the in-memory graph, which is authoritative. If a rejected answer remains, `evaluate` returns an `EvaluationError` that lists each problem. It never drops an answer silently. Warnings stay in the workbook for the person reviewing the map. `GraphEvaluation` does not change.
 
 ### 4. How a large graph is split
 
 The unit of work is a **piece**:
 
 1. **Module piece.** One module with its items, build units, gaps, and the routes that start, pass through or end in it. Its outcome is a module decision.
-2. **Cluster piece.** Every module decision so far. Its outcome is the ordered cluster list. It runs after the module pieces, and module judgments can then be moved between clusters.
+2. **Cluster piece.** Every module decision so far. Its outcome is the ordered cluster list. It runs after the module pieces and before the pair pieces. Answers stay replaceable, so an optional final cluster pass after the pair pieces can revise clusters in light of the relationships.
 3. **Pair piece.** The routes that join two modules, in either direction, and those that leave one module for external or unresolved endpoints. Its outcome is relationships. The module decisions for both ends are shown as context. A relationship that spans three modules, such as B adapting A for C, cites routes from more than one pair; the pair piece can show the other routes through the middle module on request.
 
-A piece over a set size, such as 40 routes, is paged. The index lists every piece with its status: not started, in progress, done. Each piece keeps its answers in its own file, so several subagents can work on separate pieces at once without conflicting writes.
+A piece over a set size, such as 40 routes, is paged. The index lists every piece with its status: not started, in progress, done. Each piece keeps its answers in its own file, so several subagents can work on separate pieces at once without conflicting writes. Whether to split the work among subagents is up to the harness. The evaluator does not arrange it; it only makes parallel work safe.
 
 Source text: the graph holds spans as file and byte range, not text. The workbook shows each span as a path and line range. An injected `SourceText` dependency converts byte ranges to lines and can embed a short excerpt. The agent can read the rest from the checkout.
 
@@ -94,9 +94,3 @@ Reasons:
 - Resuming a workbook keeps finished pieces.
 - Paging and pair grouping on a graph with many routes.
 - An end-to-end run with a scripted `AgentRunner` that records known answers through the CLI, against the kashkeshet backup example in `proof/`.
-
-## Open questions for Sam
-
-1. Should the cluster piece come before or after the pair pieces? Before is simpler. After would let relationships inform clusters.
-2. Should warnings stay in the workbook only, or should `GraphEvaluation` gain a place for them? This plan keeps the contract unchanged.
-3. Is a per-piece subagent split something the evaluator should arrange, or left to the harness? This plan leaves it to the harness and only makes it safe.
