@@ -141,6 +141,7 @@ fn uses(tcx: TyCtxt<'_>) -> Vec<r::Record> {
             UseKind::Glob => "*".to_string(),
             UseKind::ListStem => continue,
         };
+        // Whether other crates can name it, not just whether it says `pub`.
         let local = item.owner_id.def_id;
         let Some(at) = span(tcx, item.span) else {
             continue;
@@ -163,7 +164,7 @@ fn uses(tcx: TyCtxt<'_>) -> Vec<r::Record> {
                 module: def(tcx, tcx.parent_module_from_def_id(local).to_def_id()),
                 target: def(tcx, target),
                 local_name: local_name.clone(),
-                public: tcx.visibility(local).is_public(),
+                public: tcx.effective_visibilities(()).is_exported(local),
                 span: at.clone(),
             }));
         }

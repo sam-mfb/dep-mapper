@@ -114,3 +114,9 @@ fn the_pinned_toolchain_is_the_repository_toolchain() {
         "rust-toolchain.toml and PINNED_TOOLCHAIN must name the same version"
     );
 }
+
+#[test]
+fn a_build_that_produced_no_records_for_the_package_is_an_error() {
+    let error = grapher().build_graph(&selection("consumer")).unwrap_err();
+    assert!(error.message.contains("no records for `consumer`"));
+}

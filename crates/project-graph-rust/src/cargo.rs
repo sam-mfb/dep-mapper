@@ -57,6 +57,22 @@ fn io_error(what: &str, path: &Path, error: impl std::fmt::Display) -> GraphingE
     }
 }
 
+/// The `cargo clean` flags that clear `members` for the same build as
+/// `cargo_args`. Cargo keeps each `--target` platform's products apart, so
+/// the platform is passed on.
+fn clean_args(cargo_args: &[String], members: &[String]) -> Vec<String> {
+    let mut args: Vec<String> = members
+        .iter()
+        .flat_map(|m| ["-p".to_string(), m.clone()])
+        .collect();
+    if let Some(at) = cargo_args.iter().position(|a| a == "--target")
+        && let Some(triple) = cargo_args.get(at + 1)
+    {
+        args.extend(["--target".to_string(), triple.clone()]);
+    }
+    args
+}
+
 impl Cargo for ToolchainCargo {
     fn metadata(&self, root: &Path) -> Result<String, GraphingError> {
         let output = run(
@@ -97,12 +113,13 @@ impl Cargo for ToolchainCargo {
         // Cargo skips crates it has already checked, and a skipped crate
         // writes no records. Clearing the members forces them through the
         // driver while dependencies stay cached.
-        let mut clean = self.cargo(root);
-        clean.args(["clean", "--target-dir"]).arg(self.target_dir());
-        for member in members {
-            clean.args(["-p", member]);
-        }
-        run(&mut clean, "cargo clean")?;
+        run(
+            self.cargo(root)
+                .args(["clean", "--target-dir"])
+                .arg(self.target_dir())
+                .args(clean_args(cargo_args, members)),
+            "cargo clean",
+        )?;
         run(
             self.cargo(root)
                 .args(["check", "--locked", "--target-dir"])
@@ -127,5 +144,43 @@ impl Cargo for ToolchainCargo {
             );
         }
         Ok(crates)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn strings(words: &[&str]) -> Vec<String> {
+        words.iter().map(|w| w.to_string()).collect()
+    }
+
+    #[test]
+    fn clean_clears_every_member_for_the_selected_platform() {
+        assert_eq!(
+            clean_args(
+                &strings(&[
+                    "-p",
+                    "app",
+                    "--features",
+                    "x",
+                    "--target",
+                    "x86_64-unknown-linux-gnu"
+                ]),
+                &strings(&["app", "lib"]),
+            ),
+            strings(&[
+                "-p",
+                "app",
+                "-p",
+                "lib",
+                "--target",
+                "x86_64-unknown-linux-gnu"
+            ])
+        );
+        assert_eq!(
+            clean_args(&strings(&["-p", "app"]), &strings(&["app"])),
+            strings(&["-p", "app"])
+        );
     }
 }
