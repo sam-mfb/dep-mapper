@@ -1,8 +1,14 @@
 [package]
 name = "project-graph"
-description = "Build-scoped source evidence and routes between project packages"
+description = "Build-scoped source evidence, routes between project packages, and the contract for building them"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
+
+[dependencies]
+thiserror.workspace = true
+
+[features]
+testing = []

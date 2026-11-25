@@ -1,13 +1,21 @@
 //! The source evidence for one project build. Identifiers join records within
-//! this snapshot. The grapher assigns them and retains separate route IDs for
-//! different wiring sites, even when their supplier and consumer coincide.
+//! this snapshot. The implementation that builds the graph assigns them and
+//! retains separate route IDs for different wiring sites, even when their
+//! supplier and consumer coincide.
 //! Route hops follow the capability or value from its origin toward a consumer.
 //! Routes are how the graph groups its facts. A direct use, such as an import
 //! or a call, is a route of one hop.
+//!
+//! `ProjectGrapher` is the contract for building a graph for a selected
+//! build. Each language implements it end to end.
 
 mod graph_ref;
+mod grapher;
 
 pub use graph_ref::{Cited, GraphRef};
+#[cfg(any(test, feature = "testing"))]
+pub use grapher::testing;
+pub use grapher::{BuildSelection, GraphingError, ProjectGrapher};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]

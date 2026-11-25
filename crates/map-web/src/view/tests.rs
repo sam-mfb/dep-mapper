@@ -139,7 +139,7 @@ fn the_example_keeps_every_module_dependency_and_route() {
     let view = view(&sharsheret());
     assert_eq!(
         (view.crates.len(), view.edges.len(), view.routes.len()),
-        (13, 24, 11)
+        (11, 20, 11)
     );
     assert_eq!(view.layers, ["Program", "Map", "Evaluation", "Evidence"]);
     assert!(view.crates.iter().all(|c| c.review.status == "judged"));
@@ -152,35 +152,95 @@ fn the_example_keeps_every_module_dependency_and_route() {
     assert_eq!(programs, ["mapper"]);
 }
 
+/// A route that carries `Thing` from `a` through the listed modules.
+fn route_through(modules: &[&str], description: Review<RouteDescription>) -> MapRoute {
+    let fact = CitationId("fact".into());
+    let hops = modules
+        .iter()
+        .enumerate()
+        .map(|(index, module)| MapHop {
+            to: HopTarget::Project {
+                point: ProjectPoint {
+                    module: ModuleId((*module).into()),
+                    item: None,
+                },
+                link: if index == 0 {
+                    HopLink::ReceiverUsesSender
+                } else {
+                    HopLink::SenderUsesReceiver
+                },
+            },
+            evidence: fact.clone(),
+            support: HopSupport::Established,
+            role: Some(if index == 0 {
+                UseRole::Wires
+            } else {
+                UseRole::SuppliesInput
+            }),
+        })
+        .collect();
+    MapRoute {
+        use_site: Some(fact.clone()),
+        origin: RoutePoint::Project(ProjectPoint {
+            module: ModuleId("a".into()),
+            item: Some("Thing".into()),
+        }),
+        hops,
+        end: MapRouteEnd::ReachedUse,
+        description,
+    }
+}
+
+fn judged_route(role: UseRole) -> Review<RouteDescription> {
+    Review::Judged {
+        judgment: RouteDescription {
+            role,
+            other_roles: vec![],
+        },
+        reason: "Because.".into(),
+        primary: CitationId("fact".into()),
+        supporting: vec![],
+    }
+}
+
 #[test]
 fn only_judged_injections_through_three_modules_are_drawn() {
-    let view = view(&sharsheret());
-    let mut drawn: Vec<&str> = view
+    let mut map = mixed_map();
+    map.routes = BTreeMap::from([
+        (
+            RouteId("full".into()),
+            route_through(&["b", "c"], judged_route(UseRole::FullInjection)),
+        ),
+        (
+            RouteId("adapted".into()),
+            route_through(&["b", "c"], judged_route(UseRole::AdaptedInjection)),
+        ),
+        (
+            RouteId("too-short".into()),
+            route_through(&["b"], judged_route(UseRole::FullInjection)),
+        ),
+        (
+            RouteId("direct".into()),
+            route_through(&["b", "c"], judged_route(UseRole::DirectUse)),
+        ),
+        (
+            RouteId("unreviewed".into()),
+            route_through(&["b", "c"], Review::Unreviewed),
+        ),
+    ]);
+    let view = view(&map);
+    let drawn: Vec<&str> = view
         .routes
         .iter()
         .filter(|r| r.injection)
         .map(|r| r.id.as_str())
         .collect();
-    drawn.sort();
-    assert_eq!(
-        drawn,
-        [
-            "read-a-rust-project",
-            "read-a-typescript-project-illustrative",
-        ]
-    );
-    let route = view
-        .routes
-        .iter()
-        .find(|r| r.id == "read-a-rust-project")
-        .unwrap();
-    assert_eq!(
-        route.modules,
-        ["project-reader-rust", "mapper", "project-grapher"]
-    );
+    assert_eq!(drawn, ["adapted", "full"]);
+    let route = view.routes.iter().find(|r| r.id == "full").unwrap();
+    assert_eq!(route.modules, ["a", "b", "c"]);
     assert_eq!(
         (route.carry.as_str(), route.first_role.as_str()),
-        ("RustReader", "wires")
+        ("Thing", "wires")
     );
 }
 
@@ -198,10 +258,10 @@ fn a_contract_groups_its_implementations_in_the_same_layer() {
                 ]
             ),
             (
-                "project-reader".to_string(),
+                "project-graph".to_string(),
                 vec![
-                    "project-reader-rust".to_string(),
-                    "project-reader-typescript".to_string()
+                    "project-graph-rust".to_string(),
+                    "project-graph-typescript".to_string()
                 ]
             ),
         ])
