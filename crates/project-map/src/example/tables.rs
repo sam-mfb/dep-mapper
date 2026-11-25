@@ -125,7 +125,7 @@ pub(super) fn modules() -> Vec<ModuleRow> {
             layer: "Evaluation",
             kind: ModuleKind::Effect,
             concern: "Obtains an architectural judgment from a language model.",
-            ownership: "Owns model interaction and interpretation of the API response. Provider-specific requests and responses stay inside this module.",
+            ownership: "Owns model interaction and interpretation of the API response. Provider-specific requests and responses stay inside this module, behind its own model-client contract; Mapper injects the HTTP transport.",
             surface: vec![("LlmEvaluator", ItemKind::Type, None)],
         },
         ModuleRow {
