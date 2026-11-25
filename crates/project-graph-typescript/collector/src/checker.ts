@@ -35,6 +35,8 @@ export interface Checker {
   calledDeclaration(call: ts.CallExpression | ts.NewExpression): ts.Declaration | undefined;
   /** The static type of an expression or declaration name. */
   typeAt(node: ts.Node): ts.Type;
+  /** The property of a type with the given name, including inherited ones. */
+  propertyOf(type: ts.Type, name: string): ts.Symbol | undefined;
   /** The type of the slot an expression is written into, when the code declares one. */
   slotType(expression: ts.Expression): ts.Type | undefined;
   /** The module symbols a source file exports, aliases resolved. */
