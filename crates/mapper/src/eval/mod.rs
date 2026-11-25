@@ -24,3 +24,12 @@ pub fn eval(command: &EvalCommand, out: &mut dyn std::io::Write) -> Result<Outco
         out,
     )
 }
+
+/// Whether the command stopped only because its reader went away, as when
+/// its output is piped into `head`. That ends the command without an error.
+pub fn reader_left(error: &CommandError) -> bool {
+    matches!(error, CommandError::Output(e) if e.kind() == std::io::ErrorKind::BrokenPipe)
+}
+
+#[cfg(test)]
+mod tests;
