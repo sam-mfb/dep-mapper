@@ -34,14 +34,14 @@ fn map_says_which_piece_is_missing() {
         "--configuration",
         "default",
         "--evaluator",
-        "manual",
+        "llm",
         "--out",
         "unused.toml",
     ]);
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
-        "srs: project-graph-rust is not built yet\n"
+        "srs: graph-evaluator-llm is not built yet\n"
     );
 }
 

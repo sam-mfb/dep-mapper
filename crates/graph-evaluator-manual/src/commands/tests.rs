@@ -130,14 +130,14 @@ fn relationships_print_their_identifier_and_can_be_withdrawn() {
 }
 
 #[test]
-fn show_gives_a_handle_in_full_and_pages_of_long_pieces() {
+fn show_gives_a_handle_in_full_and_a_chosen_page_of_a_piece() {
     let session = Session::new();
     let (_, route) = session.run(&["show", "route:r-wire"]);
     assert!(route.starts_with("route:r-wire") && route.contains("via fact:f-construct"));
-    let (_, second) = session.run(&["show", "module/app", "--page", "2"]);
-    assert!(second.contains("(page 2 of 2)"));
+    let (_, first) = session.run(&["show", "module/app", "--page", "1"]);
+    assert!(first.contains("Module app"));
     assert!(matches!(
-        session.fail(&["show", "module/app", "--page", "3"]),
+        session.fail(&["show", "module/app", "--page", "2"]),
         CommandError::Usage(_)
     ));
     assert!(matches!(
@@ -225,4 +225,25 @@ fn the_instructions_name_the_project_and_the_command() {
     let text = instructions("srs eval", &workbook);
     assert!(text.starts_with("# Evaluating fixture"));
     assert!(text.contains("`srs eval submit`"));
+}
+
+#[test]
+fn skip_rest_sets_aside_the_uncovered_routes_of_a_piece_and_says_how_many() {
+    let session = Session::new();
+    let (outcome, text) = session.run(&[
+        "skip-rest",
+        "routes/app",
+        "--reason",
+        "Formatting and file writes.",
+    ]);
+    assert_eq!(outcome, Outcome::Done);
+    assert_eq!(text, "Recorded routes/app.\n1 routes set aside.\n");
+    let (_, again) = session.run(&["skip-rest", "routes/app", "--reason", "Again."]);
+    assert_eq!(again, "Recorded routes/app.\n0 routes set aside.\n");
+    let (_, index) = session.run(&["index"]);
+    assert!(
+        index
+            .lines()
+            .any(|l| l.contains("done") && l.contains("routes/app "))
+    );
 }

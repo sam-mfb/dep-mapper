@@ -384,12 +384,15 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "graph-evaluator",
+ "graph-evaluator-manual",
  "map-builder",
  "map-draft",
  "map-persist",
  "map-preview",
  "map-web",
  "project-graph",
+ "project-graph-rust",
+ "project-graph-typescript",
  "project-map",
  "thiserror",
 ]
