@@ -170,12 +170,22 @@ name = "mapper"
 [[modules.mapper.surface]]
 name = "srs map"
 kind = "function"
-signature = "srs map <root> --language <rust|typescript> --target <target> --configuration <settings> --evaluator <manual|llm> --out <file> [--page <file>] [--serve <address>]"
+signature = "srs map <root> --language <rust|typescript> [--cache <dir>] --target <target> --configuration <settings> --evaluator <manual|llm> [--workbook <dir>] [--agent <none|wait|claude>] --out <file> [--page <file>] [--serve <address>]"
+
+[[modules.mapper.surface]]
+name = "srs eval"
+kind = "function"
+signature = "srs eval --workbook <dir> <command> [arguments...]"
+
+[[modules.mapper.surface]]
+name = "srs show"
+kind = "function"
+signature = "srs show <map> [--page <file>] [--serve <address>]"
 
 [modules.mapper.review]
 state = "judged"
 reason = "Gets a ProjectGraph from the selected language grapher and passes it to Graph evaluator for a GraphEvaluation. Supplies both to Map builder, then sends the resulting ProjectMap to Map persist and Map web."
-concern = "Coordinates collection, review, map construction and publication, and the checking and preview of drafts."
+concern = "Coordinates collection, review, map construction and publication, the display of saved maps, and the checking and preview of drafts."
 kind = "composition"
 layer = "Program"
 primary = "module:mapper"
