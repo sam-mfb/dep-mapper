@@ -23,7 +23,10 @@ function run(): void {
   }
   const root = path.resolve(values.root);
   const workspace = readWorkspace(root);
-  const checker = openTypeScript6(path.join(root, values.tsconfig));
+  const entries = new Map(
+    workspace.packages.flatMap((p) => (p.entry ? [[p.name, path.join(root, p.entry)] as const] : [])),
+  );
+  const checker = openTypeScript6(path.join(root, values.tsconfig), entries);
   const project = new Project(checker, workspace);
   const emit = (record: Record) => process.stdout.write(JSON.stringify(record) + "\n");
 

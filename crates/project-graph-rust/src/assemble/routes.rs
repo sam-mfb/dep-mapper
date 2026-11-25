@@ -57,8 +57,10 @@ pub(super) fn traced(
     for (unit, records) in units.iter(crates) {
         for record in records {
             match record {
-                r::Record::Flow(flow) => flows.extend(resolve.flow(unit, flow)),
-                r::Record::Receiver(receiver) => receivers.extend(resolve.receiver(unit, receiver)),
+                r::Record::Flow(flow) => flows.extend(resolve.at(unit).flow(unit, flow)),
+                r::Record::Receiver(receiver) => {
+                    receivers.extend(resolve.at(unit).receiver(unit, receiver))
+                }
                 _ => {}
             }
         }
