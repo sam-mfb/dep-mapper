@@ -14,3 +14,13 @@ export class Installer {
 export function installWith(backups: Backups, name: string): string {
   return backups.write(name);
 }
+
+export interface InstallParts {
+  backups: Backups;
+  name: string;
+}
+
+// The returned closure captures `backups`, which came out of the parts.
+export function installLater({ backups, name }: InstallParts): () => string {
+  return () => backups.write(name);
+}
