@@ -54,7 +54,9 @@ pub struct Def {
     pub crate_id: String,
     /// The definition path without the crate name, unique within the crate.
     pub path: String,
-    /// The compiler's readable name for the definition.
+    /// The compiler's readable name for the definition, written from its
+    /// defining crate, such as `serde::de::Deserialize` or
+    /// `<clap::Id as std::convert::From<&str>>::from`.
     pub name: String,
 }
 

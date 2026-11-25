@@ -283,10 +283,23 @@ impl Resolver<'_> {
                 }
             }
         }
-        self.workspace
-            .third_party
-            .contains_key(&def.crate_name)
-            .then(|| (Endpoint::External(def.name.clone()), None))
+        let package = self.workspace.third_party.get(&def.crate_name)?;
+        Some((Endpoint::External(external_name(package, def)), None))
+    }
+}
+
+/// A third-party definition's name, starting with its package so a reader
+/// can tell which package it belongs to: `serde::de::Deserialize`, or
+/// `thiserror::<&T as thiserror::AsDisplay>::as_display` for an
+/// implementation's method.
+fn external_name(package: &str, def: &r::Def) -> String {
+    let in_crate = def
+        .name
+        .strip_prefix(&def.crate_name)
+        .and_then(|rest| rest.strip_prefix("::"));
+    match in_crate {
+        Some(rest) => format!("{package}::{rest}"),
+        None => format!("{package}::{}", def.name),
     }
 }
 

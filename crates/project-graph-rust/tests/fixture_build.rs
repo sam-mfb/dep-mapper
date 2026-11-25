@@ -239,3 +239,22 @@ fn a_trait_function_without_self_has_no_receiver_to_trace() {
     });
     assert_eq!(traced.count(), 0, "its argument is not a receiver");
 }
+
+#[test]
+fn an_outside_name_reached_through_a_local_alias_starts_with_its_package() {
+    let externals: Vec<&String> = graph()
+        .facts
+        .values()
+        .flat_map(|f| [&f.subject, &f.object])
+        .filter_map(|e| match e {
+            Endpoint::External(name) => Some(name),
+            _ => None,
+        })
+        .collect();
+    assert!(externals.iter().any(|n| n.as_str() == "clock::now"));
+    let stray: Vec<_> = externals
+        .iter()
+        .filter(|n| !n.starts_with("clock"))
+        .collect();
+    assert!(stray.is_empty(), "{stray:?}");
+}

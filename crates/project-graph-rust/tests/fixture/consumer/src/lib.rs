@@ -22,3 +22,13 @@ mod inner {
 pub fn make<T: store::Build>(seed: u32) -> T {
     T::build(seed)
 }
+
+// What serde's derives generate: the dependency under a local alias.
+const _: () = {
+    extern crate clock as _clock;
+    impl Parts {
+        pub fn stamp() -> u32 {
+            _clock::now()
+        }
+    }
+};
