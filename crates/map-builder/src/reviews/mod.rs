@@ -84,15 +84,26 @@ impl Reviews {
     }
 
     /// Relationships that apply to no route, hop or dependency on the map.
+    /// A hop takes only the first relationship citing its fact, so a later
+    /// one that reaches nothing else is reported too.
     pub(crate) fn unplaced(
         &self,
         routes: &BTreeMap<RouteId, MapRoute>,
         dependencies: &BTreeMap<DependencyId, MapDependency>,
     ) -> Vec<BuildProblem> {
         let mut subjects: Vec<CitationId> = vec![];
+        let mut placed = vec![false; self.relationships.len()];
         for (id, route) in routes {
             subjects.push(route_citation(&project_graph::RouteId(id.0.clone())));
-            subjects.extend(route.hops.iter().map(|hop| hop.evidence.clone()));
+            for hop in &route.hops {
+                let first = self
+                    .relationships
+                    .iter()
+                    .position(|relationship| relationship.citations.contains(&hop.evidence));
+                if let Some(index) = first {
+                    placed[index] = true;
+                }
+            }
         }
         for dependency in dependencies.values() {
             subjects.extend(dependency.evidence.iter().cloned());
@@ -100,7 +111,9 @@ impl Reviews {
         self.relationships
             .iter()
             .enumerate()
-            .filter(|(_, placed)| !placed.citations.iter().any(|c| subjects.contains(c)))
+            .filter(|(index, relationship)| {
+                !placed[*index] && !relationship.citations.iter().any(|c| subjects.contains(c))
+            })
             .map(|(relationship, _)| BuildProblem::UnplacedRelationship { relationship })
             .collect()
     }
