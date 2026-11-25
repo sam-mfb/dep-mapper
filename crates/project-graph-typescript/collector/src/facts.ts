@@ -520,30 +520,59 @@ class FileFacts {
     return this.project.span(node).start;
   }
 
-  /** `name` bound by an object pattern reads the field it names; an array pattern element is handled with its literal. */
+  /**
+   * A name bound by an object pattern reads the field it names. With a
+   * default, the read happens when the field is defined and the default when
+   * it is undefined, so both moves are conditional. Array pattern elements
+   * are followed by `arrayPattern` when the value is an array literal; any
+   * other array element's default is conditional on that element.
+   */
   private bindingElement(element: ts.BindingElement, name: ts.Identifier): void {
     const destination = this.placeOf(element, name.text);
-    if (element.initializer) this.flow(element.initializer, destination, "store", null);
-    if (!ts.isObjectBindingPattern(element.parent)) return;
+    const pattern = element.parent;
+    if (ts.isArrayBindingPattern(pattern)) {
+      if (arrayLiteralOf(pattern) || !element.initializer) return;
+      const index = pattern.elements.indexOf(element);
+      this.flow(element.initializer, destination, "store", `[${index}] === undefined`);
+      return;
+    }
     const property = element.propertyName
       ? ts.isIdentifier(element.propertyName) || ts.isStringLiteral(element.propertyName)
         ? element.propertyName.text
         : undefined
       : name.text;
     if (property === undefined) return;
-    const symbol = this.checker.propertyOf(this.checker.typeAt(element.parent), property);
+    if (element.initializer) {
+      this.flow(element.initializer, destination, "store", `${property} === undefined`);
+    }
+    const symbol = this.checker.propertyOf(this.checker.typeAt(pattern), property);
     const source = symbol?.valueDeclaration && this.fieldOf(symbol.valueDeclaration, property);
-    if (source) this.write(source, { kind: "read" }, destination, element);
+    const condition = element.initializer ? `${property} !== undefined` : null;
+    if (source) this.write(source, { kind: "read" }, destination, element, condition);
   }
 
-  /** `const [a, b] = [x, y]` moves each element of the literal into its name. */
+  /**
+   * `const [a = d] = [x]` moves each element of the literal into its name.
+   * An element the literal supplies replaces the default, unless its type
+   * admits undefined; then each move is conditional. An element the literal
+   * leaves out takes the default.
+   */
   private arrayPattern(pattern: ts.ArrayBindingPattern, initializer: ts.Expression): void {
     const literal = skipOuter(initializer);
     if (!ts.isArrayLiteralExpression(literal)) return;
     pattern.elements.forEach((element, index) => {
+      if (ts.isOmittedExpression(element) || !ts.isIdentifier(element.name)) return;
+      const destination = this.placeOf(element, element.name.text);
       const value = literal.elements[index];
-      if (!value || ts.isOmittedExpression(element) || !ts.isIdentifier(element.name)) return;
-      this.flow(value, this.placeOf(element, element.name.text), "store", null);
+      const supplied = value !== undefined && !ts.isOmittedExpression(value) && !ts.isSpreadElement(value);
+      if (!supplied) {
+        if (element.initializer) this.flow(element.initializer, destination, "store", null);
+        return;
+      }
+      const optional = element.initializer !== undefined && mayBeUndefined(this.checker.typeAt(value));
+      const text = value.getText(this.file);
+      this.flow(value, destination, "store", optional ? `${text} !== undefined` : null);
+      if (optional) this.flow(element.initializer!, destination, "store", `${text} === undefined`);
     });
   }
 
@@ -594,6 +623,19 @@ function isClosure(node: ts.Node, project: Project): boolean {
     (ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) &&
     !project.items.has(node)
   );
+}
+
+/** The array literal a variable's array pattern destructures, if any. */
+function arrayLiteralOf(pattern: ts.ArrayBindingPattern): ts.ArrayLiteralExpression | undefined {
+  const declaration = pattern.parent;
+  if (!ts.isVariableDeclaration(declaration) || !declaration.initializer) return undefined;
+  const value = skipOuter(declaration.initializer);
+  return ts.isArrayLiteralExpression(value) ? value : undefined;
+}
+
+function mayBeUndefined(type: ts.Type): boolean {
+  const parts = type.isUnion() ? type.types : [type];
+  return parts.some((t) => (t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.Void)) !== 0);
 }
 
 function both(outer: string | null, inner: string): string {

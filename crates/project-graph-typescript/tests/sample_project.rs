@@ -625,8 +625,51 @@ fn a_value_route_runs_through_an_object_literal_a_pattern_and_a_capture() {
 }
 
 #[test]
-fn an_array_pattern_takes_each_element_of_its_literal() {
+fn an_array_pattern_takes_each_element_of_its_literal_and_skips_an_impossible_default() {
     let (_, store) = only_fact(|f| f.object == place(MAIN, "main", "spare"));
     assert_eq!(store.kind, FactKind::Store);
     assert_eq!(store.subject, place(MAIN, "main", "os"));
+
+    let (call, _) = only_fact(|f| {
+        f.object == item(OS, "OsBackups.write") && matches!(f.kind, FactKind::Call(_))
+    });
+    let routes = routes_to(call);
+    assert_eq!(routes.len(), 1, "{routes:#?}");
+    assert_eq!(routes[0].origin, item(OS, "OsBackups"));
+    assert!(
+        routes[0]
+            .hops
+            .iter()
+            .all(|h| h.support == Support::Established)
+    );
+}
+
+#[test]
+fn an_object_pattern_default_and_the_field_read_are_each_conditional() {
+    let (call, _) = only_fact(|f| {
+        f.subject == item(MAIN, "main")
+            && f.object == item(API, "Backups.prune")
+            && matches!(f.kind, FactKind::Call(_))
+    });
+    let routes = routes_to(call);
+    assert_eq!(routes.len(), 2, "{routes:#?}");
+    let possible = |condition: &str| Support::Possible {
+        condition: Some(condition.into()),
+    };
+
+    let default = routes
+        .iter()
+        .find(|r| r.origin == item(MAIN, "MemoryBackups"))
+        .expect("a route from the default");
+    assert_eq!(default.end, RouteEnd::ReachedUse);
+    assert_eq!(default.hops[0].to, place(MAIN, "pick", "backups"));
+    assert_eq!(default.hops[0].support, possible("backups === undefined"));
+
+    let supplied = routes
+        .iter()
+        .find(|r| r.origin == place(MAIN, "Choice", "backups"))
+        .expect("a route through the field");
+    assert!(matches!(supplied.end, RouteEnd::Stopped { .. }));
+    assert_eq!(hop_kinds(supplied)[0], &FactKind::Read);
+    assert_eq!(supplied.hops[0].support, possible("backups !== undefined"));
 }

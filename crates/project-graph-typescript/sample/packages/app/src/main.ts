@@ -17,6 +17,15 @@ class MemoryBackups {
   }
 }
 
+interface Choice {
+  backups?: Backups;
+}
+
+// The default runs only when the caller leaves `backups` out.
+function pick({ backups = new MemoryBackups() }: Choice): Backups {
+  return backups;
+}
+
 export function main(dryRun: boolean): string {
   const os = new OsBackups();
   os.prune(3);
@@ -25,6 +34,9 @@ export function main(dryRun: boolean): string {
   console.log(systemClock.now());
   const later = installLater({ backups: os, name: "later" });
   later();
-  const [spare] = [os];
+  // The literal supplies the element, so the default never runs.
+  const [spare = new MemoryBackups()] = [os];
+  spare.write("spare");
+  pick({}).prune(1);
   return installer.install("tools");
 }
