@@ -87,6 +87,7 @@ fn workspace() -> Workspace {
             ),
         ],
         third_party: [("clock".to_string(), "clock".to_string())].into(),
+        depends_on: BTreeMap::new(),
     }
 }
 
@@ -316,6 +317,7 @@ fn receiver(node: r::Node, lo: usize) -> r::Record {
     r::Record::Receiver(r::ReceiverRecord {
         owner: def("consumer", CONSUMER, "::consume"),
         contract: def("supplier", SUPPLIER, "::Backups::write"),
+        contract_trait: def("supplier", SUPPLIER, "::Backups"),
         receiver: node,
         span: span(lo),
     })
@@ -336,9 +338,18 @@ fn flow(from: r::Node, to: r::Node, kind: r::FlowKind) -> r::Record {
 /// defined in consumer itself.
 fn crates_with_flows() -> Vec<Vec<r::Record>> {
     let mut crates = crates();
-    crates[0].push(item("supplier", SUPPLIER, "::OsBackups", r::ItemKind::Type));
+    crates[0].extend([
+        item("supplier", SUPPLIER, "::OsBackups", r::ItemKind::Type),
+        os_backups_implements(),
+    ]);
     crates[1].extend([
         item("consumer", CONSUMER, "::Local", r::ItemKind::Type),
+        // `Local` implements `Backups` in consumer itself.
+        r::Record::Impl(r::ImplRecord {
+            self_type: Some(def("consumer", CONSUMER, "::Local")),
+            contract: def("supplier", SUPPLIER, "::Backups"),
+            span: span(0),
+        }),
         flow(
             r::Node::Type(def("supplier", SUPPLIER, "::OsBackups")),
             local("::consume", 2),
@@ -428,7 +439,10 @@ fn shadowed_variables_with_one_name_stay_apart() {
         name: Some("backups".into()),
     };
     let mut crates = crates();
-    crates[0].push(item("supplier", SUPPLIER, "::OsBackups", r::ItemKind::Type));
+    crates[0].extend([
+        item("supplier", SUPPLIER, "::OsBackups", r::ItemKind::Type),
+        os_backups_implements(),
+    ]);
     crates[1].extend([
         flow(
             r::Node::Type(def("supplier", SUPPLIER, "::OsBackups")),
@@ -456,11 +470,163 @@ fn outside_names_start_with_their_package() {
         name: name.into(),
     };
     assert_eq!(
-        external_name("tokio-util", &def("tokio_util::codec::Framed")),
+        external_name(None, "tokio-util", &def("tokio_util::codec::Framed")),
         "tokio-util::codec::Framed"
     );
     assert_eq!(
-        external_name("tokio-util", &def("<&T as tokio_util::Decode>::decode")),
+        external_name(
+            Some("tokio-util"),
+            "tokio-util",
+            &def("<&T as tokio_util::Decode>::decode")
+        ),
         "tokio-util::<&T as tokio_util::Decode>::decode"
+    );
+}
+
+#[test]
+fn a_hop_after_an_unreported_library_pass_is_possible() {
+    let crates = {
+        let mut crates = crates();
+        crates[0].extend([
+            item("supplier", SUPPLIER, "::OsBackups", r::ItemKind::Type),
+            os_backups_implements(),
+        ]);
+        crates[1].extend([
+            flow(
+                r::Node::Type(def("supplier", SUPPLIER, "::OsBackups")),
+                local("::consume", 2),
+                r::FlowKind::Coerce,
+            ),
+            // `let b = maybe.unwrap();`
+            flow(
+                local("::consume", 2),
+                local("::consume", 3),
+                r::FlowKind::Through,
+            ),
+            receiver(local("::consume", 3), 10),
+        ]);
+        crates
+    };
+    let graph = graph(&workspace(), &crates, snapshot());
+    let reached: Vec<_> = traced_routes(&graph)
+        .into_iter()
+        .filter(|r| r.end == RouteEnd::ReachedUse)
+        .collect();
+    assert_eq!(reached.len(), 1);
+    assert_eq!(reached[0].hops.len(), 1, "the pass itself is not a hop");
+    assert!(matches!(
+        reached[0].hops[0].support,
+        Support::Possible { .. }
+    ));
+}
+
+fn os_backups_implements() -> r::Record {
+    r::Record::Impl(r::ImplRecord {
+        self_type: Some(def("supplier", SUPPLIER, "::OsBackups")),
+        contract: def("supplier", SUPPLIER, "::Backups"),
+        span: span(0),
+    })
+}
+
+#[test]
+fn an_origin_that_does_not_implement_the_trait_is_not_a_route() {
+    let mut crates = crates();
+    crates[0].extend([
+        item("supplier", SUPPLIER, "::OsBackups", r::ItemKind::Type),
+        item("supplier", SUPPLIER, "::Settings", r::ItemKind::Type),
+        os_backups_implements(),
+    ]);
+    crates[1].extend([
+        // An enum-like local holding both a Settings and the backups.
+        flow(
+            r::Node::Type(def("supplier", SUPPLIER, "::Settings")),
+            local("::consume", 2),
+            r::FlowKind::Construct,
+        ),
+        flow(
+            r::Node::Type(def("supplier", SUPPLIER, "::OsBackups")),
+            local("::consume", 2),
+            r::FlowKind::Coerce,
+        ),
+        receiver(local("::consume", 2), 10),
+    ]);
+    let graph = graph(&workspace(), &crates, snapshot());
+    let origins: Vec<_> = traced_routes(&graph)
+        .into_iter()
+        .map(|r| r.origin.clone())
+        .collect();
+    assert_eq!(origins, [item_id("supplier/lib:supplier::OsBackups")]);
+}
+
+#[test]
+fn a_cross_module_call_reached_only_by_non_implementers_stops() {
+    let mut crates = crates();
+    crates[0].extend([
+        item("supplier", SUPPLIER, "::Settings", r::ItemKind::Type),
+        os_backups_implements(),
+    ]);
+    crates[1].extend([
+        flow(
+            r::Node::Type(def("supplier", SUPPLIER, "::Settings")),
+            local("::consume", 2),
+            r::FlowKind::Construct,
+        ),
+        receiver(local("::consume", 2), 10),
+    ]);
+    let graph = graph(&workspace(), &crates, snapshot());
+    let traced = traced_routes(&graph);
+    assert_eq!(traced.len(), 1);
+    let RouteEnd::Stopped { reason, .. } = &traced[0].end else {
+        panic!("expected a stopped route: {traced:#?}");
+    };
+    assert!(reason.contains("do not implement"));
+}
+
+#[test]
+fn an_implementation_for_a_standard_library_type_keeps_the_filter() {
+    let mut crates = crates();
+    crates[0].extend([
+        item("supplier", SUPPLIER, "::OsBackups", r::ItemKind::Type),
+        item("supplier", SUPPLIER, "::Settings", r::ItemKind::Type),
+        os_backups_implements(),
+        // `impl Backups for String`
+        r::Record::Impl(r::ImplRecord {
+            self_type: Some(def("alloc", "a1", "::string::String")),
+            contract: def("supplier", SUPPLIER, "::Backups"),
+            span: span(0),
+        }),
+    ]);
+    crates[1].extend([
+        flow(
+            r::Node::Type(def("supplier", SUPPLIER, "::Settings")),
+            local("::consume", 2),
+            r::FlowKind::Construct,
+        ),
+        flow(
+            r::Node::Type(def("supplier", SUPPLIER, "::OsBackups")),
+            local("::consume", 2),
+            r::FlowKind::Coerce,
+        ),
+        receiver(local("::consume", 2), 10),
+    ]);
+    let graph = graph(&workspace(), &crates, snapshot());
+    let origins: Vec<_> = traced_routes(&graph)
+        .into_iter()
+        .map(|r| r.origin.clone())
+        .collect();
+    assert_eq!(origins, [item_id("supplier/lib:supplier::OsBackups")]);
+}
+
+#[test]
+fn an_outside_name_reached_through_a_declared_dependency_starts_with_that_dependency() {
+    let def = r::Def {
+        crate_name: "serde_core".into(),
+        crate_id: "sc".into(),
+        path: "::de::Deserialize".into(),
+        name: "serde_core::de::Deserialize".into(),
+    };
+    assert_eq!(
+        external_name(Some("serde"), "serde_core", &def),
+        "serde::serde_core::de::Deserialize"
     );
 }
