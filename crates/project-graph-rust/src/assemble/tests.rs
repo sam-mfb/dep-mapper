@@ -630,3 +630,81 @@ fn an_outside_name_reached_through_a_declared_dependency_starts_with_that_depend
         "serde::serde_core::de::Deserialize"
     );
 }
+
+#[test]
+fn a_stopped_route_names_the_parameter_nothing_in_the_build_supplies() {
+    let mut crates = crates();
+    crates[0].push(os_backups_implements());
+    crates[1].extend([
+        // `consume(backups)` is only called from tests outside this build.
+        flow(
+            r::Node::Param {
+                function: def("consumer", CONSUMER, "::consume"),
+                index: 1,
+            },
+            local("::consume", 9),
+            r::FlowKind::Copy,
+        ),
+        receiver(local("::consume", 9), 80),
+    ]);
+    let graph = graph(&workspace(), &crates, snapshot());
+    let traced = traced_routes(&graph);
+    assert_eq!(traced.len(), 1);
+    let RouteEnd::Stopped { reason, .. } = &traced[0].end else {
+        panic!("expected a stopped route: {traced:#?}");
+    };
+    assert_eq!(
+        reason,
+        "the value enters as argument 1 of `consumer::consume`, which nothing in this build supplies"
+    );
+}
+
+#[test]
+fn a_stop_at_a_search_bound_keeps_its_reason() {
+    // `consume` receives what nine nested calls return, the innermost
+    // returning its own parameter: one more level than the tracer follows.
+    let function = |level: usize| def("consumer", CONSUMER, &format!("::level{level}"));
+    let mut crates = crates();
+    crates[0].push(os_backups_implements());
+    crates[1].push(r::Record::Flow(r::FlowRecord {
+        from: r::Node::Returned {
+            function: function(0),
+        },
+        to: local("::consume", 9),
+        kind: r::FlowKind::Return,
+        call_site: Some("call0".into()),
+        span: Some(span(5)),
+    }));
+    for level in 1..9 {
+        crates[1].push(r::Record::Flow(r::FlowRecord {
+            from: r::Node::Returned {
+                function: function(level),
+            },
+            to: r::Node::Returned {
+                function: function(level - 1),
+            },
+            kind: r::FlowKind::Return,
+            call_site: Some(format!("call{level}")),
+            span: Some(span(5)),
+        }));
+    }
+    crates[1].extend([
+        flow(
+            r::Node::Param {
+                function: def("consumer", CONSUMER, "::consume"),
+                index: 1,
+            },
+            r::Node::Returned {
+                function: function(8),
+            },
+            r::FlowKind::Copy,
+        ),
+        receiver(local("::consume", 9), 80),
+    ]);
+    let graph = graph(&workspace(), &crates, snapshot());
+    let traced = traced_routes(&graph);
+    let RouteEnd::Stopped { reason, .. } = &traced[0].end else {
+        panic!("expected a stopped route: {traced:#?}");
+    };
+    assert!(reason.contains("nested calls"), "{reason}");
+}
