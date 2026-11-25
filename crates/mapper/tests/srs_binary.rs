@@ -34,13 +34,72 @@ fn map_says_which_piece_is_missing() {
         "--configuration",
         "default",
         "--evaluator",
-        "manual",
+        "llm",
         "--out",
         "unused.toml",
     ]);
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
-        "srs: project-graph-rust is not built yet\n"
+        "srs: graph-evaluator-llm is not built yet\n"
     );
+}
+
+/// A fresh folder holding the example map saved as `base.toml` and `draft`
+/// as `draft.toml`.
+fn draft_folder(name: &str, draft: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("srs-draft-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let base = map_persist::save(&map_persist::MapDocument::Map(
+        project_map::example::sharsheret(),
+    ));
+    std::fs::write(dir.join("base.toml"), base).unwrap();
+    std::fs::write(dir.join("draft.toml"), draft).unwrap();
+    dir
+}
+
+const DRAFT: &str = "format = 1\nkind = \"draft\"\nbase = \"base.toml\"\n\n[modules.map-cache]\nname = \"map-cache\"\nreview = { state = \"unreviewed\" }\n";
+
+#[test]
+fn draft_check_passes_a_sound_draft_and_fails_on_problems() {
+    let dir = draft_folder("check", DRAFT);
+    let draft = dir.join("draft.toml");
+    let output = srs(&["draft", "check", draft.to_str().unwrap()]);
+    assert!(output.status.success(), "{output:?}");
+
+    std::fs::write(&draft, DRAFT.replace("unreviewed", "unknown")).unwrap();
+    let output = srs(&["draft", "check", draft.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!("{}:7:", draft.display())),
+        "{stderr}"
+    );
+    assert!(stderr.contains("the draft has 1 problem(s)"), "{stderr}");
+}
+
+#[test]
+fn draft_render_writes_the_page() {
+    let dir = draft_folder("render", DRAFT);
+    let out = dir.join("draft.html");
+    let output = srs(&[
+        "draft",
+        "render",
+        dir.join("draft.toml").to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+    ]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(std::fs::read_to_string(out).unwrap().contains("map-cache"));
+}
+
+#[test]
+fn the_architecture_map_has_no_problems() {
+    let draft = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/architecture/sharsheret.toml"
+    );
+    let output = srs(&["draft", "check", draft]);
+    assert!(output.status.success(), "{output:?}");
 }

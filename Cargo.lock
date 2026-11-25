@@ -231,6 +231,10 @@ dependencies = [
 name = "graph-evaluator-llm"
 version = "0.1.0"
 dependencies = [
+ "graph-evaluator",
+ "graph-evaluator-pieces",
+ "project-graph",
+ "serde",
  "serde_json",
  "thiserror",
  "ureq",
@@ -380,10 +384,15 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "graph-evaluator",
+ "graph-evaluator-manual",
  "map-builder",
+ "map-draft",
  "map-persist",
+ "map-preview",
  "map-web",
  "project-graph",
+ "project-graph-rust",
+ "project-graph-typescript",
  "project-map",
  "thiserror",
 ]
@@ -436,6 +445,24 @@ name = "project-graph"
 version = "0.1.0"
 dependencies = [
  "thiserror",
+]
+
+[[package]]
+name = "project-graph-rust"
+version = "0.1.0"
+dependencies = [
+ "project-graph",
+ "project-graph-rust-records",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "project-graph-rust-records"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

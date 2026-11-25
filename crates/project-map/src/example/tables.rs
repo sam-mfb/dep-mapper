@@ -31,7 +31,7 @@ pub(super) fn modules() -> Vec<ModuleRow> {
             layer: "Evidence",
             kind: ModuleKind::Effect,
             concern: "Builds the project graph for a selected Rust build, tracing its routes from compiler evidence.",
-            ownership: "Owns Cargo and rustc access and the Rust rules that connect surfaces and handoffs into source-backed routes. Mapper constructs it and calls it through the ProjectGrapher contract.",
+            ownership: "Owns Cargo and rustc access and the Rust rules that connect surfaces and handoffs into source-backed routes. Its rustc driver (built separately, on the pinned toolchain) and the records crate the driver writes are part of it. Mapper constructs it and calls it through the ProjectGrapher contract.",
             surface: vec![("RustGrapher", ItemKind::Type, None)],
         },
         ModuleRow {
@@ -116,7 +116,7 @@ pub(super) fn modules() -> Vec<ModuleRow> {
                 "srs map",
                 ItemKind::Function,
                 Some(
-                    "srs map <root> --language <rust|typescript> --target <target> --configuration <settings> --evaluator <manual|llm> --out <file> [--page <file>] [--serve <address>]",
+                    "srs map <root> --language <rust|typescript> [--cache <dir>] --target <target> --configuration <settings> --evaluator <manual|llm> [--workbook <dir>] [--agent <none|wait|claude>] --out <file> [--page <file>] [--serve <address>]",
                 ),
             )],
         },
