@@ -749,3 +749,18 @@ fn a_relationship_that_only_reaches_a_hop_taken_by_an_earlier_one_is_reported() 
         Some(UseRole::Incidental)
     );
 }
+
+#[test]
+fn a_cluster_listed_twice_is_reported_and_keeps_its_first_place() {
+    let clusters = ["Program", "Core", "Program"].map(|name| ClusterName(name.into()));
+    let mut problems = vec![];
+    let layers = layers(clusters.iter(), &mut problems);
+    let names: Vec<_> = layers.iter().map(|layer| layer.0.as_str()).collect();
+    assert_eq!(names, ["Program", "Core"]);
+    assert_eq!(
+        problems,
+        [BuildProblem::DuplicateCluster(ClusterName(
+            "Program".into()
+        ))]
+    );
+}
