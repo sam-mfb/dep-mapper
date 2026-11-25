@@ -10,12 +10,16 @@
 //! [`commands`] are what a reader runs to read pieces and record answers.
 //! [`evaluator::ManualEvaluator`] ties these together behind the
 //! `GraphEvaluator` contract, with the worker behind an injected
-//! [`evaluator::AgentRunner`].
+//! [`evaluator::AgentRunner`]. [`runners`] has runners that wait for a
+//! person or start Claude Code, and [`checkout::CheckoutLines`] reads line
+//! numbers from the project checkout.
 
 pub use graph_evaluator_pieces::{answers, checking, handles, workbook};
 
+pub mod checkout;
 pub mod commands;
 pub mod evaluator;
+pub mod runners;
 pub mod store;
 
 #[cfg(test)]
