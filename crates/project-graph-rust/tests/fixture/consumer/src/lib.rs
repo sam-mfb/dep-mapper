@@ -38,3 +38,8 @@ const _: () = {
 pub async fn write_later(backups: Box<dyn Backups>) -> u32 {
     backups.write()
 }
+
+/// Uses a type `clock` re-exports from its own dependency, `tick`.
+pub fn first_tick() -> clock::Tick {
+    clock::Tick(1)
+}
