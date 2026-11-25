@@ -77,6 +77,11 @@ export type Record =
       condition: string | null;
       /** For a move into a callee's parameter or out of its result, the call site. */
       link: Link | null;
+      /**
+       * The move goes into or out of a slot that stands for many instances,
+       * such as a callback's argument, so a route through it is possible.
+       */
+      joins_instances: boolean;
     }
   /** A method call whose receiver the collector followed into the callee's `self`. */
   | { record: "receiver"; call: string; moves: string[] }
