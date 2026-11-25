@@ -1,0 +1,15 @@
+[package]
+name = "map-draft"
+description = "Lays a draft's proposals over its base map and reports what does not fit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+project-map.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+project-map = { workspace = true, features = ["example"] }

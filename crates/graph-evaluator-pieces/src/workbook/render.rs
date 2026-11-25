@@ -25,14 +25,14 @@ impl SourceLines for ByteOffsets {
 pub(super) struct Renderer<'a> {
     graph: &'a ProjectGraph,
     source: &'a dyn SourceLines,
-    command: &'a str,
+    command: Option<&'a str>,
 }
 
 impl<'a> Renderer<'a> {
     pub(super) fn new(
         graph: &'a ProjectGraph,
         source: &'a dyn SourceLines,
-        command: &'a str,
+        command: Option<&'a str>,
     ) -> Self {
         Renderer {
             graph,
@@ -117,11 +117,13 @@ impl<'a> Renderer<'a> {
                 let _ = writeln!(head, "- {}{}", gap.reason, at.unwrap_or_default());
             }
         }
-        let record = format!(
-            "\nTo record this module's decision:\n  {c} judge module:{m} --concern <text> --kind logic|effect|composition|contract --cluster <name> --reason <text> --cite <handle> [--cite <handle>...]\n  {c} defer module:{m} --reason <text>\nRun `{c} show <handle>` to see any route, fact or item in full.\n",
-            c = self.command,
-            m = id.0
-        );
+        let record = match self.command {
+            Some(c) => format!(
+                "\nTo record this module's decision:\n  {c} judge module:{m} --concern <text> --kind logic|effect|composition|contract --cluster <name> --reason <text> --cite <handle> [--cite <handle>...]\n  {c} defer module:{m} --reason <text>\nRun `{c} show <handle>` to see any route, fact or item in full.\n",
+                m = id.0
+            ),
+            None => String::new(),
+        };
         let lines: Vec<String> = routes.iter().map(|r| self.route_summary(r)).collect();
         paged(
             &head,
@@ -153,19 +155,24 @@ impl<'a> Renderer<'a> {
             .map(|m| m.0.as_str())
             .collect::<Vec<_>>()
             .join("+");
-        let record = format!(
-            "\nTo record what these routes mean:\n  {c} relate routes/{piece} --kind direct-use|implements|wires|supplies-input|full-injection|adapted-injection|incidental|other:<name> --reason <text> --cite <handle> [--cite <handle>...]\n  {c} skip-route <route handle> --reason <text>   (considered, carries no relationship)\nA relationship may cite routes from other pieces too.\n",
-            c = self.command
-        );
+        let record = match self.command {
+            Some(c) => format!(
+                "\nTo record what these routes mean:\n  {c} relate routes/{piece} --kind direct-use|implements|wires|supplies-input|full-injection|adapted-injection|incidental|other:<name> --reason <text> --cite <handle> [--cite <handle>...]\n  {c} skip-route <route handle> --reason <text>   (considered, carries no relationship)\nA relationship may cite routes from other pieces too.\n"
+            ),
+            None => String::new(),
+        };
         let details: Vec<String> = routes.iter().map(|r| self.route_detail(r)).collect();
         paged(&head, "Routes", &details, page_size, &record)
     }
 
     pub(super) fn clusters_page(&self) -> String {
-        format!(
-            "Clusters\n\nName the clusters the modules belong to, in the order a reader should meet them.\n`{c} show clusters` lists the module decisions recorded so far.\n\nTo record the list:\n  {c} clusters <name> [<name>...]\nRecording it again replaces it. Every cluster a module judgment names must be listed.\n",
-            c = self.command
-        )
+        let ask = "Clusters\n\nName the clusters the modules belong to, in the order a reader should meet them. Every cluster a module judgment names must be listed.\n";
+        match self.command {
+            Some(c) => format!(
+                "{ask}`{c} show clusters` lists the module decisions recorded so far.\n\nTo record the list:\n  {c} clusters <name> [<name>...]\nRecording it again replaces it.\n"
+            ),
+            None => ask.to_string(),
+        }
     }
 
     pub(super) fn item_detail(&self, id: &ItemId) -> String {

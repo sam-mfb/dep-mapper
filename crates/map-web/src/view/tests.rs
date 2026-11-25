@@ -146,7 +146,7 @@ fn the_example_keeps_every_module_dependency_and_route() {
     let view = view(&sharsheret());
     assert_eq!(
         (view.crates.len(), view.edges.len(), view.routes.len()),
-        (11, 20, 11)
+        (12, 23, 11)
     );
     assert_eq!(view.layers, ["Program", "Map", "Evaluation", "Evidence"]);
     assert!(view.crates.iter().all(|c| c.review.status == "judged"));
