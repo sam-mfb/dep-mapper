@@ -5,6 +5,7 @@ use std::process::Command;
 fn srs(args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_srs"))
         .args(args)
+        .env_remove("ANTHROPIC_API_KEY")
         .output()
         .expect("srs runs")
 }
@@ -23,7 +24,7 @@ fn a_usage_mistake_exits_with_status_2() {
 }
 
 #[test]
-fn map_says_which_piece_is_missing() {
+fn map_without_an_api_key_stops_before_analysis() {
     let output = srs(&[
         "map",
         ".",
@@ -41,7 +42,7 @@ fn map_says_which_piece_is_missing() {
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
-        "srs: graph-evaluator-llm is not built yet\n"
+        "srs: --evaluator llm needs a Claude API key in ANTHROPIC_API_KEY\n"
     );
 }
 

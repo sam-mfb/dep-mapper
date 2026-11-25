@@ -114,6 +114,15 @@ fn preview(draft: &Path, listen: SocketAddr) -> Result<(), String> {
     Err(error.to_string())
 }
 
+/// The installed implementations, with their settings from the environment.
+fn installed() -> Installed {
+    Installed {
+        anthropic_api_key: std::env::var("ANTHROPIC_API_KEY")
+            .ok()
+            .filter(|key| !key.is_empty()),
+    }
+}
+
 fn main() -> ExitCode {
     let current_dir = match std::env::current_dir() {
         Ok(dir) => dir,
@@ -147,7 +156,7 @@ fn main() -> ExitCode {
             };
         }
         Command::Map(command) => {
-            run::map(&command, &Installed, &mut Terminal).map_err(|e| e.to_string())
+            run::map(&command, &installed(), &mut Terminal).map_err(|e| e.to_string())
         }
         Command::Draft(DraftCommand::Check { draft }) => {
             draft::check(&draft, &mut Terminal).map_err(|e: DraftError| e.to_string())
