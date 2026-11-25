@@ -167,8 +167,12 @@ struct Edits<'a> {
 }
 
 impl WatchFiles for Edits<'_> {
-    fn wait(&mut self, paths: &[PathBuf]) -> Result<(), String> {
+    fn watch(&mut self, paths: &[PathBuf]) -> Result<(), String> {
         self.watched.push(paths.to_vec());
+        Ok(())
+    }
+
+    fn wait(&mut self) -> Result<(), String> {
         if self.edits.is_empty() {
             return Err("stopped".into());
         }
@@ -196,9 +200,75 @@ fn the_preview_shows_each_build_and_watches_the_draft_and_its_base() {
     assert_eq!(shown[0], Ok(true));
     assert!(matches!(&shown[1], Err(problems) if problems.len() == 1));
     assert_eq!(shown[2], Ok(false));
+    // The draft is watched before the first build; the base joins once the
+    // draft names it, and leaves while the draft fails to load.
     let both = vec![draft_path(), PathBuf::from("plans/base.toml")];
-    // A draft that fails to load names no base yet, so only it is watched.
-    assert_eq!(edits.watched, [both.clone(), vec![draft_path()], both]);
+    assert_eq!(
+        edits.watched,
+        [vec![draft_path()], both.clone(), vec![draft_path()], both]
+    );
+}
+
+/// Files whose draft is edited while the base is being read, once.
+struct EditedDuringRead {
+    files: Files,
+    edited: RefCell<bool>,
+}
+
+impl DraftFiles for EditedDuringRead {
+    fn read(&self, path: &Path) -> std::io::Result<String> {
+        let text = self.files.read(path)?;
+        if path.ends_with("base.toml") && !self.edited.replace(true) {
+            self.files
+                .set("plans/draft.toml", &DRAFT.replace("map-cache", "map-store"));
+        }
+        Ok(text)
+    }
+
+    fn write(&mut self, path: &Path, text: &str) -> std::io::Result<()> {
+        self.files.write(path, text)
+    }
+
+    fn note(&mut self, message: &str) {
+        self.files.note(message);
+    }
+}
+
+/// Records what the preview was shown, as the page's module names.
+#[derive(Default)]
+struct Pages(RefCell<Vec<String>>);
+
+impl PreviewSink for Pages {
+    fn show_page(&self, page: String) {
+        let name = if page.contains("map-store") {
+            "map-store"
+        } else {
+            "map-cache"
+        };
+        self.0.borrow_mut().push(name.into());
+    }
+
+    fn show_problems(&self, problems: Vec<String>) {
+        self.0.borrow_mut().push(problems.join("; "));
+    }
+}
+
+#[test]
+fn an_edit_made_while_a_new_base_is_read_is_shown() {
+    let files = EditedDuringRead {
+        files: files(),
+        edited: RefCell::new(false),
+    };
+    let pages = Pages::default();
+    let mut edits = Edits {
+        files: &files.files,
+        edits: vec![],
+        watched: vec![],
+    };
+    preview(&draft_path(), &files, &pages, &mut edits);
+    // The first build read the old draft, then named a base; the preview
+    // watched both and built again, so it shows the edited draft.
+    assert_eq!(pages.0.into_inner(), ["map-store"]);
 }
 
 #[test]
