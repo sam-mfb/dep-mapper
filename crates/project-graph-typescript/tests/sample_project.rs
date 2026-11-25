@@ -934,6 +934,117 @@ fn reduce_gives_elements_to_its_second_parameter_not_its_accumulator() {
     );
 }
 
+#[test]
+fn an_array_pattern_over_a_variable_reads_the_element_place() {
+    let origins_of = |call: &str| {
+        let (id, _) = only_fact(|f| {
+            matches!(f.kind, FactKind::Call(_)) && f.site.as_ref().is_some_and(|s| text(s) == call)
+        });
+        let mut origins: Vec<_> = routes_to(id)
+            .iter()
+            .map(|r| format!("{:?}", r.origin))
+            .collect();
+        origins.sort();
+        origins
+    };
+    let mut both = vec![
+        format!("{:?}", item(OS, "OsBackups")),
+        format!("{:?}", item(REGISTRY, "quietBackups")),
+    ];
+    both.sort();
+    assert_eq!(origins_of("primary.write(\"primary\")"), both);
+
+    // `second` has a default, so the element read and the default are each conditional.
+    let into_second: Vec<_> =
+        facts_where(|f| f.object == place(REGISTRY, "writePrimary", "second"));
+    assert_eq!(into_second.len(), 2, "{into_second:#?}");
+    let hops: Vec<_> = graph()
+        .routes
+        .values()
+        .flat_map(|r| &r.hops)
+        .filter(|h| h.to == place(REGISTRY, "writePrimary", "second"))
+        .map(|h| h.support.clone())
+        .collect();
+    assert!(hops.contains(&Support::Possible {
+        condition: Some("[1] !== undefined".into())
+    }));
+    assert!(hops.contains(&Support::Possible {
+        condition: Some("[1] === undefined".into())
+    }));
+}
+
+const CALLBACKS: &str = "@sample/app/src/callbacks.ts";
+
+/// The route from `new OsBackups()` inside withBackups to a write call in
+/// the function given to it.
+fn callback_route(call: &str) -> &'static Route {
+    let (id, _) = only_fact(|f| {
+        matches!(f.kind, FactKind::Call(_)) && f.site.as_ref().is_some_and(|s| text(s) == call)
+    });
+    let routes = routes_to(id);
+    assert_eq!(routes.len(), 1, "{call}: {routes:#?}");
+    routes[0]
+}
+
+#[test]
+fn a_closure_given_as_a_callback_receives_the_callers_argument() {
+    let route = callback_route("backups.write(\"inline\")");
+    assert_eq!(route.origin, item(OS, "OsBackups"));
+    assert_eq!(route.end, RouteEnd::ReachedUse);
+    let slot = place(CALLBACKS, "withBackups", "use(0)");
+    assert_eq!(route.hops[0].to, slot);
+    assert_eq!(route.hops[0].support, Support::Possible { condition: None });
+    assert_eq!(route.hops[1].support, Support::Possible { condition: None });
+}
+
+#[test]
+fn a_named_function_given_as_a_callback_receives_the_callers_argument() {
+    let route = callback_route("backups.write(\"named\")");
+    assert_eq!(route.origin, item(OS, "OsBackups"));
+    assert_eq!(route.hops[1].to, place(CALLBACKS, "label", "backups"));
+}
+
+#[test]
+fn a_callbacks_returned_value_comes_back_through_its_result() {
+    let into_result = facts_where(|f| f.object == place(CALLBACKS, "withBackups", "use return"));
+    // The closure's body and the named function's return.
+    assert_eq!(into_result.len(), 2, "{into_result:#?}");
+    let out = facts_where(|f| f.subject == place(CALLBACKS, "withBackups", "use return"));
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].1.object, place(CALLBACKS, "withBackups", "return"));
+}
+
+#[test]
+fn a_callback_parameter_typed_as_a_project_function_still_fills_its_slots() {
+    // Into the closure's parameter.
+    let into = callback_route("given.prune(5)");
+    assert_eq!(into.origin, item(OS, "OsBackups"));
+    assert_eq!(into.hops[0].to, place(CALLBACKS, "withTyped", "use(0)"));
+    // And back out through the callback's result.
+    let (id, _) = only_fact(|f| {
+        matches!(f.kind, FactKind::Call(_))
+            && f.site
+                .as_ref()
+                .is_some_and(|s| text(s).ends_with(".write(\"typed\")"))
+    });
+    let out = routes_to(id);
+    assert_eq!(out.len(), 1, "{out:#?}");
+    assert_eq!(out[0].origin, item(OS, "OsBackups"));
+    assert!(
+        out[0]
+            .hops
+            .iter()
+            .any(|h| h.to == place(CALLBACKS, "withTyped", "use return"))
+    );
+    // The call through `use` is indirect, not a call of sameBackups.
+    assert!(
+        facts_where(|f| {
+            f.subject == item(CALLBACKS, "withTyped") && f.object == item(CALLBACKS, "sameBackups")
+        })
+        .is_empty()
+    );
+}
+
 const PATHS: &str = "@sample/backup-os/src/paths.ts";
 
 #[test]
@@ -1016,76 +1127,4 @@ fn calls_into_a_namespace_reach_its_members() {
     only_fact(|f| {
         f.subject == item(PATHS, "Paths.Folder.path") && f.object == item(PATHS, "Paths.folder")
     });
-}
-
-const CALLBACKS: &str = "@sample/app/src/callbacks.ts";
-
-/// The route from `new OsBackups()` inside withBackups to a write call in
-/// the function given to it.
-fn callback_route(call: &str) -> &'static Route {
-    let (id, _) = only_fact(|f| {
-        matches!(f.kind, FactKind::Call(_)) && f.site.as_ref().is_some_and(|s| text(s) == call)
-    });
-    let routes = routes_to(id);
-    assert_eq!(routes.len(), 1, "{call}: {routes:#?}");
-    routes[0]
-}
-
-#[test]
-fn a_closure_given_as_a_callback_receives_the_callers_argument() {
-    let route = callback_route("backups.write(\"inline\")");
-    assert_eq!(route.origin, item(OS, "OsBackups"));
-    assert_eq!(route.end, RouteEnd::ReachedUse);
-    let slot = place(CALLBACKS, "withBackups", "use(0)");
-    assert_eq!(route.hops[0].to, slot);
-    assert_eq!(route.hops[0].support, Support::Possible { condition: None });
-    assert_eq!(route.hops[1].support, Support::Possible { condition: None });
-}
-
-#[test]
-fn a_named_function_given_as_a_callback_receives_the_callers_argument() {
-    let route = callback_route("backups.write(\"named\")");
-    assert_eq!(route.origin, item(OS, "OsBackups"));
-    assert_eq!(route.hops[1].to, place(CALLBACKS, "label", "backups"));
-}
-
-#[test]
-fn a_callbacks_returned_value_comes_back_through_its_result() {
-    let into_result = facts_where(|f| f.object == place(CALLBACKS, "withBackups", "use return"));
-    // The closure's body and the named function's return.
-    assert_eq!(into_result.len(), 2, "{into_result:#?}");
-    let out = facts_where(|f| f.subject == place(CALLBACKS, "withBackups", "use return"));
-    assert_eq!(out.len(), 1);
-    assert_eq!(out[0].1.object, place(CALLBACKS, "withBackups", "return"));
-}
-
-#[test]
-fn a_callback_parameter_typed_as_a_project_function_still_fills_its_slots() {
-    // Into the closure's parameter.
-    let into = callback_route("given.prune(5)");
-    assert_eq!(into.origin, item(OS, "OsBackups"));
-    assert_eq!(into.hops[0].to, place(CALLBACKS, "withTyped", "use(0)"));
-    // And back out through the callback's result.
-    let (id, _) = only_fact(|f| {
-        matches!(f.kind, FactKind::Call(_))
-            && f.site
-                .as_ref()
-                .is_some_and(|s| text(s).ends_with(".write(\"typed\")"))
-    });
-    let out = routes_to(id);
-    assert_eq!(out.len(), 1, "{out:#?}");
-    assert_eq!(out[0].origin, item(OS, "OsBackups"));
-    assert!(
-        out[0]
-            .hops
-            .iter()
-            .any(|h| h.to == place(CALLBACKS, "withTyped", "use return"))
-    );
-    // The call through `use` is indirect, not a call of sameBackups.
-    assert!(
-        facts_where(|f| {
-            f.subject == item(CALLBACKS, "withTyped") && f.object == item(CALLBACKS, "sameBackups")
-        })
-        .is_empty()
-    );
 }

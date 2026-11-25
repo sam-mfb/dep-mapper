@@ -42,7 +42,7 @@ A value moves between places. These are locals and parameters of a function, fie
 
 A function-typed parameter `cb` of a function `f` has two slots: the arguments of every call through it, `cb(0)`, `cb(1)` and so on, and its result, `cb return`. Inside `f`, `cb(x)` passes `x` into `cb(0)`. Where `f` is called with a closure or a named function for `cb`, that function's parameters read from those slots, and its returned values move into `cb return`. The slots join every call of `f`, so hops through them are possible.
 
-A closure (a function expression, arrow function or nested function that is not an item) has its own places, named `name@closure:<byte offset>`. When it uses a variable declared outside it, a `Capture` move takes the outer place into the closure's place, at the closure. A name bound by an object pattern reads the field it names from the pattern's type, so `{ backups }: InstallParts` reads `InstallParts.backups`. An array pattern is followed only when its value is an array literal.
+A closure (a function expression, arrow function or nested function that is not an item) has its own places, named `name@closure:<byte offset>`. When it uses a variable declared outside it, a `Capture` move takes the outer place into the closure's place, at the closure. A name bound by an object pattern reads the field it names from the pattern's type, so `{ backups }: InstallParts` reads `InstallParts.backups`. An array pattern over an array literal takes each element of the literal. Over any other value, each name reads from the element place of the value's type (see the arrays paragraph above), conditionally when the name has a default. A rest element (`...rest`) is not followed.
 
 When a move happens on one branch of a conditional, its hop is `Possible`, with the condition's text.
 
@@ -52,7 +52,7 @@ There are three kinds of route:
 - **Value route.** The shared `value-routes` tracer searches back from a method call's receiver to each `new` expression that can supply it, keeping one path per origin. A value returned from a call is matched to that call's own arguments. A move into or out of a field, or out of a closure's captured variable, stands for every instance of that place, so its hop is possible. If no origin is reached, the route stops at the call and says why.
 - **Receiver bound.** For a call through an interface, one bound for each class with an `Implements` fact for that interface.
 
-Not yet covered: arrays kept per variable rather than per element type, other containers such as `Map` and `Set`, destructuring in assignments, array patterns over anything but a literal, and calls through function-typed values beyond recording them as indirect. A closure is followed when it is given as an argument for a parameter; one stored in a variable or a field and called later is not. A value that comes from outside the project is not an origin, so its trace stops.
+Not yet covered: arrays kept per variable rather than per element type, other containers such as `Map` and `Set`, destructuring in assignments, and calls through function-typed values beyond recording them as indirect. A closure is followed when it is given as an argument for a parameter; one stored in a variable or a field and called later is not. A value that comes from outside the project is not an origin, so its trace stops.
 
 ## Sample
 
