@@ -258,3 +258,45 @@ fn an_outside_name_reached_through_a_local_alias_starts_with_its_package() {
         .collect();
     assert!(stray.is_empty(), "{stray:?}");
 }
+
+#[test]
+fn an_implementation_passed_into_an_async_fn_is_traced_through_its_coroutine() {
+    let graph = graph();
+    let call = find(
+        &item("consumer/lib:consumer::write_later"),
+        &FactKind::Call(Dispatch::Contract),
+        &item("supplier/lib:supplier::Backups::write"),
+    );
+    assert_eq!(call.len(), 1);
+    let call_id = graph
+        .facts
+        .iter()
+        .find(|(_, f)| *f == call[0])
+        .map(|(id, _)| id.clone())
+        .unwrap();
+    let reached: Vec<_> = graph
+        .routes
+        .values()
+        .filter(|r| {
+            r.use_site.as_ref() == Some(&call_id) && r.end == project_graph::RouteEnd::ReachedUse
+        })
+        .filter(|r| r.origin == item("supplier/lib:supplier::OsBackups"))
+        .collect();
+    assert_eq!(
+        reached.len(),
+        1,
+        "{:#?}",
+        graph
+            .routes
+            .values()
+            .filter(|r| r.use_site.as_ref() == Some(&call_id))
+            .collect::<Vec<_>>()
+    );
+    let kinds: Vec<_> = reached[0]
+        .hops
+        .iter()
+        .map(|h| &graph.facts[&h.fact].kind)
+        .collect();
+    assert!(kinds.contains(&&FactKind::Pass), "{kinds:?}");
+    assert!(kinds.contains(&&FactKind::Capture), "{kinds:?}");
+}
