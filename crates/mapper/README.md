@@ -63,7 +63,7 @@ target/debug/srs map . --language rust --target mapper --configuration "default 
 
 The `mapper` package depends on every other crate, so its build covers the whole project. With `--agent claude`, Claude Code answers the workbook. With `--agent none`, answer it yourself with `srs eval` and run the command again. `tests/sharsheret_rust.rs` runs the same steps for the smaller `map-builder` package, with a few answers.
 
-`docs/architecture/sharsheret-map.toml` is the saved result of this command with `--agent claude` and `target/debug` on `PATH`, run on commit 40abf57; the map records the commit in its `[source]` table. Claude Code judged 15 modules in four clusters and deferred `graph-evaluator-llm`, which is not in the default build. It recorded the relationships between modules and set aside the routine routes, such as derived serde code. To look at it without analysis:
+`docs/architecture/sharsheret-map.toml` is the saved result of this command with `--agent claude` and `target/debug` on `PATH`, run on commit fef5fca; the map records the commit in its `[source]` table. Claude Code judged all 16 modules in five clusters (graph, evaluation, map, presentation, program), recorded the relationships between modules, and set aside the routine routes, such as derived serde code. To look at it without analysis:
 
 ```sh
 target/debug/srs show docs/architecture/sharsheret-map.toml --serve 127.0.0.1:8080
