@@ -7,6 +7,8 @@ Make `map-web` useful for planning as well as reading. A map can hold proposed m
 Sam's decisions, which this plan takes as given:
 
 - `ProjectMap` marks each module, dependency and route as observed in code or proposed. `map-web` draws proposed parts distinctly.
+- A draft can also propose removing an observed part.
+- A draft is an overlay on a saved base map file, not a full copy.
 - Drafts are edited only as files. There is no editing in the browser.
 - The file format belongs to `map-persist`.
 - The program gains a `shrsh draft` subcommand. The work itself lives in separate crates.
@@ -17,7 +19,7 @@ Each change below breaks the current contract. Today the only consumers are `map
 
 | Change | Why |
 | --- | --- |
-| Add `status: Status` to `MapModule`, `MapDependency` and `MapRoute`, with `enum Status { Observed, Proposed }`. | This is Sam's decision. Each part says which it is. |
+| Add `status: Status` to `MapModule`, `MapDependency` and `MapRoute`, with `enum Status { Observed, Proposed, ProposedRemoval }`. | Each part says whether it exists in code, is proposed, or exists in code and is proposed for removal. |
 | Replace the four source fields of `ProjectMap` (`graph_id`, `source_revision`, `target`, `configuration`) with `source: Option<MapSource>`. | A map made only of proposals has no graph or build. A sentinel value such as `"none"` would hide that. |
 | Add `HopSupport::Proposed`. | A proposed hop is neither established nor possible in code. |
 | Add `kind: EvidenceKind` to `MapEvidence`, with `enum EvidenceKind { Source, Proposal }`. | Proposed parts still need something to cite in `Review::Judged` and on each hop. A proposal note is the author's reasoning, not something found in the source. The viewer must show the two differently. `Review` and hops otherwise stay as they are. |
@@ -29,6 +31,7 @@ Each change below breaks the current contract. Today the only consumers are `map
 - A route hop whose dependency, as given by `hop_dependency`, is not in `dependencies`.
 - An observed part that rests on a proposed part. Examples are an observed dependency that touches a proposed module, or an observed route that cites a proposal note or passes through a proposed module.
 - A proposed hop in an observed route, or an observed hop in a proposed route.
+- A proposed part that relies on a part proposed for removal, such as a proposed route through a module that is to be removed.
 - A module layer that is not in `layers`.
 
 Proposed parts may point at observed parts. For example, a proposed route may run through observed modules.
@@ -44,15 +47,17 @@ Proposed parts may point at observed parts. For example, a proposed route may ru
 - **Contract.** `load(text) -> Result<MapDocument, LoadError>` and `save(&MapDocument) -> String`. `LoadError` carries a line and column. Reading and writing files is the caller's job.
 - **Two document kinds:**
   - A **map**: a complete `ProjectMap`. `mapper` writes these after analysis.
-  - A **draft**: optional `base = "<path to a saved map>"`, then the proposed parts and their notes. Without a base, the draft is a map made only of proposals.
+  - A **draft**: optional `base = "<path to a saved map>"`, then the proposed parts, their notes, and a `remove` list of base modules, dependencies and routes. Without a base, the draft is a map made only of proposals, and `remove` must be empty.
 
-A draft that lays changes over a base map, rather than copying the whole map, stays small. When analysis reruns and the base map is saved again, the proposals stay attached to the new map.
+A draft lays its changes over a base map, so it stays small. When analysis reruns and the base map is saved again, the proposals stay attached to the new map.
+
+Removing a module also marks every base dependency and route that touches it as `ProposedRemoval`. The format document states this rule, so the author need not list them.
 
 ## 3. New crates for drafts and the preview
 
 | Crate | Concern | Effects |
 | --- | --- | --- |
-| `map-draft` | Combines a base map and a draft into one `ProjectMap`. Reports problems: an ID in the draft that collides with the base, a reference to a missing base part, and everything `ProjectMap::problems` finds. | None. It receives values, not paths. |
+| `map-draft` | Combines a base map and a draft into one `ProjectMap`. It marks the parts in `remove` as `ProposedRemoval`, together with the dependencies and routes of removed modules. Reports problems: an ID in the draft that collides with the base, a reference or removal naming a missing base part, and everything `ProjectMap::problems` finds. | None. It receives values, not paths. |
 | `map-preview` | Serves a page on localhost and tells the browser to reload when told the map has changed. Shows the last good map with a list of problems when a reload fails. | Network. It wraps the HTTP server and the file watcher behind its own contracts, so those libraries can be replaced. |
 
 The preview serves a small outer page. That page holds `map-web`'s page in a frame and listens for reload events from the server (Server-Sent Events). It also shows the problem list. Because of this, `map-web`'s page keeps its current promise of no network requests.
@@ -68,7 +73,8 @@ The preview serves a small outer page. That page holds `map-web`'s page in a fra
 ## 5. Changes to `map-web`
 
 - **Drawing proposed parts.** Dash patterns already mean unreviewed and certain roles, so proposed parts need a different visual signal. A proposed module box is unfilled, with an outline in its own color and a "proposed" tag. A proposed arrow is drawn as a hollow double line in its role's color. Proposed routes follow the same rule. The legend gains an entry.
-- **Filter.** A control shows observed parts, proposed parts, or both.
+- **Drawing removals.** A part proposed for removal keeps its place, faded, with a "remove" tag and a strike line through the box or along the arrow.
+- **Filter.** A control has three settings. "Current" shows what is in code. "Planned" shows the code after the draft: observed parts plus proposed parts, minus removals. "Changes" shows everything, with proposed parts and removals marked.
 - **Panel.** It shows each part's status. It lists proposal notes under "Rationale", apart from source evidence. A map without a source says "Draft: no source analyzed" in place of the revision and build.
 - **State in the address.** The selected module or route and the filter are kept in the URL fragment. A reload keeps the reader's place. This also makes links to a selection possible.
 - The view types gain `status` on `Crate`, `Edge` and `Route`, and `kind` on `Evidence`. `Meta` gets an optional source.
@@ -87,7 +93,12 @@ The preview serves a small outer page. That page holds `map-web`'s page in a fra
 
 - `ProjectMap::problems`: one case per rule, plus a clean mixed map.
 - `map-persist`: a saved map and a draft each survive a load and save unchanged. An unknown version, a missing required field, and a misspelled field are rejected with a line and column.
-- `map-draft`: combining a draft with its base; an ID collision; a reference to a missing base part; a draft with no base.
-- `map-web`: the view marks proposed modules, edges and routes and separates notes from evidence. A map without a source renders.
+- `map-draft`: combining a draft with its base; an ID collision; a reference or removal naming a missing base part; a draft with no base; removing a module marks its dependencies and routes.
+- `map-web`: the view marks proposed and removed modules, edges and routes, and separates notes from evidence. Each filter setting shows the right parts. A map without a source renders.
 - `map-preview`: a change triggers a reload event. A failed load keeps the last good page and reports the problems.
 - `shrsh draft check`: exit codes and the reported positions.
+
+## Later, not in the first version
+
+- A draft proposing a new description for an observed part, such as a changed concern.
+- A shorter route syntax: a route written as a list of modules, with each hop's link worked out from the declared dependencies.
