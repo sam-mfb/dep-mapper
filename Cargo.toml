@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/project-graph", "crates/graph-evaluator", "crates/project-map", "crates/map-web", "crates/map-persist", "crates/map-preview"]
+members = ["crates/project-graph", "crates/graph-evaluator", "crates/graph-evaluator-manual", "crates/project-map", "crates/map-web", "crates/map-persist", "crates/map-preview"]
 resolver = "3"
 
 [workspace.package]
@@ -9,6 +9,7 @@ license = "MIT"
 repository = "https://github.com/sam-mfb/sharsheret"
 
 [workspace.dependencies]
+graph-evaluator = { path = "crates/graph-evaluator" }
 project-graph = { path = "crates/project-graph" }
 project-map = { path = "crates/project-map" }
 thiserror = "2.0.21"
