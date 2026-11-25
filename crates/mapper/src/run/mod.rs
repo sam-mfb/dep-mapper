@@ -64,8 +64,10 @@ pub fn build(
     command: &MapCommand,
     implementations: &dyn Implementations,
 ) -> Result<MapBuild, MapError> {
-    let grapher = implementations.grapher(command.language)?;
-    let evaluator = implementations.evaluator(command.evaluator, &command.selection)?;
+    // The evaluator first: its checks are quick, while a grapher may build
+    // tools before it can start.
+    let evaluator = implementations.evaluator(&command.evaluator, &command.selection)?;
+    let grapher = implementations.grapher(&command.language)?;
     let graph = grapher.build_graph(&command.selection)?;
     let evaluation = evaluator.evaluate(&graph)?;
     Ok(map_builder::build_map(&graph, &evaluation)?)
@@ -82,10 +84,13 @@ pub fn map(
     for problem in &built.problems {
         outputs.note(&describe(problem));
     }
-    let page = map_web::page(&built.map);
-    let saved = map_persist::save(&MapDocument::Map(built.map));
+    let saved = map_persist::save(&MapDocument::Map(built.map.clone()));
     write(outputs, &command.out, &saved)?;
     outputs.note(&format!("saved the map to {}", command.out.display()));
+    if command.page.is_none() && command.serve.is_none() {
+        return Ok(());
+    }
+    let page = map_web::page(&built.map);
     if let Some(path) = &command.page {
         write(outputs, path, &page)?;
         outputs.note(&format!("wrote the map page to {}", path.display()));

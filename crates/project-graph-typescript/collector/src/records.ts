@@ -34,11 +34,24 @@ export type FactKind =
   | { kind: "coerce" }
   | { kind: "capture" };
 
+/**
+ * The calls a move crosses, each named by the span of its call expression
+ * (`file:start-end`): the call whose result it takes, and the call it enters
+ * as an argument or receiver. `f(g())` crosses both.
+ */
+export type Link = { argument: string | null; returned: string | null };
+
 export type ItemKind = "type" | "value" | "function" | "method" | "module";
 export type Visibility = "exported" | "internal" | "unknown";
 
 export type Record =
-  | { record: "project"; name: string; settings: { [key: string]: string } }
+  | {
+      record: "project";
+      name: string;
+      settings: { [key: string]: string };
+      /** SHA-256, in hex, of every file the collector and the compiler read, apart from the compiler's library. */
+      sources: string;
+    }
   | { record: "module"; id: string; name: string; root: string }
   | {
       record: "item";
@@ -62,6 +75,8 @@ export type Record =
       site: Span | null;
       /** Set when the move happens only on one branch of a conditional. */
       condition: string | null;
+      /** For a move into a callee's parameter or out of its result, the call site. */
+      link: Link | null;
     }
   /** A method call whose receiver the collector followed into the callee's `self`. */
   | { record: "receiver"; call: string; moves: string[] }

@@ -86,15 +86,39 @@ fn a_module_piece_lists_its_items_gaps_and_routes_and_how_to_answer() {
 
 #[test]
 fn long_lists_are_paged_and_each_page_repeats_the_heading_and_instructions() {
-    let workbook = workbook(1);
+    let mut graph = testing::graph();
+    let mut second = graph.items[&project_graph::ItemId("app::main".into())].clone();
+    second.name = "helper".into();
+    graph
+        .items
+        .insert(project_graph::ItemId("app::helper".into()), second);
+    let workbook = present(
+        &graph,
+        &Presentation {
+            page_size: 1,
+            source: &ByteOffsets,
+            command: Some("srs eval"),
+        },
+    );
     let pages = &workbook.piece(&PieceId::module("app")).unwrap().pages;
     assert_eq!(pages.len(), 2);
     assert!(pages[0].contains("(page 1 of 2)") && pages[1].contains("(page 2 of 2)"));
-    assert!(
-        pages
-            .iter()
-            .all(|p| p.contains("item:app::main") && p.contains("srs eval defer"))
-    );
+    assert!(pages[0].contains("item:app::helper") && pages[1].contains("item:app::main"));
+    assert!(pages.iter().all(|p| {
+        p.contains("Routes that start, pass through or end in this module: 2")
+            && p.contains("srs eval defer")
+    }));
+}
+
+#[test]
+fn a_module_piece_counts_its_routes_by_where_they_lead_and_names_the_piece_that_lists_them() {
+    let workbook = workbook(10);
+    let app = &workbook.piece(&PieceId::module("app")).unwrap().pages[0];
+    assert!(app.contains("- 1 with disk, listed in routes/app+disk; for example route:r-wire"));
+    assert!(app.contains("- 1 leaving for std, listed in routes/app; for example route:r-write"));
+    let disk = &workbook.piece(&PieceId::module("disk")).unwrap().pages[0];
+    assert!(disk.contains("with store, listed in routes/disk+store"));
+    assert!(disk.contains("with app, listed in routes/app+disk"));
 }
 
 #[test]

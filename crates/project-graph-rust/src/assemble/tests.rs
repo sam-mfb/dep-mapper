@@ -303,3 +303,164 @@ fn the_same_records_in_another_order_give_the_same_graph() {
     }
     assert_eq!(graph(&workspace(), &reversed, snapshot()), built());
 }
+
+fn local(function: &str, local: u32) -> r::Node {
+    r::Node::Local {
+        function: def("consumer", CONSUMER, function),
+        local,
+        name: None,
+    }
+}
+
+fn receiver(node: r::Node, lo: usize) -> r::Record {
+    r::Record::Receiver(r::ReceiverRecord {
+        owner: def("consumer", CONSUMER, "::consume"),
+        contract: def("supplier", SUPPLIER, "::Backups::write"),
+        receiver: node,
+        span: span(lo),
+    })
+}
+
+fn flow(from: r::Node, to: r::Node, kind: r::FlowKind) -> r::Record {
+    r::Record::Flow(r::FlowRecord {
+        from,
+        to,
+        kind,
+        call_site: None,
+        span: Some(span(5)),
+    })
+}
+
+/// consume receives an OsBackups from supplier and calls write on it; a
+/// second call's receiver has no known origin; a third receives a type
+/// defined in consumer itself.
+fn crates_with_flows() -> Vec<Vec<r::Record>> {
+    let mut crates = crates();
+    crates[0].push(item("supplier", SUPPLIER, "::OsBackups", r::ItemKind::Type));
+    crates[1].extend([
+        item("consumer", CONSUMER, "::Local", r::ItemKind::Type),
+        flow(
+            r::Node::Type(def("supplier", SUPPLIER, "::OsBackups")),
+            local("::consume", 2),
+            r::FlowKind::Coerce,
+        ),
+        flow(
+            local("::consume", 2),
+            local("::consume", 3),
+            r::FlowKind::Copy,
+        ),
+        receiver(local("::consume", 3), 10),
+        receiver(local("::consume", 9), 80),
+        flow(
+            r::Node::Type(def("consumer", CONSUMER, "::Local")),
+            local("::consume", 11),
+            r::FlowKind::Coerce,
+        ),
+        receiver(local("::consume", 11), 90),
+    ]);
+    crates
+}
+
+fn traced_routes(graph: &ProjectGraph) -> Vec<&Route> {
+    graph
+        .routes
+        .iter()
+        .filter(|(id, _)| id.0.starts_with("route:traced:"))
+        .map(|(_, r)| r)
+        .collect()
+}
+
+#[test]
+fn a_traced_route_runs_from_the_supplied_type_through_reported_moves_to_the_call() {
+    let graph = graph(&workspace(), &crates_with_flows(), snapshot());
+    let traced = traced_routes(&graph);
+    let reached: Vec<_> = traced
+        .iter()
+        .filter(|r| r.end == RouteEnd::ReachedUse)
+        .collect();
+    assert_eq!(reached.len(), 1, "the same-module origin is not a route");
+    let route = reached[0];
+    assert_eq!(route.origin, item_id("supplier/lib:supplier::OsBackups"));
+    assert_eq!(
+        route.hops.len(),
+        1,
+        "the copy between temporaries is not a hop"
+    );
+    assert_eq!(graph.facts[&route.hops[0].fact].kind, FactKind::Coerce);
+    assert_eq!(
+        route.hops[0].to,
+        Endpoint::Place {
+            owner: ItemId("consumer/lib:consumer::consume".into()),
+            projection: "_2".into(),
+        }
+    );
+    let call = &graph.facts[route.use_site.as_ref().unwrap()];
+    assert_eq!(call.kind, FactKind::Call(Dispatch::Contract));
+    assert_eq!(
+        call.site.as_ref().unwrap().bytes,
+        10..14,
+        "the same call fact as the one-hop route"
+    );
+}
+
+#[test]
+fn a_cross_module_call_with_no_origin_found_stops_at_the_call() {
+    let graph = graph(&workspace(), &crates_with_flows(), snapshot());
+    let stopped: Vec<_> = traced_routes(&graph)
+        .into_iter()
+        .filter(|r| matches!(r.end, RouteEnd::Stopped { .. }))
+        .collect();
+    assert_eq!(stopped.len(), 1);
+    let RouteEnd::Stopped { at, reason } = &stopped[0].end else {
+        unreachable!()
+    };
+    assert_eq!(stopped[0].use_site.as_ref(), Some(at));
+    assert_eq!(graph.facts[at].site.as_ref().unwrap().bytes, 80..84);
+    assert!(reason.contains("no flow"));
+    assert!(stopped[0].hops.is_empty());
+}
+
+#[test]
+fn shadowed_variables_with_one_name_stay_apart() {
+    let named = |local| r::Node::Local {
+        function: def("consumer", CONSUMER, "::consume"),
+        local,
+        name: Some("backups".into()),
+    };
+    let mut crates = crates();
+    crates[0].push(item("supplier", SUPPLIER, "::OsBackups", r::ItemKind::Type));
+    crates[1].extend([
+        flow(
+            r::Node::Type(def("supplier", SUPPLIER, "::OsBackups")),
+            named(2),
+            r::FlowKind::Coerce,
+        ),
+        // A second `let backups` whose value nobody supplies.
+        receiver(named(7), 80),
+    ]);
+    let graph = graph(&workspace(), &crates, snapshot());
+    let traced = traced_routes(&graph);
+    assert_eq!(traced.len(), 1);
+    assert!(
+        matches!(traced[0].end, RouteEnd::Stopped { .. }),
+        "{traced:#?}"
+    );
+}
+
+#[test]
+fn outside_names_start_with_their_package() {
+    let def = |name: &str| r::Def {
+        crate_name: "tokio_util".into(),
+        crate_id: "t1".into(),
+        path: "::codec::Framed".into(),
+        name: name.into(),
+    };
+    assert_eq!(
+        external_name("tokio-util", &def("tokio_util::codec::Framed")),
+        "tokio-util::codec::Framed"
+    );
+    assert_eq!(
+        external_name("tokio-util", &def("<&T as tokio_util::Decode>::decode")),
+        "tokio-util::<&T as tokio_util::Decode>::decode"
+    );
+}

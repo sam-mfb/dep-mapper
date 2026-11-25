@@ -37,7 +37,7 @@ export function main(dryRun: boolean): string {
   // The literal supplies the element, so the default never runs.
   const [spare = new MemoryBackups()] = [os];
   spare.write("spare");
-  pick({}).prune(1);
+  pick({ backups: os }).prune(1);
   // After a spread, the position is unknown, so the default may run.
   const [spread = new MemoryBackups()] = [...[os]];
   spread.write("spread");

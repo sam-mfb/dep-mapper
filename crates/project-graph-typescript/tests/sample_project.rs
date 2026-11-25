@@ -10,7 +10,8 @@
 
 use project_graph::*;
 use project_graph_typescript::{
-    AS_WRITTEN, NodeCollector, RevisionError, SourceRevision, TraceLimits, TypeScriptGrapher,
+    AS_WRITTEN, GitRevision, NodeCollector, RevisionError, SourceRevision, TraceLimits,
+    TypeScriptGrapher,
 };
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -413,10 +414,7 @@ fn a_receiver_nobody_supplies_stops_the_trace() {
     let RouteEnd::Stopped { reason, .. } = &routes[0].end else {
         panic!("expected a stopped route")
     };
-    assert_eq!(
-        reason,
-        "no recorded value enters backups in @sample/installer/src/index.ts#installWith"
-    );
+    assert_eq!(reason, "no flow reaches the receiver from a known origin");
 }
 
 #[test]
@@ -427,9 +425,14 @@ fn each_implementer_is_a_receiver_candidate_for_the_contract_call() {
             .into_iter()
             .map(|(_, f)| (f.object.clone(), f.kind.clone()))
             .collect();
-    assert_eq!(bounds.len(), 2);
+    let implementers = [
+        item(OS, "OsBackups"),
+        item(MAIN, "MemoryBackups"),
+        item(ECHO, "SpareBackups"),
+    ];
+    assert_eq!(bounds.len(), implementers.len());
     for (object, kind) in bounds {
-        assert!(object == item(OS, "OsBackups") || object == item(MAIN, "MemoryBackups"));
+        assert!(implementers.contains(&object), "{object:?}");
         assert!(matches!(
             kind,
             FactKind::ReceiverBound {
@@ -670,11 +673,16 @@ fn an_object_pattern_default_and_the_field_read_are_each_conditional() {
 
     let supplied = routes
         .iter()
-        .find(|r| r.origin == place(MAIN, "Choice", "backups"))
+        .find(|r| r.origin == item(OS, "OsBackups"))
         .expect("a route through the field");
-    assert!(matches!(supplied.end, RouteEnd::Stopped { .. }));
-    assert_eq!(hop_kinds(supplied)[0], &FactKind::Read);
-    assert_eq!(supplied.hops[0].support, possible("backups !== undefined"));
+    assert_eq!(supplied.end, RouteEnd::ReachedUse);
+    let read = supplied
+        .hops
+        .iter()
+        .find(|h| graph().facts[&h.fact].kind == FactKind::Read)
+        .expect("the pattern reads the field");
+    assert_eq!(read.to, place(MAIN, "pick", "backups"));
+    assert_eq!(read.support, possible("backups !== undefined"));
 }
 
 #[test]
@@ -696,4 +704,107 @@ fn a_default_after_a_spread_is_only_possible() {
             condition: Some("[0] === undefined".into())
         }
     );
+}
+
+const ECHO: &str = "@sample/app/src/echo.ts";
+
+/// The origins of the value routes for the call whose source text is `call`.
+fn origins_for(call: &str) -> Vec<Endpoint> {
+    let (id, _) = only_fact(|f| {
+        matches!(f.kind, FactKind::Call(_)) && f.site.as_ref().is_some_and(|s| text(s) == call)
+    });
+    routes_to(id).iter().map(|r| r.origin.clone()).collect()
+}
+
+#[test]
+fn a_result_passed_straight_into_another_call_keeps_its_own_origin() {
+    assert_eq!(
+        origins_for("first.write(\"first\")"),
+        [item(OS, "OsBackups")]
+    );
+    assert_eq!(
+        origins_for("second.write(\"second\")"),
+        [item(ECHO, "SpareBackups")]
+    );
+}
+
+#[test]
+fn a_call_result_used_as_a_receiver_keeps_its_own_origin() {
+    assert_eq!(
+        origins_for("echo(new OsBackups()).write(\"first\")"),
+        [item(OS, "OsBackups")]
+    );
+    assert_eq!(
+        origins_for("echo(new SpareBackups()).write(\"second\")"),
+        [item(ECHO, "SpareBackups")]
+    );
+}
+
+#[test]
+fn source_outside_git_is_named_by_its_contents() {
+    let root = sample_copy("unversioned");
+    let grapher = TypeScriptGrapher::new(
+        Box::new(NodeCollector::bundled(PathBuf::from("node"))),
+        Box::new(GitRevision { git: "git".into() }),
+        TraceLimits::STANDARD,
+    );
+    let build = || {
+        let mut selection = selection(AS_WRITTEN);
+        selection.root = root.clone();
+        grapher
+            .build_graph(&selection)
+            .map(|g| g.build.source_revision)
+    };
+    let probe = root.join("packages/backup-api/src/probe.ts");
+    std::fs::write(&probe, "export const probeOne = 1;\n").unwrap();
+    let one = build();
+    let again = build();
+    std::fs::write(&probe, "export const probeTwo = 2;\n").unwrap();
+    let two = build();
+    std::fs::remove_dir_all(&root).unwrap();
+
+    let one = one.expect("a project outside Git still maps");
+    assert!(one.starts_with("unversioned-"), "{one}");
+    assert_eq!(one.len(), "unversioned-".len() + 16);
+    assert_eq!(again.unwrap(), one);
+    assert_ne!(two.unwrap(), one);
+}
+
+#[test]
+fn an_inherited_tsconfig_is_part_of_the_content_revision() {
+    let root = sample_copy("extends");
+    let grapher = TypeScriptGrapher::new(
+        Box::new(NodeCollector::bundled(PathBuf::from("node"))),
+        Box::new(GitRevision { git: "git".into() }),
+        TraceLimits::STANDARD,
+    );
+    let build = || {
+        let mut selection = selection(AS_WRITTEN);
+        selection.root = root.clone();
+        selection.target = "tsconfig.app.json".into();
+        let graph = grapher.build_graph(&selection).unwrap();
+        let unit = graph.units.values().next().unwrap();
+        (
+            graph.build.source_revision.clone(),
+            unit.settings["strict"].clone(),
+        )
+    };
+    let (strict_revision, strict) = build();
+    // Only the parent config changes; tsconfig.app.json extends it.
+    let parent = root.join("tsconfig.json");
+    let text = std::fs::read_to_string(&parent).unwrap();
+    std::fs::write(
+        &parent,
+        text.replace("\"strict\": true", "\"strict\": false"),
+    )
+    .unwrap();
+    let (loose_revision, loose) = build();
+    std::fs::remove_dir_all(&root).unwrap();
+
+    assert_eq!((strict.as_str(), loose.as_str()), ("true", "false"));
+    assert!(
+        strict_revision.starts_with("unversioned-"),
+        "{strict_revision}"
+    );
+    assert_ne!(strict_revision, loose_revision);
 }

@@ -34,14 +34,14 @@ fn map_says_which_piece_is_missing() {
         "--configuration",
         "default",
         "--evaluator",
-        "manual",
+        "llm",
         "--out",
         "unused.toml",
     ]);
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
-        "srs: project-graph-rust is not built yet\n"
+        "srs: graph-evaluator-llm is not built yet\n"
     );
 }
 
@@ -92,4 +92,14 @@ fn draft_render_writes_the_page() {
     ]);
     assert!(output.status.success(), "{output:?}");
     assert!(std::fs::read_to_string(out).unwrap().contains("map-cache"));
+}
+
+#[test]
+fn the_architecture_map_has_no_problems() {
+    let draft = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/architecture/sharsheret.toml"
+    );
+    let output = srs(&["draft", "check", draft]);
+    assert!(output.status.success(), "{output:?}");
 }

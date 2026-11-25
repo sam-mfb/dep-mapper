@@ -51,16 +51,16 @@ struct StandIns {
 }
 
 impl Implementations for StandIns {
-    fn grapher(&self, language: Language) -> Result<Box<dyn ProjectGrapher>, Unavailable> {
+    fn grapher(&self, language: &Language) -> Result<Box<dyn ProjectGrapher>, Unavailable> {
         match (self.graphers, language) {
-            (true, Language::Rust) => Ok(Box::new(FixedGrapher(graph()))),
-            _ => Err(Unavailable(format!("no {language:?} grapher"))),
+            (true, Language::Rust { .. }) => Ok(Box::new(FixedGrapher(graph()))),
+            _ => Err(Unavailable("no grapher".into())),
         }
     }
 
     fn evaluator(
         &self,
-        _choice: EvaluatorChoice,
+        _choice: &EvaluatorChoice,
         _selection: &BuildSelection,
     ) -> Result<Box<dyn graph_evaluator::GraphEvaluator>, Unavailable> {
         Ok(Box::new(FixedEvaluator(evaluation())))
@@ -97,8 +97,10 @@ fn command() -> MapCommand {
             target: "lib".into(),
             configuration: "default".into(),
         },
-        language: Language::Rust,
-        evaluator: EvaluatorChoice::Manual,
+        language: Language::Rust {
+            cache: "/cache".into(),
+        },
+        evaluator: EvaluatorChoice::Llm,
         out: "map.toml".into(),
         page: Some("map.html".into()),
         serve: None,
@@ -155,7 +157,7 @@ fn without_a_page_or_address_the_map_is_only_saved() {
 fn an_unavailable_grapher_stops_the_command() {
     let mut outputs = Recorded::default();
     let error = map(&command(), &StandIns { graphers: false }, &mut outputs).unwrap_err();
-    assert_eq!(error.to_string(), "no Rust grapher");
+    assert_eq!(error.to_string(), "no grapher");
     assert!(outputs.files.is_empty());
 }
 
