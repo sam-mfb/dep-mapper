@@ -41,6 +41,9 @@ pub enum Record {
         /// For a move into a callee's parameter or out of its result, the
         /// call site.
         link: Option<Link>,
+        /// The move goes into or out of a slot that stands for many
+        /// instances, such as a callback's argument.
+        joins_instances: bool,
     },
     /// A method call whose receiver the collector followed into the
     /// callee's `self` place, with the moves that put it there.
@@ -152,7 +155,7 @@ mod tests {
 
     #[test]
     fn a_fact_line_parses_with_its_kind_and_endpoints() {
-        let line = r#"{"record":"fact","id":"pass@a.ts:3","module":"m","subject":{"place":{"owner":"m/a.ts#f","projection":"x"}},"fact":{"kind":"pass"},"object":{"external":"clock#now(x)"},"site":{"file":"a.ts","start":3,"end":4},"condition":null,"link":{"argument":"a.ts:0-9","returned":null}}"#;
+        let line = r#"{"record":"fact","id":"pass@a.ts:3","module":"m","subject":{"place":{"owner":"m/a.ts#f","projection":"x"}},"fact":{"kind":"pass"},"object":{"external":"clock#now(x)"},"site":{"file":"a.ts","start":3,"end":4},"condition":null,"link":{"argument":"a.ts:0-9","returned":null},"joins_instances":false}"#;
         let Record::Fact {
             subject,
             fact,
