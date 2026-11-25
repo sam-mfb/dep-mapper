@@ -414,10 +414,7 @@ fn a_receiver_nobody_supplies_stops_the_trace() {
     let RouteEnd::Stopped { reason, .. } = &routes[0].end else {
         panic!("expected a stopped route")
     };
-    assert_eq!(
-        reason,
-        "no recorded value enters backups in @sample/installer/src/index.ts#installWith"
-    );
+    assert_eq!(reason, "no flow reaches the receiver from a known origin");
 }
 
 #[test]
@@ -428,9 +425,14 @@ fn each_implementer_is_a_receiver_candidate_for_the_contract_call() {
             .into_iter()
             .map(|(_, f)| (f.object.clone(), f.kind.clone()))
             .collect();
-    assert_eq!(bounds.len(), 2);
+    let implementers = [
+        item(OS, "OsBackups"),
+        item(MAIN, "MemoryBackups"),
+        item(ECHO, "SpareBackups"),
+    ];
+    assert_eq!(bounds.len(), implementers.len());
     for (object, kind) in bounds {
-        assert!(object == item(OS, "OsBackups") || object == item(MAIN, "MemoryBackups"));
+        assert!(implementers.contains(&object), "{object:?}");
         assert!(matches!(
             kind,
             FactKind::ReceiverBound {
@@ -671,11 +673,16 @@ fn an_object_pattern_default_and_the_field_read_are_each_conditional() {
 
     let supplied = routes
         .iter()
-        .find(|r| r.origin == place(MAIN, "Choice", "backups"))
+        .find(|r| r.origin == item(OS, "OsBackups"))
         .expect("a route through the field");
-    assert!(matches!(supplied.end, RouteEnd::Stopped { .. }));
-    assert_eq!(hop_kinds(supplied)[0], &FactKind::Read);
-    assert_eq!(supplied.hops[0].support, possible("backups !== undefined"));
+    assert_eq!(supplied.end, RouteEnd::ReachedUse);
+    let read = supplied
+        .hops
+        .iter()
+        .find(|h| graph().facts[&h.fact].kind == FactKind::Read)
+        .expect("the pattern reads the field");
+    assert_eq!(read.to, place(MAIN, "pick", "backups"));
+    assert_eq!(read.support, possible("backups !== undefined"));
 }
 
 #[test]
@@ -696,6 +703,40 @@ fn a_default_after_a_spread_is_only_possible() {
         Support::Possible {
             condition: Some("[0] === undefined".into())
         }
+    );
+}
+
+const ECHO: &str = "@sample/app/src/echo.ts";
+
+/// The origins of the value routes for the call whose source text is `call`.
+fn origins_for(call: &str) -> Vec<Endpoint> {
+    let (id, _) = only_fact(|f| {
+        matches!(f.kind, FactKind::Call(_)) && f.site.as_ref().is_some_and(|s| text(s) == call)
+    });
+    routes_to(id).iter().map(|r| r.origin.clone()).collect()
+}
+
+#[test]
+fn a_result_passed_straight_into_another_call_keeps_its_own_origin() {
+    assert_eq!(
+        origins_for("first.write(\"first\")"),
+        [item(OS, "OsBackups")]
+    );
+    assert_eq!(
+        origins_for("second.write(\"second\")"),
+        [item(ECHO, "SpareBackups")]
+    );
+}
+
+#[test]
+fn a_call_result_used_as_a_receiver_keeps_its_own_origin() {
+    assert_eq!(
+        origins_for("echo(new OsBackups()).write(\"first\")"),
+        [item(OS, "OsBackups")]
+    );
+    assert_eq!(
+        origins_for("echo(new SpareBackups()).write(\"second\")"),
+        [item(ECHO, "SpareBackups")]
     );
 }
 
