@@ -1,9 +1,19 @@
 //! The decision a human or model makes about a particular graph snapshot.
-//! Evaluators receive the graph by reference and return judgments keyed to its
-//! subjects. An omitted subject is unreviewed. An explicit deferral records
-//! that the subject was considered and why it remains undecided.
+//! Evaluators receive the graph by reference. They judge each module, and
+//! interpret the graph's connections as relationships: what the connections
+//! mean in the architecture. A connection records how modules are joined in
+//! the code; a relationship records what that means, and can draw on several
+//! connections. One connection can carry several relationships.
+//!
+//! A module the evaluation does not mention is unreviewed. An explicit
+//! deferral records that it was considered and why it remains undecided.
+//! How an evaluator records what it considered and set aside is its own
+//! concern.
 
-use project_graph::{EvidenceId, GraphId, ItemId, ModuleId, ProjectGraph, RouteId};
+mod clusters;
+
+pub use clusters::{Clusters, DuplicateCluster};
+use project_graph::{GraphId, GraphRef, ModuleId, ProjectGraph};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
@@ -21,19 +31,26 @@ pub struct EvaluationError {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GraphEvaluation {
     pub graph: GraphId,
-    /// Layer names in the intended reading order.
-    pub layers: Vec<String>,
+    /// Cluster names in the intended reading order.
+    pub clusters: Clusters,
     pub modules: BTreeMap<ModuleId, Decision<ModuleJudgment>>,
-    pub routes: BTreeMap<RouteId, Decision<RouteJudgment>>,
+    /// Relationships found in the graph's connections. A connection can carry
+    /// several relationships or none.
+    pub relationships: Vec<Relationship>,
 }
+
+/// Names one of the evaluation's clusters.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ClusterName(pub String);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Decision<T> {
     Judged {
         judgment: T,
+        /// Why the judgment was made, including how the cited evidence bears on it.
         reason: String,
-        primary: Citation,
-        supporting: Vec<Citation>,
+        /// The things in the graph the judgment rests on.
+        evidence: Vec<GraphRef>,
     },
     Deferred {
         reason: String,
@@ -41,18 +58,11 @@ pub enum Decision<T> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Citation {
-    Declaration(ItemId),
-    Fact(EvidenceId),
-    Route(RouteId),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModuleJudgment {
     pub concern: String,
     pub kind: ModuleKind,
-    /// Names an entry in the evaluation's layer order when assigned.
-    pub layer: Option<String>,
+    /// Names an entry in the evaluation's clusters.
+    pub cluster: ClusterName,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,16 +73,19 @@ pub enum ModuleKind {
     Contract,
 }
 
+/// What one or more connections mean in the architecture. The connections it
+/// cites are the ones it interprets. For example, "B adapts A for C" cites B's
+/// connection to A, its connection to C, and the facts inside B that join them.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RouteJudgment {
-    pub role: UseKind,
-    pub other_roles: Vec<UseKind>,
-    /// Optional roles for individual handoffs, keyed by zero-based hop index.
-    pub hops: BTreeMap<usize, UseKind>,
+pub struct Relationship {
+    pub kind: RelationshipKind,
+    /// Why the evidence means this, including how each citation bears on it.
+    pub reason: String,
+    pub evidence: Vec<GraphRef>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum UseKind {
+pub enum RelationshipKind {
     DirectUse,
     Implements,
     Wires,

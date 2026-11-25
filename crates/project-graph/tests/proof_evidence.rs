@@ -64,6 +64,7 @@ fn two_possible_providers_can_reach_one_use_and_a_trace_can_stop_before_reaching
             let route = Route {
                 origin: item(provider),
                 use_site: Some(used.clone()),
+                connection: None,
                 hops: vec![Hop {
                     to: endpoint.clone(),
                     evidence: EvidenceId("console:active=choose(adapted)".into()),
@@ -81,6 +82,7 @@ fn two_possible_providers_can_reach_one_use_and_a_trace_can_stop_before_reaching
     let stopped = Route {
         origin: item("console::edit"),
         use_site: Some(EvidenceId("port::after_edit:value.read".into())),
+        connection: None,
         hops: vec![],
         end: RouteEnd::Stopped {
             at: EvidenceId("console:edit(&mut slot)".into()),
@@ -109,6 +111,7 @@ fn identifying_a_receiver_package_does_not_require_inventing_a_handoff() {
     };
     let partial = Route {
         use_site: Some(call.clone()),
+        connection: None,
         origin: bound.object.clone(),
         hops: vec![],
         end: RouteEnd::Stopped {
