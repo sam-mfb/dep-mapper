@@ -87,6 +87,7 @@ fn workspace() -> Workspace {
             ),
         ],
         third_party: [("clock".to_string(), "clock".to_string())].into(),
+        depends_on: BTreeMap::new(),
     }
 }
 
@@ -469,11 +470,15 @@ fn outside_names_start_with_their_package() {
         name: name.into(),
     };
     assert_eq!(
-        external_name("tokio-util", &def("tokio_util::codec::Framed")),
+        external_name(None, "tokio-util", &def("tokio_util::codec::Framed")),
         "tokio-util::codec::Framed"
     );
     assert_eq!(
-        external_name("tokio-util", &def("<&T as tokio_util::Decode>::decode")),
+        external_name(
+            Some("tokio-util"),
+            "tokio-util",
+            &def("<&T as tokio_util::Decode>::decode")
+        ),
         "tokio-util::<&T as tokio_util::Decode>::decode"
     );
 }
@@ -610,4 +615,18 @@ fn an_implementation_for_a_standard_library_type_keeps_the_filter() {
         .map(|r| r.origin.clone())
         .collect();
     assert_eq!(origins, [item_id("supplier/lib:supplier::OsBackups")]);
+}
+
+#[test]
+fn an_outside_name_reached_through_a_declared_dependency_starts_with_that_dependency() {
+    let def = r::Def {
+        crate_name: "serde_core".into(),
+        crate_id: "sc".into(),
+        path: "::de::Deserialize".into(),
+        name: "serde_core::de::Deserialize".into(),
+    };
+    assert_eq!(
+        external_name(Some("serde"), "serde_core", &def),
+        "serde::serde_core::de::Deserialize"
+    );
 }

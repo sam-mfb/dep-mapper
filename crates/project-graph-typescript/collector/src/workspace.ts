@@ -18,7 +18,14 @@ export interface Package {
   root: string;
   /** package.json relative to the project root. */
   manifest: string;
-  /** Entry file relative to the project root, from `types` or `main`. */
+  /**
+   * The package's source entry file, relative to the project root: the
+   * `source` field; else `types` or `main` when it names a TypeScript source
+   * file; else the first of `src/index.ts`, `src/index.tsx`, `index.ts` that
+   * exists. Its exports are the package's surface, and an import of the
+   * package that the compiler cannot resolve, such as one whose built output
+   * does not exist yet, resolves to it.
+   */
   entry: string | null;
   dependencies: Dependency[];
 }
@@ -99,7 +106,7 @@ function readPackage(root: string, dir: string, relative: (f: string) => string)
   const { json, text } = readManifest(manifestPath);
   const name = stringField(json, "name");
   if (!name) throw new WorkspaceError(`${manifestPath} has no name`);
-  const entryField = stringField(json, "types") ?? stringField(json, "main");
+  const entryFile = sourceEntry(dir, json);
   const dependencies: Dependency[] = [];
   for (const section of SECTIONS) {
     const listed = json[section];
@@ -116,9 +123,23 @@ function readPackage(root: string, dir: string, relative: (f: string) => string)
     name,
     root: relative(dir),
     manifest: relative(manifestPath),
-    entry: entryField ? relative(path.join(dir, entryField)) : null,
+    entry: entryFile ? relative(entryFile) : null,
     dependencies,
   };
+}
+
+const SOURCE = /\.(ts|tsx|mts|cts)$/;
+const DECLARATION = /\.d\.(ts|mts|cts)$/;
+const CONVENTIONAL = ["src/index.ts", "src/index.tsx", "index.ts"];
+
+function sourceEntry(dir: string, json: Record<string, unknown>): string | undefined {
+  const named = [stringField(json, "source"), stringField(json, "types"), stringField(json, "main")];
+  for (const field of named) {
+    if (!field || !SOURCE.test(field) || DECLARATION.test(field)) continue;
+    const file = path.join(dir, field);
+    if (fs.existsSync(file)) return file;
+  }
+  return CONVENTIONAL.map((f) => path.join(dir, f)).find((f) => fs.existsSync(f));
 }
 
 function readManifest(file: string): { json: Record<string, unknown>; text: string } {

@@ -49,3 +49,8 @@ pub fn write_some(backups: Option<Box<dyn Backups>>) -> u32 {
 pub fn write_generic<B: Backups>(backups: Option<B>) -> u32 {
     backups.unwrap().write()
 }
+
+/// Uses a type `clock` re-exports from its own dependency, `tick`.
+pub fn first_tick() -> clock::Tick {
+    clock::Tick(1)
+}

@@ -356,3 +356,20 @@ fn a_unit_struct_in_an_option_reaches_a_generic_receiver_through_unwrap() {
     assert_eq!(reached.len(), 1, "{reached:#?}");
     assert_eq!(reached[0].end, project_graph::RouteEnd::ReachedUse);
 }
+
+#[test]
+fn a_type_from_an_indirect_dependency_is_named_through_the_declared_one() {
+    let names: Vec<&String> = graph()
+        .facts
+        .values()
+        .filter_map(|f| match &f.object {
+            Endpoint::External(name) if name.contains("Tick") => Some(name),
+            _ => None,
+        })
+        .collect();
+    assert!(!names.is_empty());
+    assert!(
+        names.iter().all(|n| n.as_str() == "clock::tick::Tick"),
+        "{names:?}"
+    );
+}
