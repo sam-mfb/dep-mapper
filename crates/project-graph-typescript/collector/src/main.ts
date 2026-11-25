@@ -33,9 +33,8 @@ function run(): void {
     settings: checker.settings(),
     sources: sourcesHash(root, [
       path.join(root, "package.json"),
-      path.join(root, values.tsconfig),
       ...workspace.packages.map((p) => path.join(root, p.manifest)),
-      ...checker.projectFiles().map((f) => f.fileName),
+      ...checker.consultedFiles(),
     ]),
   });
   for (const pkg of workspace.packages) {

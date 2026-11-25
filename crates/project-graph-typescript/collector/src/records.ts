@@ -42,7 +42,7 @@ export type Record =
       record: "project";
       name: string;
       settings: { [key: string]: string };
-      /** SHA-256, in hex, of every file the collector read: sources, manifests and the tsconfig. */
+      /** SHA-256, in hex, of every file the collector and the compiler read, apart from the compiler's library. */
       sources: string;
     }
   | { record: "module"; id: string; name: string; root: string }

@@ -728,3 +728,42 @@ fn source_outside_git_is_named_by_its_contents() {
     assert_eq!(again.unwrap(), one);
     assert_ne!(two.unwrap(), one);
 }
+
+#[test]
+fn an_inherited_tsconfig_is_part_of_the_content_revision() {
+    let root = sample_copy("extends");
+    let grapher = TypeScriptGrapher::new(
+        Box::new(NodeCollector::bundled(PathBuf::from("node"))),
+        Box::new(GitRevision { git: "git".into() }),
+        TraceLimits::STANDARD,
+    );
+    let build = || {
+        let mut selection = selection(AS_WRITTEN);
+        selection.root = root.clone();
+        selection.target = "tsconfig.app.json".into();
+        let graph = grapher.build_graph(&selection).unwrap();
+        let unit = graph.units.values().next().unwrap();
+        (
+            graph.build.source_revision.clone(),
+            unit.settings["strict"].clone(),
+        )
+    };
+    let (strict_revision, strict) = build();
+    // Only the parent config changes; tsconfig.app.json extends it.
+    let parent = root.join("tsconfig.json");
+    let text = std::fs::read_to_string(&parent).unwrap();
+    std::fs::write(
+        &parent,
+        text.replace("\"strict\": true", "\"strict\": false"),
+    )
+    .unwrap();
+    let (loose_revision, loose) = build();
+    std::fs::remove_dir_all(&root).unwrap();
+
+    assert_eq!((strict.as_str(), loose.as_str()), ("true", "false"));
+    assert!(
+        strict_revision.starts_with("unversioned-"),
+        "{strict_revision}"
+    );
+    assert_ne!(strict_revision, loose_revision);
+}

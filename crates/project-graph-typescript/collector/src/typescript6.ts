@@ -8,18 +8,38 @@ export class TsConfigError extends Error {}
 
 /** Opens the program the tsconfig at `configPath` describes. */
 export function openTypeScript6(configPath: string): Checker {
-  const read = ts.readConfigFile(configPath, ts.sys.readFile);
+  // Every file the config parser or the compiler reads, apart from the
+  // TypeScript package's own files, such as its library declarations, which
+  // belong to the TypeScript version and not to the project.
+  const consulted = new Set<string>();
+  const library = path.resolve(path.dirname(ts.getDefaultLibFilePath({})), "..");
+  const track = (file: string, text: string | undefined): string | undefined => {
+    const absolute = path.resolve(file);
+    if (text !== undefined && !absolute.startsWith(library + path.sep)) consulted.add(absolute);
+    return text;
+  };
+  const configHost: ts.ParseConfigHost = {
+    useCaseSensitiveFileNames: ts.sys.useCaseSensitiveFileNames,
+    readDirectory: ts.sys.readDirectory,
+    fileExists: ts.sys.fileExists,
+    readFile: (file) => track(file, ts.sys.readFile(file)),
+  };
+  const read = ts.readConfigFile(configPath, configHost.readFile);
   if (read.error) {
     throw new TsConfigError(flatten(read.error.messageText));
   }
-  const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, path.dirname(configPath));
+  const parsed = ts.parseJsonConfigFileContent(read.config, configHost, path.dirname(configPath));
   if (parsed.errors.length > 0) {
     throw new TsConfigError(parsed.errors.map((e) => flatten(e.messageText)).join("; "));
   }
+  const host = ts.createCompilerHost(parsed.options, true);
+  const readFile = host.readFile.bind(host);
+  host.readFile = (file) => track(file, readFile(file));
   const program = ts.createProgram({
     rootNames: parsed.fileNames,
     options: parsed.options,
     projectReferences: parsed.projectReferences,
+    host,
   });
   const checker = program.getTypeChecker();
   const roots = new Set(parsed.fileNames.map((f) => path.resolve(f)));
@@ -30,6 +50,7 @@ export function openTypeScript6(configPath: string): Checker {
         .getSourceFiles()
         .filter((f) => !f.isDeclarationFile && !program.isSourceFileFromExternalLibrary(f)),
     isSelected: (file) => roots.has(path.resolve(file.fileName)),
+    consultedFiles: () => [...consulted].sort(),
     isDefaultLibrary: (file) => program.isSourceFileDefaultLibrary(file),
     symbolAt: (node) => checker.getSymbolAtLocation(node),
     resolveAlias: (symbol) =>
