@@ -1,8 +1,10 @@
 //! Running `srs show`: reopens a saved map, without analysis or evaluation,
 //! and writes or serves its page.
 
+use crate::draft::describe_map;
 use crate::run::{MapError, MapOutputs, present};
 use map_persist::{LoadError, MapDocument};
+use project_map::MapProblem;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -24,11 +26,22 @@ pub enum ShowError {
     Load { path: PathBuf, error: LoadError },
     #[error("{0} is a draft; show it with `srs draft render` or `srs draft preview`")]
     Draft(PathBuf),
+    /// The map loaded but its parts do not fit together, so it is not shown.
+    #[error(
+        "{path} is not shown, because its parts do not fit together:{}",
+        list(problems)
+    )]
+    Problems {
+        path: PathBuf,
+        problems: Vec<MapProblem>,
+    },
     #[error(transparent)]
     Present(#[from] MapError),
 }
 
-/// Shows the saved map whose file holds `text`.
+/// Shows the saved map whose file holds `text`. A map whose parts do not fit
+/// together, as `ProjectMap::problems` checks, is refused before anything is
+/// written or served.
 pub fn show(
     command: &ShowCommand,
     text: &str,
@@ -47,12 +60,26 @@ pub fn show(
             });
         }
     };
+    let problems = map.problems();
+    if !problems.is_empty() {
+        return Err(ShowError::Problems {
+            path: command.map.clone(),
+            problems,
+        });
+    }
     Ok(present(
         &map,
         command.page.as_deref(),
         command.serve,
         outputs,
     )?)
+}
+
+fn list(problems: &[MapProblem]) -> String {
+    problems
+        .iter()
+        .map(|problem| format!("\n  {}", describe_map(problem)))
+        .collect()
 }
 
 #[cfg(test)]

@@ -100,3 +100,23 @@ fn without_a_page_or_address_nothing_is_done() {
     let error = show(&command, "", &mut Recorded::default()).unwrap_err();
     assert!(matches!(error, ShowError::NothingToShow));
 }
+
+#[test]
+fn a_map_whose_parts_do_not_fit_is_refused_before_anything_is_shown() {
+    let mut map = project_map::example::sharsheret();
+    map.modules.clear();
+    let mut outputs = Recorded::default();
+    let command = ShowCommand {
+        serve: Some("127.0.0.1:8080".parse().unwrap()),
+        ..command()
+    };
+    let error = show(&command, &saved(map.clone()), &mut outputs).unwrap_err();
+    let ShowError::Problems { path, problems } = &error else {
+        panic!("refused for its problems, not {error}")
+    };
+    assert_eq!(path, Path::new("saved.toml"));
+    assert_eq!(problems, &map.problems());
+    assert!(error.to_string().starts_with("saved.toml is not shown"));
+    assert!(outputs.files.is_empty());
+    assert!(outputs.served.is_empty());
+}
