@@ -446,3 +446,21 @@ fn shadowed_variables_with_one_name_stay_apart() {
         "{traced:#?}"
     );
 }
+
+#[test]
+fn outside_names_start_with_their_package() {
+    let def = |name: &str| r::Def {
+        crate_name: "tokio_util".into(),
+        crate_id: "t1".into(),
+        path: "::codec::Framed".into(),
+        name: name.into(),
+    };
+    assert_eq!(
+        external_name("tokio-util", &def("tokio_util::codec::Framed")),
+        "tokio-util::codec::Framed"
+    );
+    assert_eq!(
+        external_name("tokio-util", &def("<&T as tokio_util::Decode>::decode")),
+        "tokio-util::<&T as tokio_util::Decode>::decode"
+    );
+}
