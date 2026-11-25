@@ -2,6 +2,8 @@
 // and prints its source evidence as JSON Lines (see records.ts). Errors that
 // stop collection go to standard error with exit code 2.
 
+import { createHash } from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { collectFacts } from "./facts.ts";
@@ -25,13 +27,35 @@ function run(): void {
   const project = new Project(checker, workspace);
   const emit = (record: Record) => process.stdout.write(JSON.stringify(record) + "\n");
 
-  emit({ record: "project", name: workspace.name, settings: checker.settings() });
+  emit({
+    record: "project",
+    name: workspace.name,
+    settings: checker.settings(),
+    sources: sourcesHash(root, [
+      path.join(root, "package.json"),
+      path.join(root, values.tsconfig),
+      ...workspace.packages.map((p) => path.join(root, p.manifest)),
+      ...checker.projectFiles().map((f) => f.fileName),
+    ]),
+  });
   for (const pkg of workspace.packages) {
     emit({ record: "module", id: pkg.name, name: pkg.name, root: pkg.root });
   }
   collectItems(project, emit);
   collectFacts(project, emit);
   emit({ record: "end" });
+}
+
+/** Hashes each file's path relative to `root` and its contents, in path order. */
+function sourcesHash(root: string, files: string[]): string {
+  const hash = createHash("sha256");
+  const relative = [...new Set(files.map((f) => path.relative(root, path.resolve(f)).split(path.sep).join("/")))].sort();
+  for (const file of relative) {
+    const contents = fs.readFileSync(path.join(root, file));
+    hash.update(`${file}\0${contents.length}\0`);
+    hash.update(contents);
+  }
+  return hash.digest("hex");
 }
 
 class UsageError extends Error {}

@@ -80,3 +80,29 @@ fn untracked_file_contents_count_as_changes() {
     repo.write("b.ts", "export const b = 2;\n");
     assert_ne!(repo.revision(), one);
 }
+
+#[test]
+fn a_directory_outside_git_is_not_versioned() {
+    let dir = std::env::temp_dir().join(format!("srs-revision-plain-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let result = GitRevision { git: "git".into() }.revision(&dir);
+    fs::remove_dir_all(&dir).unwrap();
+    assert!(
+        matches!(result, Err(RevisionError::NotVersioned)),
+        "{result:?}"
+    );
+}
+
+#[test]
+fn a_missing_git_program_is_a_failure() {
+    let repo = Repo::new("no-git");
+    let result = GitRevision {
+        git: "/no/such/git".into(),
+    }
+    .revision(&repo.0);
+    assert!(
+        matches!(result, Err(RevisionError::Failed(_))),
+        "{result:?}"
+    );
+}

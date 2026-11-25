@@ -18,7 +18,7 @@ npm ci
 - **Project.** An npm workspace. The root `package.json` lists the packages in `workspaces`, either as directories or as a directory followed by `/*`. Each package is a module of the graph with one build unit.
 - **Selection.** `target` is the tsconfig file, relative to the project root. It names the source files and compiler options. `configuration` must be `"tsconfig"`, meaning the options exactly as that file states them.
 - **Files.** The files the tsconfig names, plus every workspace file they import. Files outside the workspace that they import are external.
-- **Identity.** The revision is the Git commit. When there are local changes, it is `<commit>-dirty-<hash of the changes>`. The graph ID ends with a hash of the graph's whole contents, so two graphs with one ID hold the same evidence.
+- **Identity.** The revision is the Git commit. When there are local changes, it is `<commit>-dirty-<hash of the changes>`. A project outside any Git repository gets `unversioned-<hash>`, where the hash covers every file the collector read: the sources, the package manifests and the tsconfig. The graph ID ends with a hash of the graph's whole contents, so two graphs with one ID hold the same evidence.
 - **Package surface.** An item is exported when the package's entry file exports it. The entry file comes from `types` or `main` in the package's `package.json`. Without either, visibility is unknown.
 
 ## How it works
