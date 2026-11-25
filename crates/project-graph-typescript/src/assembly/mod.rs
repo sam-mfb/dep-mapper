@@ -15,7 +15,7 @@ use project_graph::{
     Item, ItemId, ItemKind, Module, ModuleId, ProjectGraph, SourceSpan, UnitId, Visibility,
 };
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 /// What the grapher knows about the build before reading the project.
@@ -52,6 +52,7 @@ pub fn assemble(
     let mut facts = BTreeMap::new();
     let mut conditions = BTreeMap::new();
     let mut links = BTreeMap::new();
+    let mut joining = BTreeSet::new();
     let mut receivers = Vec::new();
     let mut gaps = Vec::new();
     let unit_of = |module: &str| UnitId(format!("{module}:{}", selected.target));
@@ -97,11 +98,15 @@ pub fn assemble(
                 site,
                 condition,
                 link,
+                joins_instances,
             } => {
                 let module = known(&modules, module)?;
                 let id = FactId(id);
                 if let Some(condition) = condition {
                     conditions.insert(id.clone(), condition);
+                }
+                if joins_instances {
+                    joining.insert(id.clone());
                 }
                 if let Some(link) = link {
                     let link = MoveLink {
@@ -173,6 +178,7 @@ pub fn assemble(
         facts: &facts,
         links: &links,
         conditions: &conditions,
+        joining: &joining,
     };
     routes.extend(routes::trace_values(
         &moves,

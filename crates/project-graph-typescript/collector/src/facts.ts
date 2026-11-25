@@ -20,6 +20,14 @@
 // A name bound by an object pattern reads the field of the pattern's type it
 // names, as if written `const name = value.field`.
 //
+// A function-typed parameter `cb` of a function `f` has two slots: argument
+// `i` of every call through it, `{ owner: f, projection: "cb(i)" }`, and its
+// result, `"cb return"`. Inside `f`, `cb(x)` passes `x` into `cb(0)` and its
+// value comes from `cb return`. Where `f` is called with a function for `cb`,
+// that function's parameters read from those slots and its returned values
+// move into `cb return`. The slots join every call of `f`, so their moves are
+// possible.
+//
 // Array contents are kept by element type: the elements of any array whose
 // elements are of type T share the place `{ owner: T, projection: "[element]" }`.
 // An array literal stores into it; a `for...of` variable, the callback of an
@@ -84,7 +92,8 @@ class FactWriter {
     const count = this.seen.get(base) ?? 0;
     this.seen.set(base, count + 1);
     const id = count === 0 ? base : `${base}~${count}`;
-    this.emit({ record: "fact", id, module, subject, fact, object, site, condition, link });
+    const joins_instances = isCallbackSlot(subject) || isCallbackSlot(object);
+    this.emit({ record: "fact", id, module, subject, fact, object, site, condition, link, joins_instances });
     return id;
   }
 
@@ -229,9 +238,20 @@ class FileFacts {
       }
     } else if (ts.isBindingElement(node) && ts.isIdentifier(node.name)) {
       this.bindingElement(node, node.name);
-    } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
-      const destination = this.targetSlot(node.left);
-      if (destination) this.flow(node.right, destination, "store", null);
+    } else if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      !insideAssignmentPattern(node)
+    ) {
+      const left = skipOuter(node.left);
+      if (ts.isObjectLiteralExpression(left)) {
+        this.objectAssignmentPattern(left, node.right);
+      } else if (ts.isArrayLiteralExpression(left)) {
+        this.arrayAssignmentPattern(left, node.right);
+      } else {
+        const destination = this.targetSlot(node.left);
+        if (destination) this.flow(node.right, destination, "store", null);
+      }
     } else if (ts.isReturnStatement(node) && node.expression) {
       const fn = ts.findAncestor(node.parent, ts.isFunctionLike);
       const owner = fn && this.project.items.get(fn);
@@ -273,6 +293,16 @@ class FileFacts {
     const declaration = this.checker.calledDeclaration(call);
     const target = declaration && this.project.endpointOf(declaration);
     const owner: Endpoint = { item: this.ownerOf(call) };
+    // A call through a callback parameter calls whatever function was given,
+    // even when the parameter's type names a project function (`typeof f`).
+    const callback = this.callbackParameter(call.expression);
+    if (callback) {
+      this.write(owner, { kind: "call", dispatch: "indirect" }, { unresolved: call.expression.getText(this.file) }, call);
+      call.arguments.forEach((arg, index) => {
+        this.flow(arg, { place: { owner: callback.owner, projection: `${callback.name}(${index})` } }, "pass", null);
+      });
+      return;
+    }
     if (!declaration || !target) {
       this.write(owner, { kind: "call", dispatch: "indirect" }, { unresolved: call.expression.getText(this.file) }, call);
       return;
@@ -326,6 +356,7 @@ class FileFacts {
       const name = parameter.name.text;
       if ("item" in target) {
         this.flow(arg, { place: { owner: target.item, projection: name } }, "pass", null, link);
+        this.callbackArgument(arg, target.item, name);
       } else if ("external" in target && !target.external.startsWith(`${LIBRARY}#`)) {
         this.flow(arg, { external: `${target.external}(${name})` }, "pass", null, link);
       }
@@ -436,9 +467,11 @@ class FileFacts {
     else if (kind === "store" && this.project.isField(source) && !this.project.isField(destination)) move = "read";
     if (this.witnessImplements(e)) move = "coerce";
     // A value that comes out of a call crosses that call too.
-    const moveLink: Link | null = ts.isCallExpression(e)
-      ? { argument: link?.argument ?? null, returned: this.callSite(e) }
-      : link;
+    // A call through a callback parameter has no callee of its own to match.
+    const moveLink: Link | null =
+      ts.isCallExpression(e) && !this.callbackParameter(e.expression)
+        ? { argument: link?.argument ?? null, returned: this.callSite(e) }
+        : link;
     return [this.write(source, { kind: move } as FactKind, destination, e, condition, moveLink)];
   }
 
@@ -508,6 +541,62 @@ class FileFacts {
     if (object) this.write({ item }, { kind: "implements" }, object, declaration.type);
   }
 
+  /**
+   * The function and name of a parameter called as a function, when `callee`
+   * names a parameter of an item: `cb` in `function f(cb) { cb(x) }`.
+   */
+  private callbackParameter(callee: ts.Expression): { owner: string; name: string } | undefined {
+    if (!ts.isIdentifier(callee)) return undefined;
+    const declaration = this.checker.symbolAt(callee)?.valueDeclaration;
+    if (!declaration || !ts.isParameter(declaration) || !ts.isIdentifier(declaration.name)) return undefined;
+    const owner = this.project.items.get(declaration.parent);
+    return owner ? { owner, name: declaration.name.text } : undefined;
+  }
+
+  /**
+   * When a function is passed for parameter `name` of `owner`, its
+   * parameters read the arguments `owner` gives it and its returned values
+   * move into the parameter's result. The function is a closure written at
+   * the call or a function item named there.
+   */
+  private callbackArgument(arg: ts.Expression, owner: string, name: string): void {
+    const value = skipOuter(arg);
+    let fn: ts.SignatureDeclaration | undefined;
+    if (ts.isArrowFunction(value) || ts.isFunctionExpression(value)) {
+      fn = value;
+    } else if (ts.isIdentifier(value)) {
+      const symbol = this.checker.symbolAt(value);
+      const declaration = symbol && this.checker.resolveAlias(symbol).valueDeclaration;
+      if (declaration && ts.isFunctionDeclaration(declaration) && this.project.items.has(declaration)) fn = declaration;
+    }
+    if (!fn) return;
+    const result: Endpoint = { place: { owner, projection: `${name} return` } };
+    const item = this.project.items.get(fn);
+    fn.parameters.forEach((parameter, index) => {
+      if (!ts.isIdentifier(parameter.name)) return;
+      const into: Endpoint = item
+        ? { place: { owner: item, projection: parameter.name.text } }
+        : this.placeOf(parameter, parameter.name.text);
+      this.write({ place: { owner, projection: `${name}(${index})` } }, { kind: "pass" }, into, parameter);
+    });
+    if (item) {
+      // A named function's returns already move into its own `return`.
+      this.write({ place: { owner: item, projection: "return" } }, { kind: "return" }, result, value);
+      return;
+    }
+    const body = "body" in fn ? fn.body : undefined;
+    if (body && !ts.isBlock(body)) {
+      this.flow(body as ts.Expression, result, "return", null);
+    } else if (body) {
+      const visit = (node: ts.Node): void => {
+        if (ts.isFunctionLike(node)) return;
+        if (ts.isReturnStatement(node) && node.expression) this.flow(node.expression, result, "return", null);
+        ts.forEachChild(node, visit);
+      };
+      ts.forEachChild(body, visit);
+    }
+  }
+
   /** The endpoint a value is read from. */
   private sourceOf(e: ts.Expression): Endpoint | undefined {
     if (ts.isIdentifier(e)) return this.variableSlot(e);
@@ -519,6 +608,8 @@ class FileFacts {
     }
     if (ts.isPropertyAccessExpression(e)) return this.fieldSlot(e);
     if (ts.isCallExpression(e)) {
+      const callback = this.callbackParameter(e.expression);
+      if (callback) return { place: { owner: callback.owner, projection: `${callback.name} return` } };
       const declaration = this.checker.calledDeclaration(e);
       const target = declaration && this.project.endpointOf(declaration);
       if (!target) return undefined;
@@ -576,7 +667,14 @@ class FileFacts {
 
   /** The slot a variable or parameter name refers to, as seen from where the name is used. */
   private variableSlot(id: ts.Identifier): Endpoint | undefined {
-    const symbol = this.checker.symbolAt(id);
+    return this.slotOfSymbol(this.checker.symbolAt(id), id);
+  }
+
+  /**
+   * The slot of the variable, parameter or bound name a symbol stands for,
+   * as seen from `use`.
+   */
+  private slotOfSymbol(symbol: ts.Symbol | undefined, use: ts.Node): Endpoint | undefined {
     if (!symbol) return undefined;
     const resolved = this.checker.resolveAlias(symbol);
     const declaration = resolved.valueDeclaration ?? resolved.declarations?.[0];
@@ -590,7 +688,7 @@ class FileFacts {
     const name = (declaration as ts.NamedDeclaration).name;
     if (!isLocal || !name || !ts.isIdentifier(name)) return undefined;
     if (declaration.getSourceFile() !== this.file) return undefined;
-    return this.captureInto(declaration, this.placeOf(declaration, name.text), name.text, id);
+    return this.captureInto(declaration, this.placeOf(declaration, name.text), name.text, use);
   }
 
   /** The place of a local, parameter or bound name where it is declared. */
@@ -662,9 +760,13 @@ class FileFacts {
     const destination = this.placeOf(element, name.text);
     const pattern = element.parent;
     if (ts.isArrayBindingPattern(pattern)) {
-      if (arrayLiteralOf(pattern) || !element.initializer) return;
+      // A pattern over an array literal is followed element by element in `arrayPattern`.
+      if (arrayLiteralOf(pattern) || element.dotDotDotToken) return;
       const index = pattern.elements.indexOf(element);
-      this.flow(element.initializer, destination, "store", `[${index}] === undefined`);
+      const elements = this.elementPlace(this.checker.typeAt(pattern));
+      const read = element.initializer ? `[${index}] !== undefined` : null;
+      if (elements) this.write(elements, { kind: "read" }, destination, element, read);
+      if (element.initializer) this.flow(element.initializer, destination, "store", `[${index}] === undefined`);
       return;
     }
     const property = element.propertyName
@@ -680,6 +782,93 @@ class FileFacts {
     const source = symbol?.valueDeclaration && this.fieldOf(symbol.valueDeclaration, property);
     const condition = element.initializer ? `${property} !== undefined` : null;
     if (source) this.write(source, { kind: "read" }, destination, element, condition);
+  }
+
+  /**
+   * `({ a, key: target, b = d } = value)` reads each named field of the
+   * value's type into its target, as an object binding pattern does. A
+   * default makes the read and the default each conditional. Nested
+   * patterns are not followed.
+   */
+  private objectAssignmentPattern(pattern: ts.ObjectLiteralExpression, value: ts.Expression): void {
+    const type = this.checker.typeAt(value);
+    for (const property of pattern.properties) {
+      let key: string;
+      let target: ts.Expression;
+      let fallback: ts.Expression | undefined;
+      let destination: Endpoint | undefined;
+      if (ts.isShorthandPropertyAssignment(property)) {
+        key = property.name.text;
+        target = property.name;
+        fallback = property.objectAssignmentInitializer;
+        destination = this.shorthandSlot(property);
+      } else if (ts.isPropertyAssignment(property) && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))) {
+        key = property.name.text;
+        const written = skipOuter(property.initializer);
+        if (ts.isBinaryExpression(written) && written.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+          target = written.left;
+          fallback = written.right;
+        } else {
+          target = written;
+        }
+      } else {
+        continue;
+      }
+      destination ??= this.targetSlot(target);
+      if (!destination) continue;
+      const symbol = this.checker.propertyOf(type, key);
+      const source = symbol?.valueDeclaration && this.fieldOf(symbol.valueDeclaration, key);
+      const read = fallback ? `${key} !== undefined` : null;
+      if (source) this.write(source, { kind: "read" }, destination, property, read);
+      if (fallback) this.flow(fallback, destination, "store", `${key} === undefined`);
+    }
+  }
+
+  /** The variable a shorthand property in an assignment pattern writes to. */
+  private shorthandSlot(property: ts.ShorthandPropertyAssignment): Endpoint | undefined {
+    return this.slotOfSymbol(this.checker.shorthandValue(property), property);
+  }
+
+  /**
+   * `[a, b = d] = value`, following the same rules as an array binding
+   * pattern: over an array literal, each supplied element moves into its
+   * target by position and replaces the default (unless its type admits
+   * undefined); from the first spread on, positions are unknown, so a
+   * target's value is not followed and its default is only possible, as in
+   * `arrayPattern`. Over any other value, each target reads from the element
+   * place of the value's type. Rest elements are not followed.
+   */
+  private arrayAssignmentPattern(pattern: ts.ArrayLiteralExpression, value: ts.Expression): void {
+    const literal = skipOuter(value);
+    const isLiteral = ts.isArrayLiteralExpression(literal);
+    const spread = isLiteral ? literal.elements.findIndex((e) => ts.isSpreadElement(e)) : -1;
+    const elements = isLiteral ? undefined : this.elementPlace(this.checker.typeAt(value));
+    pattern.elements.forEach((element, index) => {
+      if (ts.isOmittedExpression(element) || ts.isSpreadElement(element)) return;
+      let target: ts.Expression = element;
+      let fallback: ts.Expression | undefined;
+      if (ts.isBinaryExpression(element) && element.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+        target = element.left;
+        fallback = element.right;
+      }
+      const destination = this.targetSlot(target);
+      if (!destination) return;
+      if (isLiteral && (spread === -1 || index < spread)) {
+        const supplied = literal.elements[index];
+        if (!supplied || ts.isOmittedExpression(supplied)) {
+          if (fallback) this.flow(fallback, destination, "store", null);
+          return;
+        }
+        const optional = fallback !== undefined && mayBeUndefined(this.checker.typeAt(supplied));
+        const text = supplied.getText(this.file);
+        this.flow(supplied, destination, "store", optional ? `${text} !== undefined` : null);
+        if (optional) this.flow(fallback!, destination, "store", `${text} === undefined`);
+        return;
+      }
+      const read = fallback ? `[${index}] !== undefined` : null;
+      if (elements) this.write(elements, { kind: "read" }, destination, element, read);
+      if (fallback) this.flow(fallback, destination, "store", `[${index}] === undefined`);
+    });
   }
 
   /**
@@ -771,6 +960,11 @@ const ELEMENT_PARAMETERS: ReadonlyMap<string, readonly number[]> = new Map<strin
   ["reduceRight", [1]],
 ]);
 
+/** Whether an endpoint is a callback parameter's argument or result slot (see the header). */
+function isCallbackSlot(endpoint: Endpoint): boolean {
+  return "place" in endpoint && /\(\d+\)$| return$/.test(endpoint.place.projection);
+}
+
 /** Array methods whose result is one of the array's elements. */
 const ELEMENT_RESULT = new Set(["find", "findLast", "at", "pop", "shift"]);
 
@@ -831,6 +1025,32 @@ function declares(project: Project, cls: ts.ClassLikeDeclaration, contract: ts.D
       return symbol !== undefined && (project.checker.resolveAlias(symbol).declarations ?? []).includes(contract);
     }),
   );
+}
+
+/**
+ * Whether a node is part of the left side of a destructuring assignment,
+ * such as the default `b = d` in `[a, b = d] = value`, which the pattern's
+ * own handling covers.
+ */
+function insideAssignmentPattern(node: ts.Node): boolean {
+  let child: ts.Node = node;
+  for (let parent = node.parent; parent; child = parent, parent = parent.parent) {
+    if (
+      ts.isArrayLiteralExpression(parent) ||
+      ts.isObjectLiteralExpression(parent) ||
+      ts.isPropertyAssignment(parent) ||
+      ts.isParenthesizedExpression(parent)
+    ) {
+      continue;
+    }
+    return (
+      ts.isBinaryExpression(parent) &&
+      parent.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      parent.left === child &&
+      child !== node
+    );
+  }
+  return false;
 }
 
 function insideImport(node: ts.Node): boolean {

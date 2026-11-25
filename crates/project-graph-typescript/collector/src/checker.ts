@@ -44,6 +44,8 @@ export interface Checker {
   typeAt(node: ts.Node): ts.Type;
   /** The type of an array's or tuple's elements, if the type has numbered elements. */
   elementType(type: ts.Type): ts.Type | undefined;
+  /** The variable a shorthand property names, as in `({ a } = value)`. */
+  shorthandValue(property: ts.ShorthandPropertyAssignment): ts.Symbol | undefined;
   /** The property of a type with the given name, including inherited ones. */
   propertyOf(type: ts.Type, name: string): ts.Symbol | undefined;
   /** The type of the slot an expression is written into, when the code declares one. */

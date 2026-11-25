@@ -78,6 +78,7 @@ export function openTypeScript6(configPath: string, packageEntries: ReadonlyMap<
     calledDeclaration: (call) => checker.getResolvedSignature(call)?.declaration as ts.Declaration | undefined,
     typeAt: (node) => checker.getTypeAtLocation(node),
     propertyOf: (type, name) => checker.getPropertyOfType(type, name),
+    shorthandValue: (property) => checker.getShorthandAssignmentValueSymbol(property),
     elementType: (type) => checker.getIndexTypeOfType(type, ts.IndexKind.Number),
     slotType: (expression) => checker.getContextualType(expression),
     exportsOf: (file) => {

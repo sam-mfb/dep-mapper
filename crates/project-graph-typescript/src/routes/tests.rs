@@ -76,6 +76,7 @@ fn trace(
         facts,
         links: &links,
         conditions: &conditions,
+        joining: &BTreeSet::new(),
     };
     trace_values(&moves, uses, is_field, TraceLimits::STANDARD)
 }
@@ -367,6 +368,47 @@ fn each_call_explains_only_its_own_receiver() {
     assert_eq!(routes[&RouteId("value:callA:0".into())].origin, item("A"));
     assert_eq!(routes[&RouteId("value:callB:0".into())].origin, item("B"));
     assert_eq!(routes.len(), 2);
+}
+
+#[test]
+fn a_move_the_collector_marks_as_joining_is_possible() {
+    let graph = facts(vec![
+        (
+            "new",
+            fact(item("Os"), FactKind::Construct, place("with", "use(0)")),
+        ),
+        (
+            "give",
+            fact(place("with", "use(0)"), FactKind::Pass, place("main", "b")),
+        ),
+        (
+            "recv",
+            fact(place("main", "b"), FactKind::Pass, place("go", "self")),
+        ),
+    ]);
+    let joining = BTreeSet::from([FactId("new".into()), FactId("give".into())]);
+    let moves = ValueMoves {
+        facts: &graph,
+        links: &BTreeMap::new(),
+        conditions: &BTreeMap::new(),
+        joining: &joining,
+    };
+    let routes = trace_values(
+        &moves,
+        &[receiver("call", &["recv"])],
+        is_field,
+        TraceLimits::STANDARD,
+    );
+    let support: Vec<_> = routes
+        .values()
+        .next()
+        .unwrap()
+        .hops
+        .iter()
+        .map(|h| h.support.clone())
+        .collect();
+    let possible = Support::Possible { condition: None };
+    assert_eq!(support, [possible.clone(), possible, Support::Established]);
 }
 
 #[test]
