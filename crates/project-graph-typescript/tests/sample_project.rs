@@ -430,6 +430,7 @@ fn each_implementer_is_a_receiver_candidate_for_the_contract_call() {
         item(MAIN, "MemoryBackups"),
         item(ECHO, "SpareBackups"),
         item(REGISTRY, "quietBackups"),
+        item(REGISTRY, "FallbackBackups"),
     ];
     assert_eq!(bounds.len(), implementers.len());
     for (object, kind) in bounds {
@@ -1043,4 +1044,93 @@ fn a_callback_parameter_typed_as_a_project_function_still_fills_its_slots() {
         })
         .is_empty()
     );
+}
+
+/// The origins of the value routes for the call whose source text is `call`, sorted.
+fn sorted_origins(call: &str) -> Vec<String> {
+    let (id, _) = only_fact(|f| {
+        matches!(f.kind, FactKind::Call(_)) && f.site.as_ref().is_some_and(|s| text(s) == call)
+    });
+    let mut origins: Vec<_> = routes_to(id)
+        .iter()
+        .map(|r| format!("{:?}", r.origin))
+        .collect();
+    origins.sort();
+    origins
+}
+
+/// The supports of every route hop into `to`.
+fn supports_into(to: &Endpoint) -> Vec<Support> {
+    graph()
+        .routes
+        .values()
+        .flat_map(|r| &r.hops)
+        .filter(|h| &h.to == to)
+        .map(|h| h.support.clone())
+        .collect()
+}
+
+#[test]
+fn an_object_pattern_in_an_assignment_reads_the_fields_it_names() {
+    assert_eq!(
+        sorted_origins("picked.write(\"reassigned\")"),
+        [format!("{:?}", item(OS, "OsBackups"))]
+    );
+    let read = only_fact(|f| f.object == place(REGISTRY, "reassign", "picked")).1;
+    assert_eq!(read.kind, FactKind::Read);
+    assert_eq!(read.subject, place(REGISTRY, "Holder", "backups"));
+
+    // `spare = quietBackups`: the field read and the default are each conditional.
+    let spare = place(REGISTRY, "reassign", "spare");
+    assert_eq!(facts_where(|f| f.object == spare).len(), 2);
+    assert!(supports_into(&spare).contains(&Support::Possible {
+        condition: Some("spare === undefined".into())
+    }));
+}
+
+#[test]
+fn an_array_pattern_in_an_assignment_reads_the_element_place() {
+    let mut both = vec![
+        format!("{:?}", item(OS, "OsBackups")),
+        format!("{:?}", item(REGISTRY, "quietBackups")),
+    ];
+    both.sort();
+    assert_eq!(sorted_origins("first.write(\"in order\")"), both);
+
+    // `second = new FallbackBackups()` is a default inside the pattern, not a
+    // plain assignment.
+    let second = place(REGISTRY, "reassign", "second");
+    assert_eq!(facts_where(|f| f.object == second).len(), 2);
+    let supports = supports_into(&second);
+    assert!(supports.contains(&Support::Possible {
+        condition: Some("[1] !== undefined".into())
+    }));
+    assert!(supports.contains(&Support::Possible {
+        condition: Some("[1] === undefined".into())
+    }));
+    assert!(!supports.contains(&Support::Established));
+}
+
+#[test]
+fn a_shorthand_pattern_reassigns_a_name_bound_by_destructuring() {
+    let backups = place(REGISTRY, "rebind", "backups");
+    let into: Vec<_> = facts_where(|f| f.object == backups)
+        .into_iter()
+        .map(|(_, f)| (f.kind.clone(), f.subject.clone()))
+        .collect();
+    let field = place(REGISTRY, "Holder", "backups");
+    // One read when declared, one when reassigned.
+    assert_eq!(
+        into,
+        [(FactKind::Read, field.clone()), (FactKind::Read, field)],
+        "{into:#?}"
+    );
+}
+
+#[test]
+fn an_assignment_inside_a_shorthand_default_is_recorded() {
+    let late = place(REGISTRY, "lateFallback", "late");
+    let quiet = Endpoint::Item(id(REGISTRY, "quietBackups"));
+    let stores = facts_where(|f| f.object == late && f.subject == quiet);
+    assert_eq!(stores.len(), 1, "{stores:#?}");
 }

@@ -238,9 +238,20 @@ class FileFacts {
       }
     } else if (ts.isBindingElement(node) && ts.isIdentifier(node.name)) {
       this.bindingElement(node, node.name);
-    } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
-      const destination = this.targetSlot(node.left);
-      if (destination) this.flow(node.right, destination, "store", null);
+    } else if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      !insideAssignmentPattern(node)
+    ) {
+      const left = skipOuter(node.left);
+      if (ts.isObjectLiteralExpression(left)) {
+        this.objectAssignmentPattern(left, node.right);
+      } else if (ts.isArrayLiteralExpression(left)) {
+        this.arrayAssignmentPattern(left, node.right);
+      } else {
+        const destination = this.targetSlot(node.left);
+        if (destination) this.flow(node.right, destination, "store", null);
+      }
     } else if (ts.isReturnStatement(node) && node.expression) {
       const fn = ts.findAncestor(node.parent, ts.isFunctionLike);
       const owner = fn && this.project.items.get(fn);
@@ -656,7 +667,14 @@ class FileFacts {
 
   /** The slot a variable or parameter name refers to, as seen from where the name is used. */
   private variableSlot(id: ts.Identifier): Endpoint | undefined {
-    const symbol = this.checker.symbolAt(id);
+    return this.slotOfSymbol(this.checker.symbolAt(id), id);
+  }
+
+  /**
+   * The slot of the variable, parameter or bound name a symbol stands for,
+   * as seen from `use`.
+   */
+  private slotOfSymbol(symbol: ts.Symbol | undefined, use: ts.Node): Endpoint | undefined {
     if (!symbol) return undefined;
     const resolved = this.checker.resolveAlias(symbol);
     const declaration = resolved.valueDeclaration ?? resolved.declarations?.[0];
@@ -670,7 +688,7 @@ class FileFacts {
     const name = (declaration as ts.NamedDeclaration).name;
     if (!isLocal || !name || !ts.isIdentifier(name)) return undefined;
     if (declaration.getSourceFile() !== this.file) return undefined;
-    return this.captureInto(declaration, this.placeOf(declaration, name.text), name.text, id);
+    return this.captureInto(declaration, this.placeOf(declaration, name.text), name.text, use);
   }
 
   /** The place of a local, parameter or bound name where it is declared. */
@@ -764,6 +782,93 @@ class FileFacts {
     const source = symbol?.valueDeclaration && this.fieldOf(symbol.valueDeclaration, property);
     const condition = element.initializer ? `${property} !== undefined` : null;
     if (source) this.write(source, { kind: "read" }, destination, element, condition);
+  }
+
+  /**
+   * `({ a, key: target, b = d } = value)` reads each named field of the
+   * value's type into its target, as an object binding pattern does. A
+   * default makes the read and the default each conditional. Nested
+   * patterns are not followed.
+   */
+  private objectAssignmentPattern(pattern: ts.ObjectLiteralExpression, value: ts.Expression): void {
+    const type = this.checker.typeAt(value);
+    for (const property of pattern.properties) {
+      let key: string;
+      let target: ts.Expression;
+      let fallback: ts.Expression | undefined;
+      let destination: Endpoint | undefined;
+      if (ts.isShorthandPropertyAssignment(property)) {
+        key = property.name.text;
+        target = property.name;
+        fallback = property.objectAssignmentInitializer;
+        destination = this.shorthandSlot(property);
+      } else if (ts.isPropertyAssignment(property) && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))) {
+        key = property.name.text;
+        const written = skipOuter(property.initializer);
+        if (ts.isBinaryExpression(written) && written.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+          target = written.left;
+          fallback = written.right;
+        } else {
+          target = written;
+        }
+      } else {
+        continue;
+      }
+      destination ??= this.targetSlot(target);
+      if (!destination) continue;
+      const symbol = this.checker.propertyOf(type, key);
+      const source = symbol?.valueDeclaration && this.fieldOf(symbol.valueDeclaration, key);
+      const read = fallback ? `${key} !== undefined` : null;
+      if (source) this.write(source, { kind: "read" }, destination, property, read);
+      if (fallback) this.flow(fallback, destination, "store", `${key} === undefined`);
+    }
+  }
+
+  /** The variable a shorthand property in an assignment pattern writes to. */
+  private shorthandSlot(property: ts.ShorthandPropertyAssignment): Endpoint | undefined {
+    return this.slotOfSymbol(this.checker.shorthandValue(property), property);
+  }
+
+  /**
+   * `[a, b = d] = value`, following the same rules as an array binding
+   * pattern: over an array literal, each supplied element moves into its
+   * target by position and replaces the default (unless its type admits
+   * undefined); from the first spread on, positions are unknown, so a
+   * target's value is not followed and its default is only possible, as in
+   * `arrayPattern`. Over any other value, each target reads from the element
+   * place of the value's type. Rest elements are not followed.
+   */
+  private arrayAssignmentPattern(pattern: ts.ArrayLiteralExpression, value: ts.Expression): void {
+    const literal = skipOuter(value);
+    const isLiteral = ts.isArrayLiteralExpression(literal);
+    const spread = isLiteral ? literal.elements.findIndex((e) => ts.isSpreadElement(e)) : -1;
+    const elements = isLiteral ? undefined : this.elementPlace(this.checker.typeAt(value));
+    pattern.elements.forEach((element, index) => {
+      if (ts.isOmittedExpression(element) || ts.isSpreadElement(element)) return;
+      let target: ts.Expression = element;
+      let fallback: ts.Expression | undefined;
+      if (ts.isBinaryExpression(element) && element.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+        target = element.left;
+        fallback = element.right;
+      }
+      const destination = this.targetSlot(target);
+      if (!destination) return;
+      if (isLiteral && (spread === -1 || index < spread)) {
+        const supplied = literal.elements[index];
+        if (!supplied || ts.isOmittedExpression(supplied)) {
+          if (fallback) this.flow(fallback, destination, "store", null);
+          return;
+        }
+        const optional = fallback !== undefined && mayBeUndefined(this.checker.typeAt(supplied));
+        const text = supplied.getText(this.file);
+        this.flow(supplied, destination, "store", optional ? `${text} !== undefined` : null);
+        if (optional) this.flow(fallback!, destination, "store", `${text} === undefined`);
+        return;
+      }
+      const read = fallback ? `[${index}] !== undefined` : null;
+      if (elements) this.write(elements, { kind: "read" }, destination, element, read);
+      if (fallback) this.flow(fallback, destination, "store", `[${index}] === undefined`);
+    });
   }
 
   /**
@@ -920,6 +1025,32 @@ function declares(project: Project, cls: ts.ClassLikeDeclaration, contract: ts.D
       return symbol !== undefined && (project.checker.resolveAlias(symbol).declarations ?? []).includes(contract);
     }),
   );
+}
+
+/**
+ * Whether a node is part of the left side of a destructuring assignment,
+ * such as the default `b = d` in `[a, b = d] = value`, which the pattern's
+ * own handling covers.
+ */
+function insideAssignmentPattern(node: ts.Node): boolean {
+  let child: ts.Node = node;
+  for (let parent = node.parent; parent; child = parent, parent = parent.parent) {
+    if (
+      ts.isArrayLiteralExpression(parent) ||
+      ts.isObjectLiteralExpression(parent) ||
+      ts.isPropertyAssignment(parent) ||
+      ts.isParenthesizedExpression(parent)
+    ) {
+      continue;
+    }
+    return (
+      ts.isBinaryExpression(parent) &&
+      parent.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      parent.left === child &&
+      child !== node
+    );
+  }
+  return false;
 }
 
 function insideImport(node: ts.Node): boolean {

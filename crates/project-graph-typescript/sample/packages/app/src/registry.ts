@@ -46,3 +46,47 @@ export function writePrimary(): string {
   second.prune(2);
   return primary.write("primary");
 }
+
+class FallbackBackups implements Backups {
+  write(label: string): string {
+    return label;
+  }
+
+  prune(_keep: number): void {}
+}
+
+interface Holder {
+  backups: Backups;
+  spare?: Backups;
+}
+
+// Destructuring in assignments, not declarations.
+export function reassign(): string {
+  const holder: Holder = { backups: new OsBackups() };
+  let picked: Backups;
+  let spare: Backups;
+  ({ backups: picked, spare = quietBackups } = holder);
+  let first: Backups;
+  let second: Backups;
+  [first, second = new FallbackBackups()] = ALL;
+  second.prune(0);
+  return picked.write("reassigned") + spare.write("held") + first.write("in order");
+}
+
+// A name bound by destructuring, reassigned through a shorthand pattern.
+export function rebind(): string {
+  const holder: Holder = { backups: new OsBackups() };
+  let { backups } = holder;
+  ({ backups } = holder);
+  return backups.write("rebound");
+}
+
+// An assignment written inside a shorthand default is a real assignment.
+export function lateFallback(): Backups {
+  const holder: Holder = { backups: new OsBackups() };
+  let late: Backups = new FallbackBackups();
+  let spare: Backups;
+  ({ spare = (late = quietBackups) } = holder);
+  spare.prune(3);
+  return late;
+}
