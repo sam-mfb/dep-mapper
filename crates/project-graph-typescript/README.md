@@ -19,6 +19,7 @@ npm ci
 - **Selection.** `target` is the tsconfig file, relative to the project root. It names the source files and compiler options. `configuration` must be `"tsconfig"`, meaning the options exactly as that file states them.
 - **Files.** The files the tsconfig names, plus every workspace file they import. Files outside the workspace that they import are external.
 - **Identity.** The revision is the Git commit. When there are local changes, it is `<commit>-dirty-<hash of the changes>`. A project outside any Git repository gets `unversioned-<hash>`. The hash covers every file the collector and the compiler read: the sources, declaration files, package manifests, the tsconfig and every config it extends. The TypeScript package's own files are left out. The graph ID ends with a hash of the graph's whole contents, so two graphs with one ID hold the same evidence.
+- **Namespaces.** A `namespace` is an item of kind module, and its members are items named through it, such as `Paths.folder` or `Paths.Folder.path`; `namespace A.B {}` nests `B` in `A`. A member is exported when its namespace is and it says `export`. Ambient module declarations (`declare module "x"`) are not items.
 - **Package entry.** Each package's entry is its source entry file. That is the `source` field, else `types` or `main` when it names a TypeScript source file, else the first of `src/index.ts`, `src/index.tsx` and `index.ts` that exists. Without one, visibility is unknown. An item is exported when the entry exports it.
 - **Unbuilt packages.** A package's `exports` and `main` usually name built output, which a fresh checkout doesn't have. When the compiler can't resolve an import of a workspace package by its name, the collector resolves it to that package's source entry. So a project maps without being built, and with or without its dependencies installed.
 
@@ -51,7 +52,7 @@ There are three kinds of route:
 - **Value route.** The shared `value-routes` tracer searches back from a method call's receiver to each `new` expression that can supply it, keeping one path per origin. A value returned from a call is matched to that call's own arguments. A move into or out of a field, or out of a closure's captured variable, stands for every instance of that place, so its hop is possible. If no origin is reached, the route stops at the call and says why.
 - **Receiver bound.** For a call through an interface, one bound for each class with an `Implements` fact for that interface.
 
-Not yet covered: arrays kept per variable rather than per element type, other containers such as `Map` and `Set`, namespaces, and calls through function-typed values beyond recording them as indirect. A closure is followed when it is given as an argument for a parameter; one stored in a variable or a field and called later is not. A value that comes from outside the project is not an origin, so its trace stops.
+Not yet covered: arrays kept per variable rather than per element type, other containers such as `Map` and `Set`, and calls through function-typed values beyond recording them as indirect. A closure is followed when it is given as an argument for a parameter; one stored in a variable or a field and called later is not. A value that comes from outside the project is not an origin, so its trace stops.
 
 ## Sample
 

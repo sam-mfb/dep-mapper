@@ -1134,3 +1134,87 @@ fn an_assignment_inside_a_shorthand_default_is_recorded() {
     let stores = facts_where(|f| f.object == late && f.subject == quiet);
     assert_eq!(stores.len(), 1, "{stores:#?}");
 }
+
+const PATHS: &str = "@sample/backup-os/src/paths.ts";
+
+#[test]
+fn namespace_members_are_items_visible_when_exported() {
+    let items = &graph().items;
+    let check = |name: &str, kind: ItemKind, visibility: Visibility| {
+        let found = &items[&id(PATHS, name)];
+        assert_eq!(
+            (&found.kind, &found.visibility),
+            (&kind, &visibility),
+            "{name}"
+        );
+    };
+    check("Paths", ItemKind::Module, Visibility::Exported);
+    check("Paths.folder", ItemKind::Function, Visibility::Exported);
+    check("Paths.root", ItemKind::Function, Visibility::Internal);
+    check("Paths.Folder", ItemKind::Type, Visibility::Exported);
+    check("Paths.Folder.path", ItemKind::Method, Visibility::Exported);
+    // `namespace Limits.Disk` nests Disk in Limits.
+    check("Paths.Limits", ItemKind::Module, Visibility::Exported);
+    check("Paths.Limits.Disk", ItemKind::Module, Visibility::Exported);
+    check(
+        "Paths.Limits.Disk.quota",
+        ItemKind::Value,
+        Visibility::Exported,
+    );
+    assert_eq!(
+        items[&id(PATHS, "Paths")].signature.as_deref(),
+        Some("export namespace Paths")
+    );
+    // A class merged with a namespace: the namespace's own rules decide its members.
+    check("Shelf", ItemKind::Type, Visibility::Exported);
+    check("Shelf.slots", ItemKind::Value, Visibility::Exported);
+    check("Shelf.label", ItemKind::Function, Visibility::Internal);
+    check("Shelf.size", ItemKind::Method, Visibility::Exported);
+}
+
+#[test]
+fn a_value_exported_from_a_namespace_is_an_origin() {
+    let (call, _) = only_fact(|f| {
+        matches!(f.kind, FactKind::Call(_))
+            && f.site
+                .as_ref()
+                .is_some_and(|s| text(s) == "Paths.defaultBackups.write(\"default\")")
+    });
+    let routes = routes_to(call);
+    assert_eq!(routes.len(), 1, "{routes:#?}");
+    // A top-level value is an origin, like quietBackups; inside a namespace too.
+    assert_eq!(routes[0].origin, item(PATHS, "Paths.defaultBackups"));
+    assert_eq!(routes[0].end, RouteEnd::ReachedUse);
+    // Its own value comes from the constructor.
+    only_fact(|f| {
+        f.kind == FactKind::Construct
+            && f.subject == item(OS, "OsBackups")
+            && f.object == item(PATHS, "Paths.defaultBackups")
+    });
+}
+
+#[test]
+fn calls_into_a_namespace_reach_its_members() {
+    let where_ = item("@sample/app/src/paths.ts", "where");
+    let call = |callee: Endpoint| {
+        only_fact(|f| {
+            f.subject == where_ && f.object == callee && matches!(f.kind, FactKind::Call(_))
+        })
+    };
+    let (folder, fact) = call(item(PATHS, "Paths.folder"));
+    assert_eq!(fact.kind, FactKind::Call(Dispatch::Direct));
+    // A call into another package is a direct-use route.
+    assert!(
+        graph()
+            .routes
+            .contains_key(&RouteId(format!("use:{}", folder.0)))
+    );
+    let (path, _) = call(item(PATHS, "Paths.Folder.path"));
+    let routes = routes_to(path);
+    assert_eq!(routes.len(), 1);
+    assert_eq!(routes[0].origin, item(PATHS, "Paths.Folder"));
+    // Inside the namespace, the class's method calls the namespace's function.
+    only_fact(|f| {
+        f.subject == item(PATHS, "Paths.Folder.path") && f.object == item(PATHS, "Paths.folder")
+    });
+}
