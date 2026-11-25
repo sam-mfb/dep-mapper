@@ -68,12 +68,13 @@ struct DraftArgs {
 #[derive(Subcommand)]
 enum DraftSubcommand {
     /// Report the draft's problems, with file, line and column where known.
-    /// Exits with status 1 if there are any.
+    /// Exits with status 1 if there are any. A saved map is checked as it is.
     Check {
         /// The draft file.
         draft: PathBuf,
     },
     /// Write the draft's map page to a file. Refuses a draft with problems.
+    /// Given a saved map, writes its page as it is.
     Render {
         /// The draft file.
         draft: PathBuf,
@@ -82,7 +83,8 @@ enum DraftSubcommand {
         out: PathBuf,
     },
     /// Serve a live preview of the draft, rebuilt and reloaded whenever the
-    /// draft or its base map changes, until stopped.
+    /// draft or its base map changes, until stopped. Given a saved map,
+    /// previews it as it is.
     Preview {
         /// The draft file.
         draft: PathBuf,

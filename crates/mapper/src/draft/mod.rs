@@ -5,7 +5,7 @@
 
 use map_draft::{BaseMismatch, DraftProblem};
 use map_persist::{LoadError, MapDocument};
-use project_map::{Draft, DraftBase, MapPart, MapProblem, ProjectMap};
+use project_map::{DraftBase, MapPart, MapProblem, ProjectMap};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -72,10 +72,16 @@ pub struct Build {
 }
 
 /// Loads the draft at `path` and its base, lays the draft over the base, and
-/// builds the page. A base path is relative to the draft's folder.
+/// builds the page. A base path is relative to the draft's folder. Given a
+/// saved map instead of a draft, it builds the map's page as it is.
 pub fn build(path: &Path, files: &dyn DraftFiles) -> Build {
     let mut sources = vec![path.to_path_buf()];
-    let page = load_draft(path, files).and_then(|draft| {
+    let page = load(path, files).and_then(|document| {
+        let draft = match document {
+            MapDocument::Draft(draft) => draft,
+            // A saved map has nothing to lay over it: it is shown as it is.
+            MapDocument::Map(map) => return checked_page(path, &map),
+        };
         let base = match &draft.base {
             DraftBase::Saved(base) => {
                 let base_path = path.parent().unwrap_or(Path::new("")).join(base);
@@ -177,13 +183,16 @@ fn report(files: &mut dyn DraftFiles, problems: Vec<String>) -> Result<(), Draft
     Err(DraftError::Problems(problems.len()))
 }
 
-fn load_draft(path: &Path, files: &dyn DraftFiles) -> Result<Draft, Vec<String>> {
-    match load(path, files)? {
-        MapDocument::Draft(draft) => Ok(draft),
-        MapDocument::Map(_) => Err(vec![format!(
-            "{}: is a saved map, not a draft",
-            path.display()
-        )]),
+/// The page of a saved map, or the problems `ProjectMap::problems` finds in it.
+fn checked_page(path: &Path, map: &ProjectMap) -> Result<String, Vec<String>> {
+    let problems = map.problems();
+    if problems.is_empty() {
+        Ok(map_web::page(map))
+    } else {
+        Err(problems
+            .iter()
+            .map(|problem| format!("{}: {}", path.display(), describe_map(problem)))
+            .collect())
     }
 }
 

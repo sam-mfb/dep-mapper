@@ -93,3 +93,19 @@ fn draft_render_writes_the_page() {
     assert!(output.status.success(), "{output:?}");
     assert!(std::fs::read_to_string(out).unwrap().contains("map-cache"));
 }
+
+#[test]
+fn draft_render_shows_a_saved_map_as_it_is() {
+    let dir = draft_folder("saved", DRAFT);
+    let out = dir.join("map.html");
+    let output = srs(&[
+        "draft",
+        "render",
+        dir.join("base.toml").to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+    ]);
+    assert!(output.status.success(), "{output:?}");
+    let page = std::fs::read_to_string(out).unwrap();
+    assert!(page.contains("map-persist") && !page.contains("map-cache"));
+}

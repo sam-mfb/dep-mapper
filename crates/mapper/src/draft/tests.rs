@@ -118,19 +118,35 @@ fn check_reports_what_does_not_fit_the_base() {
 }
 
 #[test]
-fn a_missing_base_or_the_wrong_kind_of_file_is_a_problem() {
+fn a_missing_base_is_a_problem() {
     let files = Files::with(&[("plans/draft.toml", DRAFT)]);
     assert_eq!(
         build(&draft_path(), &files).page,
         Err(vec!["plans/base.toml: no such file".to_string()])
     );
+}
+
+#[test]
+fn a_saved_map_is_shown_as_it_is() {
     let files = files_with_draft(&base());
-    assert_eq!(
-        build(&draft_path(), &files).page,
-        Err(vec![
-            "plans/draft.toml: is a saved map, not a draft".to_string()
-        ])
+    let built = build(&draft_path(), &files);
+    let page = built.page.expect("the example map has no problems");
+    assert!(page.contains("map-persist"));
+    assert!(!page.contains("map-cache"));
+    assert_eq!(built.sources, [draft_path()]);
+}
+
+#[test]
+fn a_saved_map_with_problems_is_refused() {
+    let mut map = project_map::example::sharsheret();
+    map.layers = project_map::Layers::empty();
+    let files = files_with_draft(&map_persist::save(&MapDocument::Map(map)));
+    let problems = build(&draft_path(), &files).page.unwrap_err();
+    assert!(
+        problems[0].starts_with("plans/draft.toml: module "),
+        "{problems:?}"
     );
+    assert!(problems[0].contains("which the map does not list"));
 }
 
 #[test]
