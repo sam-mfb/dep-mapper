@@ -39,6 +39,20 @@ fn hop_facts(route: &Route) -> Vec<&str> {
     route.hops.iter().map(|h| h.fact.0.as_str()).collect()
 }
 
+fn argument(site: &str) -> MoveLink {
+    MoveLink {
+        argument: Some(site.into()),
+        returned: None,
+    }
+}
+
+fn returned(site: &str) -> MoveLink {
+    MoveLink {
+        argument: None,
+        returned: Some(site.into()),
+    }
+}
+
 /// Fields are places owned by an item whose name starts with a capital.
 fn is_field(endpoint: &Endpoint) -> bool {
     matches!(endpoint, Endpoint::Place { owner, .. } if owner.0.starts_with(char::is_uppercase))
@@ -182,14 +196,145 @@ fn a_returned_value_is_matched_to_its_own_call() {
         ),
     ]);
     let links = [
-        ("newA", MoveLink::Argument("call-a".into())),
-        ("newB", MoveLink::Argument("call-b".into())),
-        ("outA", MoveLink::Returned("call-a".into())),
-        ("outB", MoveLink::Returned("call-b".into())),
+        ("newA", argument("call-a")),
+        ("newB", argument("call-b")),
+        ("outA", returned("call-a")),
+        ("outB", returned("call-b")),
     ];
     let routes = trace(&graph, &links, &[], &[receiver("call", &["recv"])]);
     let origins: Vec<_> = routes.values().map(|r| r.origin.clone()).collect();
     assert_eq!(origins, [item("B")]);
+}
+
+#[test]
+fn a_result_passed_straight_into_another_call_is_matched_at_both_calls() {
+    // `const a = echo(echo(new A())); const b = echo(echo(new B())); b.go()`
+    // Calls: a1 = inner for A, a2 = outer for A, b1 and b2 likewise.
+    let both = |returned: &str, argument: &str| MoveLink {
+        argument: Some(argument.into()),
+        returned: Some(returned.into()),
+    };
+    let graph = facts(vec![
+        (
+            "newA",
+            fact(item("A"), FactKind::Construct, place("echo", "x")),
+        ),
+        (
+            "newB",
+            fact(item("B"), FactKind::Construct, place("echo", "x")),
+        ),
+        (
+            "ret",
+            fact(
+                place("echo", "x"),
+                FactKind::Return,
+                place("echo", "return"),
+            ),
+        ),
+        (
+            "innerA",
+            fact(
+                place("echo", "return"),
+                FactKind::Return,
+                place("echo", "x"),
+            ),
+        ),
+        (
+            "innerB",
+            fact(
+                place("echo", "return"),
+                FactKind::Return,
+                place("echo", "x"),
+            ),
+        ),
+        (
+            "outA",
+            fact(
+                place("echo", "return"),
+                FactKind::Return,
+                place("main", "a"),
+            ),
+        ),
+        (
+            "outB",
+            fact(
+                place("echo", "return"),
+                FactKind::Return,
+                place("main", "b"),
+            ),
+        ),
+        (
+            "recv",
+            fact(place("main", "b"), FactKind::Pass, place("go", "self")),
+        ),
+    ]);
+    let links = [
+        ("newA", argument("a1")),
+        ("newB", argument("b1")),
+        ("innerA", both("a1", "a2")),
+        ("innerB", both("b1", "b2")),
+        ("outA", returned("a2")),
+        ("outB", returned("b2")),
+    ];
+    let routes = trace(&graph, &links, &[], &[receiver("call", &["recv"])]);
+    let origins: Vec<_> = routes.values().map(|r| r.origin.clone()).collect();
+    assert_eq!(origins, [item("B")]);
+    let route = routes.values().next().unwrap();
+    // The split through the inner call's result adds no hop of its own.
+    assert_eq!(
+        hop_facts(route),
+        ["newB", "ret", "innerB", "ret", "outB", "recv"]
+    );
+}
+
+#[test]
+fn a_call_result_used_as_a_receiver_is_matched_to_its_call() {
+    // `echo(new A()).go(); echo(new B()).go()`
+    let graph = facts(vec![
+        (
+            "newA",
+            fact(item("A"), FactKind::Construct, place("echo", "x")),
+        ),
+        (
+            "newB",
+            fact(item("B"), FactKind::Construct, place("echo", "x")),
+        ),
+        (
+            "ret",
+            fact(
+                place("echo", "x"),
+                FactKind::Return,
+                place("echo", "return"),
+            ),
+        ),
+        (
+            "recvA",
+            fact(place("echo", "return"), FactKind::Pass, place("go", "self")),
+        ),
+        (
+            "recvB",
+            fact(place("echo", "return"), FactKind::Pass, place("go", "self")),
+        ),
+    ]);
+    let both = |returned: &str, argument: &str| MoveLink {
+        argument: Some(argument.into()),
+        returned: Some(returned.into()),
+    };
+    let links = [
+        ("newA", argument("echoA")),
+        ("newB", argument("echoB")),
+        ("recvA", both("echoA", "goA")),
+        ("recvB", both("echoB", "goB")),
+    ];
+    let routes = trace(
+        &graph,
+        &links,
+        &[],
+        &[receiver("goA", &["recvA"]), receiver("goB", &["recvB"])],
+    );
+    assert_eq!(routes.len(), 2, "{routes:#?}");
+    assert_eq!(routes[&RouteId("value:goA:0".into())].origin, item("A"));
+    assert_eq!(routes[&RouteId("value:goB:0".into())].origin, item("B"));
 }
 
 #[test]

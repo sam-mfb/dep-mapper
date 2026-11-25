@@ -104,9 +104,9 @@ pub fn assemble(
                     conditions.insert(id.clone(), condition);
                 }
                 if let Some(link) = link {
-                    let link = match link {
-                        records::Link::Argument(site) => MoveLink::Argument(site),
-                        records::Link::Returned(site) => MoveLink::Returned(site),
+                    let link = MoveLink {
+                        argument: link.argument,
+                        returned: link.returned,
                     };
                     links.insert(id.clone(), link);
                 }

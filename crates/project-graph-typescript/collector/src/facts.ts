@@ -272,7 +272,7 @@ class FileFacts {
     const id = this.write(owner, { kind: "call", dispatch }, target, call);
     if ("item" in target && ts.isPropertyAccessExpression(call.expression) && isInstanceMethod(declaration)) {
       const self: Endpoint = { place: { owner: target.item, projection: "self" } };
-      const link = { argument: this.callSite(call) };
+      const link: Link = { argument: this.callSite(call), returned: null };
       this.facts.receiver(id, this.flow(call.expression.expression, self, "pass", null, link));
     }
     this.arguments(call, call.arguments, declaration, target);
@@ -297,7 +297,7 @@ class FileFacts {
     declaration: ts.Declaration,
     target: Endpoint,
   ): void {
-    const link = { argument: this.callSite(call) };
+    const link: Link = { argument: this.callSite(call), returned: null };
     if (!ts.isFunctionLike(declaration)) return;
     const parameters = declaration.parameters;
     args.forEach((arg, index) => {
@@ -392,8 +392,10 @@ class FileFacts {
     if (ts.isCallExpression(e)) move = "return";
     else if (kind === "store" && this.project.isField(source) && !this.project.isField(destination)) move = "read";
     if (this.witnessImplements(e)) move = "coerce";
-    // A value that comes out of a call is linked to that call, not to the one it moves into.
-    const moveLink: Link | null = ts.isCallExpression(e) ? { returned: this.callSite(e) } : link;
+    // A value that comes out of a call crosses that call too.
+    const moveLink: Link | null = ts.isCallExpression(e)
+      ? { argument: link?.argument ?? null, returned: this.callSite(e) }
+      : link;
     return [this.write(source, { kind: move } as FactKind, destination, e, condition, moveLink)];
   }
 

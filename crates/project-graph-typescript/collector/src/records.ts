@@ -34,8 +34,12 @@ export type FactKind =
   | { kind: "coerce" }
   | { kind: "capture" };
 
-/** A call site, named by the span of the call expression: `file:start-end`. */
-export type Link = { argument: string } | { returned: string };
+/**
+ * The calls a move crosses, each named by the span of its call expression
+ * (`file:start-end`): the call whose result it takes, and the call it enters
+ * as an argument or receiver. `f(g())` crosses both.
+ */
+export type Link = { argument: string | null; returned: string | null };
 
 export type ItemKind = "type" | "value" | "function" | "method" | "module";
 export type Visibility = "exported" | "internal" | "unknown";

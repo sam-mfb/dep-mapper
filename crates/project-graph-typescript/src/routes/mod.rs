@@ -25,13 +25,14 @@ pub struct ReceiverUse {
     pub moves: Vec<FactId>,
 }
 
-/// How a value move crosses a call, named by the call's site.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum MoveLink {
-    /// An argument (or receiver) entering the callee at this call site.
-    Argument(String),
-    /// A value returned by the callee at this call site.
-    Returned(String),
+/// The calls a value move crosses, each named by its call site. A move can
+/// cross two: in `f(g())` the value leaves `g` and enters `f`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MoveLink {
+    /// The call the value enters as an argument or receiver.
+    pub argument: Option<String>,
+    /// The call whose result the value is.
+    pub returned: Option<String>,
 }
 
 /// Bounds on the search for each receiver.
@@ -73,27 +74,48 @@ pub fn trace_values(
 ) -> BTreeMap<RouteId, Route> {
     let mut flows = Vec::new();
     let mut ids = Vec::new();
-    let mut add = |id: &FactId, fact: &Fact, to: Endpoint, call: Option<CallLink>| {
+    // Adds the flows for one move. A move that leaves one call and enters
+    // another goes through the first call's result, so that each crossing
+    // is matched to its own call: first the return, without a fact, then the
+    // argument, with the move's fact as its hop.
+    let mut add = |id: &FactId, fact: &Fact, to: Endpoint, link: &MoveLink| {
+        let joins = joins_instances(&fact.subject) || joins_instances(&to);
+        let mut from = fact.subject.clone();
+        let mut call = link.returned.clone().map(CallLink::Returned);
+        if let (Some(returned), Some(argument)) = (&link.returned, &link.argument) {
+            let result = Endpoint::Unresolved(format!("result of {returned}"));
+            flows.push(Flow {
+                from,
+                to: result.clone(),
+                fact: None,
+                call: Some(CallLink::Returned(returned.clone())),
+                joins_instances: false,
+            });
+            ids.push(id.clone());
+            from = result;
+            call = Some(CallLink::Argument(argument.clone()));
+        } else if let Some(argument) = &link.argument {
+            call = Some(CallLink::Argument(argument.clone()));
+        }
         flows.push(Flow {
-            from: fact.subject.clone(),
-            joins_instances: joins_instances(&fact.subject) || joins_instances(&to),
+            from,
             to,
             fact: Some(fact.clone()),
             call,
+            joins_instances: joins,
         });
         ids.push(id.clone());
     };
+    let unlinked = MoveLink::default();
     for (id, fact) in moves.facts {
         if is_move(&fact.kind) {
-            let call = moves.links.get(id).map(|link| match link {
-                MoveLink::Argument(site) => CallLink::Argument(site.clone()),
-                MoveLink::Returned(site) => CallLink::Returned(site.clone()),
-            });
-            add(id, fact, fact.object.clone(), call);
+            let link = moves.links.get(id).unwrap_or(&unlinked);
+            add(id, fact, fact.object.clone(), link);
         }
     }
     // Each call gets a receiver of its own, so a trace explains this call
-    // and not every call to the same method.
+    // and not every call to the same method. The move into it keeps the
+    // call it returns from, if any; the call it enters is this one.
     let receivers: Vec<Endpoint> = uses
         .iter()
         .map(|u| Endpoint::Unresolved(format!("receiver of {}", u.call.0)))
@@ -101,7 +123,11 @@ pub fn trace_values(
     for (receiver_use, receiver) in uses.iter().zip(&receivers) {
         for id in &receiver_use.moves {
             if let Some(fact) = moves.facts.get(id) {
-                add(id, fact, receiver.clone(), None);
+                let link = MoveLink {
+                    argument: None,
+                    returned: moves.links.get(id).and_then(|l| l.returned.clone()),
+                };
+                add(id, fact, receiver.clone(), &link);
             }
         }
     }
