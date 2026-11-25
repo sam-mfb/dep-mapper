@@ -1,0 +1,8 @@
+{
+  "name": "@sample/backup-os",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@sample/backup-api": "*",
+    "clock": "1.0.0"
+  }
+}
