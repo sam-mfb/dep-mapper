@@ -19,7 +19,7 @@ const API_VERSION: &str = "2026-10-21";
 /// Enables `fallbacks: "default"`.
 const FALLBACK_BETA: &str = "server-side-fallback-2026-07-01";
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct AnthropicConfig {
     pub api_key: String,
     /// For example `https://api.anthropic.com`.
@@ -43,6 +43,19 @@ impl AnthropicConfig {
             max_tokens: 32_000,
             effort: "high".into(),
         }
+    }
+}
+
+/// Shows every setting except the API key, so the key stays out of logs.
+impl std::fmt::Debug for AnthropicConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AnthropicConfig")
+            .field("api_key", &"<redacted>")
+            .field("base_url", &self.base_url)
+            .field("model", &self.model)
+            .field("max_tokens", &self.max_tokens)
+            .field("effort", &self.effort)
+            .finish()
     }
 }
 

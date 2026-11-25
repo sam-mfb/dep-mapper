@@ -206,3 +206,10 @@ fn a_lost_connection_is_transient() {
         .unwrap_err();
     assert!(matches!(error, ModelError::Transient { .. }));
 }
+
+#[test]
+fn debug_output_hides_the_api_key() {
+    let shown = format!("{:?}", config());
+    assert!(!shown.contains("key-123"), "{shown}");
+    assert!(shown.contains("claude-opus-5-5"), "{shown}");
+}
