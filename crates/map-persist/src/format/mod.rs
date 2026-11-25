@@ -58,6 +58,8 @@ pub struct DraftFile {
     #[serde(default)]
     pub evidence: BTreeMap<String, EvidenceDoc>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub update: Option<Spanned<UpdateDoc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub remove: Option<Spanned<RemoveDoc>>,
 }
 
@@ -74,7 +76,8 @@ pub struct SourceDoc {
 #[serde(rename_all = "kebab-case")]
 pub enum StatusDoc {
     Observed,
-    Proposed,
+    ProposedAddition,
+    ProposedUpdate,
     ProposedRemoval,
 }
 
@@ -87,6 +90,9 @@ pub struct ModuleDoc {
     #[serde(default)]
     pub surface: Vec<SurfaceDoc>,
     pub review: Spanned<ReviewDoc>,
+    /// A proposed update's new review.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proposed: Option<Spanned<ReviewDoc>>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -166,6 +172,9 @@ pub struct DependencyDoc {
     #[serde(default)]
     pub evidence: Vec<String>,
     pub review: Spanned<ReviewDoc>,
+    /// A proposed update's new review.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proposed: Option<Spanned<ReviewDoc>>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -180,6 +189,9 @@ pub struct RouteDoc {
     pub hops: Vec<HopDoc>,
     pub end: Spanned<EndDoc>,
     pub review: Spanned<ReviewDoc>,
+    /// A proposed update's new review.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proposed: Option<Spanned<ReviewDoc>>,
 }
 
 /// A point in the project (`module`, optional `item`, and for a hop `link`),
@@ -290,4 +302,54 @@ pub struct RemoveDoc {
 pub struct DependencyKeyDoc {
     pub from: String,
     pub to: String,
+}
+
+/// A draft's proposed reviews for base parts.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateDoc {
+    #[serde(default)]
+    pub modules: BTreeMap<String, Spanned<ChangeDoc>>,
+    #[serde(default)]
+    pub dependencies: Vec<Spanned<DependencyChangeDoc>>,
+    #[serde(default)]
+    pub routes: BTreeMap<String, Spanned<ChangeDoc>>,
+}
+
+/// The fields an update changes, with its own reason and citations. Which
+/// fields are allowed depends on what is updated; decoding checks them.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChangeDoc {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub concern: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ModuleKindDoc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<Spanned<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub other_roles: Option<Vec<Spanned<String>>>,
+    pub reason: String,
+    pub primary: String,
+    #[serde(default)]
+    pub supporting: Vec<String>,
+}
+
+/// A dependency's update: the dependency's key and a `ChangeDoc`'s fields
+/// for dependencies.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DependencyChangeDoc {
+    pub from: String,
+    pub to: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<Spanned<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub other_roles: Option<Vec<Spanned<String>>>,
+    pub reason: String,
+    pub primary: String,
+    #[serde(default)]
+    pub supporting: Vec<String>,
 }

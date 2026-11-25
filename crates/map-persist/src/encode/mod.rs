@@ -57,6 +57,7 @@ fn draft_file(draft: &Draft) -> DraftFile {
         dependencies: dependencies(&draft.dependencies),
         routes: routes(&draft.routes),
         evidence: evidence(&draft.evidence),
+        update: Some(unplaced(updates(&draft.update))),
         remove: Some(unplaced(RemoveDoc {
             modules: remove
                 .modules
@@ -86,20 +87,100 @@ fn layer_names(layers: &Layers) -> Vec<String> {
     layers.iter().map(|layer| layer.0.clone()).collect()
 }
 
-fn status(status: &Status) -> Option<StatusDoc> {
-    Some(match status {
-        Status::Observed => StatusDoc::Observed,
-        Status::Proposed => StatusDoc::Proposed,
-        Status::ProposedRemoval => StatusDoc::ProposedRemoval,
-    })
+/// The status, and the review a proposed update carries, written by `review`.
+fn status<D>(
+    status: &Status<D>,
+    review: impl Fn(&Review<D>) -> Spanned<ReviewDoc>,
+) -> (Option<StatusDoc>, Option<Spanned<ReviewDoc>>) {
+    let (status, proposed) = match status {
+        Status::Observed => (StatusDoc::Observed, None),
+        Status::ProposedAddition => (StatusDoc::ProposedAddition, None),
+        Status::ProposedUpdate { proposed } => (StatusDoc::ProposedUpdate, Some(review(proposed))),
+        Status::ProposedRemoval => (StatusDoc::ProposedRemoval, None),
+    };
+    (Some(status), proposed)
+}
+
+fn updates(updates: &Updates) -> UpdateDoc {
+    UpdateDoc {
+        modules: updates
+            .modules
+            .iter()
+            .map(|(id, update)| {
+                let changes = &update.changes;
+                let doc = ChangeDoc {
+                    concern: changes.concern.clone(),
+                    kind: changes.kind.as_ref().map(module_kind),
+                    layer: changes.layer.as_ref().map(|layer| layer.0.clone()),
+                    role: None,
+                    other_roles: None,
+                    reason: update.reason.clone(),
+                    primary: update.primary.0.clone(),
+                    supporting: citations(&update.supporting),
+                };
+                (id.0.clone(), unplaced(doc))
+            })
+            .collect(),
+        dependencies: updates
+            .dependencies
+            .iter()
+            .map(|(id, update)| {
+                let (role, other_roles) = role_changes(&update.changes);
+                unplaced(DependencyChangeDoc {
+                    from: id.from.0.clone(),
+                    to: id.to.0.clone(),
+                    role,
+                    other_roles,
+                    reason: update.reason.clone(),
+                    primary: update.primary.0.clone(),
+                    supporting: citations(&update.supporting),
+                })
+            })
+            .collect(),
+        routes: updates
+            .routes
+            .iter()
+            .map(|(id, update)| {
+                let (role, other_roles) = role_changes(&update.changes);
+                let doc = ChangeDoc {
+                    concern: None,
+                    kind: None,
+                    layer: None,
+                    role,
+                    other_roles,
+                    reason: update.reason.clone(),
+                    primary: update.primary.0.clone(),
+                    supporting: citations(&update.supporting),
+                };
+                (id.0.clone(), unplaced(doc))
+            })
+            .collect(),
+    }
+}
+
+type RoleDocs = (Option<Spanned<String>>, Option<Vec<Spanned<String>>>);
+
+fn role_changes(changes: &ConnectionChanges) -> RoleDocs {
+    (
+        changes.role.as_ref().map(|role| unplaced(role_name(role))),
+        changes
+            .other_roles
+            .as_ref()
+            .map(|roles| roles.iter().map(|role| unplaced(role_name(role))).collect()),
+    )
+}
+
+fn citations(citations: &[CitationId]) -> Vec<String> {
+    citations.iter().map(|c| c.0.clone()).collect()
 }
 
 fn modules(modules: &BTreeMap<ModuleId, MapModule>) -> BTreeMap<String, Spanned<ModuleDoc>> {
     modules
         .iter()
         .map(|(id, module)| {
+            let (status, proposed) = status(&module.status, module_review);
             let doc = ModuleDoc {
-                status: status(&module.status),
+                status,
                 name: module.name.clone(),
                 surface: module
                     .surface
@@ -111,11 +192,8 @@ fn modules(modules: &BTreeMap<ModuleId, MapModule>) -> BTreeMap<String, Spanned<
                         declaration: item.declaration.as_ref().map(location),
                     })
                     .collect(),
-                review: review(&module.description, |judgment, doc| {
-                    doc.concern = Some(judgment.concern.clone());
-                    doc.kind = Some(module_kind(&judgment.kind));
-                    doc.layer = judgment.layer.as_ref().map(|layer| layer.0.clone());
-                }),
+                review: module_review(&module.description),
+                proposed,
             };
             (id.0.clone(), unplaced(doc))
         })
@@ -128,12 +206,14 @@ fn dependencies(
     dependencies
         .iter()
         .map(|(id, dependency)| {
+            let (status, proposed) = status(&dependency.status, connection_review);
             unplaced(DependencyDoc {
                 from: id.from.0.clone(),
                 to: id.to.0.clone(),
-                status: status(&dependency.status),
-                evidence: dependency.evidence.iter().map(|c| c.0.clone()).collect(),
+                status,
+                evidence: citations(&dependency.evidence),
                 review: connection_review(&dependency.description),
+                proposed,
             })
         })
         .collect()
@@ -143,8 +223,9 @@ fn routes(routes: &BTreeMap<RouteId, MapRoute>) -> BTreeMap<String, Spanned<Rout
     routes
         .iter()
         .map(|(id, route)| {
+            let (status, proposed) = status(&route.status, connection_review);
             let doc = RouteDoc {
-                status: status(&route.status),
+                status,
                 use_site: route.use_site.as_ref().map(|c| c.0.clone()),
                 origin: unplaced(match &route.origin {
                     RoutePoint::Project(point) => project_point(point),
@@ -164,6 +245,7 @@ fn routes(routes: &BTreeMap<RouteId, MapRoute>) -> BTreeMap<String, Spanned<Rout
                     },
                 }),
                 review: connection_review(&route.description),
+                proposed,
             };
             (id.0.clone(), unplaced(doc))
         })
@@ -214,6 +296,14 @@ fn outside_point(point: &OutsidePoint) -> PointDoc {
         external,
         unresolved,
     }
+}
+
+fn module_review(description: &Review<ModuleDescription>) -> Spanned<ReviewDoc> {
+    review(description, |judgment, doc| {
+        doc.concern = Some(judgment.concern.clone());
+        doc.kind = Some(module_kind(&judgment.kind));
+        doc.layer = judgment.layer.as_ref().map(|layer| layer.0.clone());
+    })
 }
 
 fn connection_review(description: &Review<RouteDescription>) -> Spanned<ReviewDoc> {

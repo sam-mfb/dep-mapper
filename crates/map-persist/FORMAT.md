@@ -1,6 +1,6 @@
 # Map and draft files, format 1
 
-A file is TOML. It holds either a saved **map** or a **draft**. A map is a complete project map, such as one written after analysis. A draft holds proposed changes. It is laid over a saved base map, or it stands alone as a map made only of proposals.
+A file is TOML. It holds either a saved **map** or a **draft**. A map is a complete project map, such as one written after analysis. A draft holds proposed changes: new parts, new reviews for base parts, and base parts to remove. It is laid over a saved base map, or it stands alone as a map made only of proposals.
 
 `map-persist` reads and writes this format. Values are checked when the file is loaded, and every error gives a line and column.
 
@@ -28,7 +28,7 @@ Every file starts with these two fields:
 
 `source` has four required fields: `graph`, `revision`, `target` and `configuration`.
 
-In a map, every module, dependency and route needs a `status`.
+In a map, every module, dependency and route needs a `status`. A part whose status is `"proposed-update"` also needs a `proposed` review: the new review proposed for it. Its `review` stays the one found in code. No other part has a `proposed` review.
 
 ## Drafts
 
@@ -38,11 +38,27 @@ In a map, every module, dependency and route needs a `status`.
 | `project` | see below | The project's name, for a draft with no base. |
 | `layers` | no | Layers to list after the base map's layers. Left out means none. |
 | `modules`, `dependencies`, `routes`, `evidence` | no | As in a map. Left out means none. |
+| `update` | no | New reviews proposed for base parts. Left out means nothing is updated. |
 | `remove` | no | Base parts proposed for removal. Left out means nothing is removed. |
 
 A draft has exactly one of `base` and `project`.
 
-In a draft, a part's `status` may be left out. It then means `"proposed"`.
+A draft's own `modules`, `dependencies` and `routes` are proposed additions. Their `status` may be left out; if given, it must be `"proposed-addition"`. Changes to base parts go under `update` and `remove`.
+
+`update` has three fields, and each may be left out to mean none:
+
+- `modules`: tables keyed by module ID.
+- `dependencies`: an array of tables, each with `from` and `to`.
+- `routes`: tables keyed by route ID.
+
+An update gives only the fields it changes. The fields it leaves out keep the base part's values. A module's update may change `concern`, `kind` and `layer`. A dependency's or route's update may change `role` and `other_roles`. Each update changes at least one field, and needs its own `reason` and `primary` citation, usually a proposal note. `supporting` may be left out to mean none. If the base part has not been reviewed, the update must give every field a judgment needs. A dependency may be updated only once. A draft without a base must not update anything.
+
+```toml
+[update.modules.map-web]
+kind = "logic"
+reason = "Rendering becomes a pure function of the map."
+primary = "note:cache"
+```
 
 `remove` has three fields, and each may be left out to mean none:
 
@@ -54,13 +70,18 @@ A part may be listed only once. A draft without a base must not remove anything.
 
 ## Parts
 
-`status` is `"observed"`, `"proposed"` or `"proposed-removal"`. A part proposed for removal still exists in code.
+`status` is one of:
+
+- `"observed"`: the part is in code.
+- `"proposed-addition"`: the part is proposed and not in code.
+- `"proposed-update"`: the part is in code, and a new review is proposed for it.
+- `"proposed-removal"`: the part is in code and proposed for removal.
 
 ### Module
 
 ```toml
 [modules.cache]
-status = "proposed"
+status = "proposed-addition"
 name = "cache"
 
 [modules.cache.review]

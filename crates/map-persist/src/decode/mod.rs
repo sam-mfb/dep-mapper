@@ -33,13 +33,12 @@ pub fn document(text: &str) -> Result<MapDocument> {
     }
 }
 
-/// How to read a part whose `status` is left out.
+/// Which kind of file a part is in. In a saved map a part's `status` is
+/// required. A draft's own parts are additions, and `status` may be left out.
 #[derive(Clone, Copy)]
-enum MissingStatus {
-    /// In a saved map, `status` is required.
-    Refused,
-    /// In a draft, it means proposed.
-    Proposed,
+enum Document {
+    Map,
+    Draft,
 }
 
 /// Where a point appears, which decides the fields it may have.
@@ -85,7 +84,7 @@ impl Decoder<'_> {
     }
 
     fn map(&self, file: MapFile) -> Result<ProjectMap> {
-        let missing = MissingStatus::Refused;
+        let missing = Document::Map;
         Ok(ProjectMap {
             project: file.project,
             source: file.source.map(|source| MapSource {
@@ -140,7 +139,19 @@ impl Decoder<'_> {
                 "a draft without a base map has nothing to remove".into(),
             ));
         }
-        let missing = MissingStatus::Proposed;
+        let update = match &file.update {
+            Some(update) => self.updates(update)?,
+            None => Updates::default(),
+        };
+        if let (DraftBase::None { .. }, Some(spanned)) = (&base, &file.update)
+            && update != Updates::default()
+        {
+            return Err(self.error(
+                spanned.span(),
+                "a draft without a base map has nothing to update".into(),
+            ));
+        }
+        let missing = Document::Draft;
         Ok(Draft {
             base,
             layers: match &file.layers {
@@ -151,6 +162,7 @@ impl Decoder<'_> {
             dependencies: self.dependencies(&file.dependencies, missing)?,
             routes: self.routes(&file.routes, missing)?,
             evidence: self.evidence(&file.evidence)?,
+            update,
             remove,
         })
     }
@@ -160,28 +172,53 @@ impl Decoder<'_> {
         Layers::new(names).map_err(|duplicate| self.error(layers.span(), duplicate.to_string()))
     }
 
-    fn status(
+    /// A part's status. `review` reads the review a proposed update carries.
+    fn status<D>(
         &self,
         status: Option<StatusDoc>,
-        missing: MissingStatus,
+        proposed: &Option<Spanned<ReviewDoc>>,
+        document: Document,
         span: Range<usize>,
-    ) -> Result<Status> {
-        match (status, missing) {
-            (Some(StatusDoc::Observed), _) => Ok(Status::Observed),
-            (Some(StatusDoc::Proposed), _) | (None, MissingStatus::Proposed) => {
-                Ok(Status::Proposed)
+        review: impl FnOnce(&Spanned<ReviewDoc>) -> Result<Review<D>>,
+    ) -> Result<Status<D>> {
+        let status = match (status, document) {
+            (Some(status), Document::Map) => status,
+            (None, Document::Map) => {
+                return Err(self.error(span, "`status` is required in a saved map".into()));
             }
-            (Some(StatusDoc::ProposedRemoval), _) => Ok(Status::ProposedRemoval),
-            (None, MissingStatus::Refused) => {
-                Err(self.error(span, "`status` is required in a saved map".into()))
+            (None | Some(StatusDoc::ProposedAddition), Document::Draft) => {
+                StatusDoc::ProposedAddition
             }
+            (Some(_), Document::Draft) => {
+                return Err(self.error(
+                    span,
+                    "a draft's own parts are additions; propose changes to base parts \
+                     under `update` or `remove`"
+                        .into(),
+                ));
+            }
+        };
+        match (status, proposed) {
+            (StatusDoc::ProposedUpdate, Some(proposed)) => Ok(Status::ProposedUpdate {
+                proposed: review(proposed)?,
+            }),
+            (StatusDoc::ProposedUpdate, None) => {
+                Err(self.error(span, "a proposed update needs a `proposed` review".into()))
+            }
+            (_, Some(proposed)) => Err(self.error(
+                proposed.span(),
+                "only a proposed update has a `proposed` review".into(),
+            )),
+            (StatusDoc::Observed, None) => Ok(Status::Observed),
+            (StatusDoc::ProposedAddition, None) => Ok(Status::ProposedAddition),
+            (StatusDoc::ProposedRemoval, None) => Ok(Status::ProposedRemoval),
         }
     }
 
     fn modules(
         &self,
         modules: &BTreeMap<String, Spanned<ModuleDoc>>,
-        missing: MissingStatus,
+        missing: Document,
     ) -> Result<BTreeMap<ModuleId, MapModule>> {
         modules
             .iter()
@@ -204,16 +241,16 @@ impl Decoder<'_> {
                     })
                     .collect::<Result<_>>()?;
                 let value = MapModule {
-                    status: self.status(doc.status, missing, module.span())?,
+                    status: self.status(
+                        doc.status,
+                        &doc.proposed,
+                        missing,
+                        module.span(),
+                        |review| self.module_review(review),
+                    )?,
                     name: doc.name.clone(),
                     surface,
-                    description: self.review(&doc.review, Subject::Module, |review| {
-                        Ok(ModuleDescription {
-                            concern: self.required(&doc.review, &review.concern, "concern")?,
-                            kind: module_kind(self.required(&doc.review, &review.kind, "kind")?),
-                            layer: review.layer.clone().map(LayerName),
-                        })
-                    })?,
+                    description: self.module_review(&doc.review)?,
                 };
                 Ok((ModuleId(key.clone()), value))
             })
@@ -223,7 +260,7 @@ impl Decoder<'_> {
     fn dependencies(
         &self,
         dependencies: &[Spanned<DependencyDoc>],
-        missing: MissingStatus,
+        missing: Document,
     ) -> Result<BTreeMap<DependencyId, MapDependency>> {
         let mut decoded = BTreeMap::new();
         for dependency in dependencies {
@@ -233,7 +270,13 @@ impl Decoder<'_> {
                 to: ModuleId(doc.to.clone()),
             };
             let value = MapDependency {
-                status: self.status(doc.status, missing, dependency.span())?,
+                status: self.status(
+                    doc.status,
+                    &doc.proposed,
+                    missing,
+                    dependency.span(),
+                    |review| self.connection_review(review),
+                )?,
                 evidence: doc.evidence.iter().cloned().map(CitationId).collect(),
                 description: self.connection_review(&doc.review)?,
             };
@@ -253,7 +296,7 @@ impl Decoder<'_> {
     fn routes(
         &self,
         routes: &BTreeMap<String, Spanned<RouteDoc>>,
-        missing: MissingStatus,
+        missing: Document,
     ) -> Result<BTreeMap<RouteId, MapRoute>> {
         routes
             .iter()
@@ -270,7 +313,13 @@ impl Decoder<'_> {
                     .map(|hop| self.hop(hop))
                     .collect::<Result<_>>()?;
                 let value = MapRoute {
-                    status: self.status(doc.status, missing, route.span())?,
+                    status: self.status(
+                        doc.status,
+                        &doc.proposed,
+                        missing,
+                        route.span(),
+                        |review| self.connection_review(review),
+                    )?,
                     use_site: doc.use_site.clone().map(CitationId),
                     origin,
                     hops,
@@ -358,6 +407,16 @@ impl Decoder<'_> {
                 Err(self.error(end.span(), "a stopped route needs `at` and `reason`".into()))
             }
         }
+    }
+
+    fn module_review(&self, review: &Spanned<ReviewDoc>) -> Result<Review<ModuleDescription>> {
+        self.review(review, Subject::Module, |doc| {
+            Ok(ModuleDescription {
+                concern: self.required(review, &doc.concern, "concern")?,
+                kind: module_kind(self.required(review, &doc.kind, "kind")?),
+                layer: doc.layer.clone().map(LayerName),
+            })
+        })
     }
 
     fn connection_review(&self, review: &Spanned<ReviewDoc>) -> Result<Review<RouteDescription>> {
@@ -518,6 +577,106 @@ impl Decoder<'_> {
         })
     }
 
+    fn updates(&self, update: &Spanned<UpdateDoc>) -> Result<Updates> {
+        let doc = update.get_ref();
+        let modules = doc
+            .modules
+            .iter()
+            .map(|(key, change)| Ok((ModuleId(key.clone()), self.module_update(change)?)))
+            .collect::<Result<_>>()?;
+        let mut dependencies = BTreeMap::new();
+        for change in &doc.dependencies {
+            let fields = change.get_ref();
+            let id = DependencyId {
+                from: ModuleId(fields.from.clone()),
+                to: ModuleId(fields.to.clone()),
+            };
+            let value = self.connection_update(
+                change.span(),
+                &fields.role,
+                &fields.other_roles,
+                (&fields.reason, &fields.primary, &fields.supporting),
+            )?;
+            if dependencies.insert(id, value).is_some() {
+                return Err(self.error(
+                    change.span(),
+                    format!(
+                        "the dependency of {} on {} is updated twice",
+                        fields.from, fields.to
+                    ),
+                ));
+            }
+        }
+        let routes = doc
+            .routes
+            .iter()
+            .map(|(key, change)| {
+                let fields = change.get_ref();
+                if fields.concern.is_some() || fields.kind.is_some() || fields.layer.is_some() {
+                    return Err(self.error(
+                        change.span(),
+                        "a route's update has no `concern`, `kind` or `layer`".into(),
+                    ));
+                }
+                let value = self.connection_update(
+                    change.span(),
+                    &fields.role,
+                    &fields.other_roles,
+                    (&fields.reason, &fields.primary, &fields.supporting),
+                )?;
+                Ok((RouteId(key.clone()), value))
+            })
+            .collect::<Result<_>>()?;
+        Ok(Updates {
+            modules,
+            dependencies,
+            routes,
+        })
+    }
+
+    fn module_update(&self, change: &Spanned<ChangeDoc>) -> Result<Update<ModuleChanges>> {
+        let fields = change.get_ref();
+        if fields.role.is_some() || fields.other_roles.is_some() {
+            return Err(self.error(
+                change.span(),
+                "a module's update has no `role` or `other_roles`".into(),
+            ));
+        }
+        let changes = ModuleChanges {
+            concern: fields.concern.clone(),
+            kind: fields.kind.map(module_kind),
+            layer: fields.layer.clone().map(LayerName),
+        };
+        if changes == ModuleChanges::default() {
+            return Err(self.error(change.span(), NOTHING_CHANGED.into()));
+        }
+        Ok(update(
+            changes,
+            (&fields.reason, &fields.primary, &fields.supporting),
+        ))
+    }
+
+    /// `cited`: the update's reason, primary citation and supporting citations.
+    fn connection_update(
+        &self,
+        span: Range<usize>,
+        role: &Option<Spanned<String>>,
+        other_roles: &Option<Vec<Spanned<String>>>,
+        cited: (&String, &String, &Vec<String>),
+    ) -> Result<Update<ConnectionChanges>> {
+        let changes = ConnectionChanges {
+            role: role.as_ref().map(|role| self.role(role)).transpose()?,
+            other_roles: other_roles
+                .as_ref()
+                .map(|roles| roles.iter().map(|role| self.role(role)).collect())
+                .transpose()?,
+        };
+        if changes == ConnectionChanges::default() {
+            return Err(self.error(span, NOTHING_CHANGED.into()));
+        }
+        Ok(update(changes, cited))
+    }
+
     fn removals(&self, remove: &Spanned<RemoveDoc>) -> Result<Removals> {
         let doc = remove.get_ref();
         Ok(Removals {
@@ -542,6 +701,20 @@ impl Decoder<'_> {
             }
         }
         Ok(set)
+    }
+}
+
+const NOTHING_CHANGED: &str = "an update changes at least one field";
+
+fn update<C>(
+    changes: C,
+    (reason, primary, supporting): (&String, &String, &Vec<String>),
+) -> Update<C> {
+    Update {
+        changes,
+        reason: reason.clone(),
+        primary: CitationId(primary.clone()),
+        supporting: supporting.iter().cloned().map(CitationId).collect(),
     }
 }
 

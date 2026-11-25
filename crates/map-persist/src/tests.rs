@@ -23,7 +23,7 @@ fn refused(text: &str) -> LoadError {
 
 fn proposed_route(origin: &str, receiver: &str, note: &str) -> MapRoute {
     MapRoute {
-        status: Status::Proposed,
+        status: Status::ProposedAddition,
         use_site: None,
         origin: RoutePoint::Project(ProjectPoint {
             module: ModuleId(origin.into()),
@@ -61,7 +61,7 @@ fn proposed_route(origin: &str, receiver: &str, note: &str) -> MapRoute {
     }
 }
 
-fn draft(base: DraftBase, remove: Removals) -> Draft {
+fn draft(base: DraftBase, update: Updates, remove: Removals) -> Draft {
     let note = CitationId("note".into());
     Draft {
         base,
@@ -69,7 +69,7 @@ fn draft(base: DraftBase, remove: Removals) -> Draft {
         modules: BTreeMap::from([(
             ModuleId("cache".into()),
             MapModule {
-                status: Status::Proposed,
+                status: Status::ProposedAddition,
                 name: "cache".into(),
                 surface: vec![SurfaceItem {
                     name: "Cache".into(),
@@ -95,7 +95,7 @@ fn draft(base: DraftBase, remove: Removals) -> Draft {
                 to: ModuleId("map-persist".into()),
             },
             MapDependency {
-                status: Status::Proposed,
+                status: Status::ProposedAddition,
                 evidence: vec![note.clone()],
                 description: Review::Judged {
                     judgment: RouteDescription {
@@ -121,6 +121,7 @@ fn draft(base: DraftBase, remove: Removals) -> Draft {
                 location: None,
             },
         )]),
+        update,
         remove,
     }
 }
@@ -144,6 +145,26 @@ fn a_map_without_a_source_and_with_located_evidence_survives_saving_and_loading(
 }
 
 #[test]
+fn a_map_with_proposed_updates_survives_saving_and_loading() {
+    let mut map = example::sharsheret();
+    let module = map.modules.get_mut(&ModuleId("map-web".into())).unwrap();
+    let mut proposed = module.description.clone();
+    if let Review::Judged { judgment, .. } = &mut proposed {
+        judgment.kind = ModuleKind::Logic;
+    }
+    module.status = Status::ProposedUpdate { proposed };
+    let dependency = map.dependencies.values_mut().next().unwrap();
+    dependency.status = Status::ProposedUpdate {
+        proposed: Review::Deferred {
+            reason: "Reconsidering.".into(),
+        },
+    };
+    let route = map.routes.values_mut().next().unwrap();
+    route.status = Status::ProposedRemoval;
+    round_trip(MapDocument::Map(map));
+}
+
+#[test]
 fn a_draft_over_a_base_survives_saving_and_loading() {
     let remove = Removals {
         modules: BTreeSet::from([ModuleId("map-web".into())]),
@@ -153,8 +174,51 @@ fn a_draft_over_a_base_survives_saving_and_loading() {
         }]),
         routes: BTreeSet::from([RouteId("save-the-project-map".into())]),
     };
+    let update = Updates {
+        modules: BTreeMap::from([(
+            ModuleId("mapper".into()),
+            Update {
+                changes: ModuleChanges {
+                    concern: None,
+                    kind: Some(ModuleKind::Logic),
+                    layer: Some(LayerName("Planned".into())),
+                },
+                reason: "It only computes.".into(),
+                primary: CitationId("note".into()),
+                supporting: vec![],
+            },
+        )]),
+        dependencies: BTreeMap::from([(
+            DependencyId {
+                from: ModuleId("mapper".into()),
+                to: ModuleId("map-web".into()),
+            },
+            Update {
+                changes: ConnectionChanges {
+                    role: Some(UseRole::Wires),
+                    other_roles: None,
+                },
+                reason: "It builds the page.".into(),
+                primary: CitationId("note".into()),
+                supporting: vec![CitationId("note".into())],
+            },
+        )]),
+        routes: BTreeMap::from([(
+            RouteId("present-the-project-map".into()),
+            Update {
+                changes: ConnectionChanges {
+                    role: None,
+                    other_roles: Some(vec![UseRole::Other("caches".into())]),
+                },
+                reason: "Cached now.".into(),
+                primary: CitationId("note".into()),
+                supporting: vec![],
+            },
+        )]),
+    };
     round_trip(MapDocument::Draft(draft(
         DraftBase::Saved("maps/sharsheret.toml".into()),
+        update,
         remove,
     )));
 }
@@ -165,6 +229,7 @@ fn a_draft_standing_alone_survives_saving_and_loading() {
         DraftBase::None {
             project: "sketch".into(),
         },
+        Updates::default(),
         Removals::default(),
     )));
 }
@@ -192,7 +257,7 @@ review = { state = "unreviewed" }
     assert!(draft.layers.is_empty());
     assert_eq!(
         draft.modules[&ModuleId("cache".into())].status,
-        Status::Proposed
+        Status::ProposedAddition
     );
     assert!(draft.dependencies.is_empty() && draft.routes.is_empty());
     assert_eq!(draft.remove, Removals::default());
@@ -376,7 +441,7 @@ fn the_examples_in_the_format_document_load_as_one_draft() {
         .skip(1)
         .map(|block| block.split("```").next().unwrap())
         .collect();
-    assert_eq!(blocks.len(), 4);
+    assert_eq!(blocks.len(), 5);
     let text = format!(
         "format = 1\nkind = \"draft\"\nbase = \"m.toml\"\n\n{}",
         blocks.join("\n")
@@ -392,5 +457,112 @@ fn the_examples_in_the_format_document_load_as_one_draft() {
         ),
         (1, 1, 1)
     );
-    assert!(draft.modules.values().all(|m| m.status == Status::Proposed));
+    assert!(
+        draft
+            .modules
+            .values()
+            .all(|m| m.status == Status::ProposedAddition)
+    );
+    assert_eq!(draft.update.modules.len(), 1);
+}
+
+const UPDATE: &str = r#"format = 1
+kind = "draft"
+base = "map.toml"
+
+[update.modules.mapper]
+kind = "logic"
+reason = "It only computes."
+primary = "note"
+
+[update.routes.r]
+role = "incidental"
+reason = "Rarely used."
+primary = "note"
+"#;
+
+#[test]
+fn an_update_written_by_hand_gives_only_what_changes() {
+    let Ok(MapDocument::Draft(draft)) = load(UPDATE) else {
+        panic!("{:?}", load(UPDATE))
+    };
+    let module = &draft.update.modules[&ModuleId("mapper".into())];
+    assert_eq!(
+        module.changes,
+        ModuleChanges {
+            concern: None,
+            kind: Some(ModuleKind::Logic),
+            layer: None,
+        }
+    );
+    assert!(module.supporting.is_empty());
+    let route = &draft.update.routes[&RouteId("r".into())];
+    assert_eq!(route.changes.role, Some(UseRole::Incidental));
+    assert_eq!(route.changes.other_roles, None);
+}
+
+#[test]
+fn an_update_must_change_a_field_that_fits_its_part() {
+    let error = refused(&UPDATE.replace("kind = \"logic\"\n", ""));
+    assert_eq!(error.message, "an update changes at least one field");
+    assert_eq!(error.position.map(|p| p.line), Some(5));
+    let error = refused(&UPDATE.replace("kind = \"logic\"", "role = \"wires\""));
+    assert_eq!(
+        error.message,
+        "a module's update has no `role` or `other_roles`"
+    );
+    let error = refused(&UPDATE.replace("role = \"incidental\"", "concern = \"Other.\""));
+    assert_eq!(
+        error.message,
+        "a route's update has no `concern`, `kind` or `layer`"
+    );
+}
+
+#[test]
+fn a_draft_standing_alone_updates_nothing() {
+    let error = refused(&UPDATE.replace("base = \"map.toml\"", "project = \"p\""));
+    assert_eq!(
+        error.message,
+        "a draft without a base map has nothing to update"
+    );
+}
+
+#[test]
+fn a_dependency_updated_twice_is_refused() {
+    let entry = "[[update.dependencies]]\nfrom = \"a\"\nto = \"b\"\nrole = \"wires\"\nreason = \"r\"\nprimary = \"n\"\n";
+    let error = refused(&format!(
+        "format = 1\nkind = \"draft\"\nbase = \"m\"\n\n{entry}\n{entry}"
+    ));
+    assert_eq!(error.message, "the dependency of a on b is updated twice");
+}
+
+#[test]
+fn a_drafts_own_parts_are_additions() {
+    let text = "format = 1\nkind = \"draft\"\nproject = \"p\"\n\n[modules.a]\nstatus = \"observed\"\nname = \"a\"\nreview = { state = \"unreviewed\" }\n";
+    let error = refused(text);
+    assert!(
+        error
+            .message
+            .starts_with("a draft's own parts are additions"),
+        "{}",
+        error.message
+    );
+    assert_eq!(error.position.map(|p| p.line), Some(5));
+    assert!(load(&text.replace("observed", "proposed-addition")).is_ok());
+}
+
+#[test]
+fn only_a_proposed_update_in_a_map_carries_a_proposed_review() {
+    let module = "[modules.a]\nstatus = \"proposed-update\"\nname = \"a\"\nreview = { state = \"unreviewed\" }\n";
+    let map = format!("format = 1\nkind = \"map\"\nproject = \"p\"\nlayers = []\n\n{module}");
+    let error = refused(&map);
+    assert_eq!(error.message, "a proposed update needs a `proposed` review");
+    let with_review = format!("{map}proposed = {{ state = \"deferred\", reason = \"Later.\" }}\n");
+    assert!(load(&with_review).is_ok(), "{:?}", load(&with_review));
+    let error = refused(&with_review.replace("proposed-update", "observed"));
+    assert_eq!(
+        error.message,
+        "only a proposed update has a `proposed` review"
+    );
+    assert_eq!(error.position, position(10, 12));
 }

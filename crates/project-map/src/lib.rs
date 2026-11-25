@@ -14,7 +14,7 @@ mod layers;
 mod problems;
 mod route;
 
-pub use draft::{Draft, DraftBase, Removals};
+pub use draft::{ConnectionChanges, Draft, DraftBase, ModuleChanges, Removals, Update, Updates};
 pub use layers::{DuplicateLayer, Layers};
 pub use problems::{MapPart, MapProblem};
 use std::collections::BTreeMap;
