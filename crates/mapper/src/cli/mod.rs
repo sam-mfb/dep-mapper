@@ -5,6 +5,7 @@ use crate::draft::DraftCommand;
 use crate::eval::EvalCommand;
 use crate::implementations::{Agent, EvaluatorChoice, Language};
 use crate::run::MapCommand;
+use crate::show::ShowCommand;
 use clap::error::ErrorKind;
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use project_graph::BuildSelection;
@@ -17,6 +18,7 @@ pub enum Command {
     Map(MapCommand),
     Eval(EvalCommand),
     Draft(DraftCommand),
+    Show(ShowCommand),
 }
 
 /// Why the arguments could not be parsed, or a request for help or the
@@ -49,6 +51,11 @@ where
             arguments: args.arguments,
         }),
         CliCommand::Draft(args) => Command::Draft(args.command.into()),
+        CliCommand::Show(args) => Command::Show(ShowCommand {
+            map: args.map,
+            page: args.page,
+            serve: args.serve,
+        }),
     })
 }
 
@@ -70,6 +77,21 @@ enum CliCommand {
     /// Work with a draft: proposed changes to a saved map, or a map made
     /// only of proposals.
     Draft(DraftArgs),
+    /// Reopen a map saved by `srs map --out`, without analysis, and write or
+    /// serve its page.
+    Show(ShowArgs),
+}
+
+#[derive(Args)]
+struct ShowArgs {
+    /// The saved map.
+    map: PathBuf,
+    /// Write the map's page to this file.
+    #[arg(long)]
+    page: Option<PathBuf>,
+    /// Serve the map's page at this address, such as 127.0.0.1:8080, until stopped.
+    #[arg(long)]
+    serve: Option<SocketAddr>,
 }
 
 #[derive(Args)]

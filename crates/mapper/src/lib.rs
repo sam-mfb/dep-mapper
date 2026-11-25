@@ -13,6 +13,7 @@
 //! - [`run`] runs `srs map` against injected implementations and outputs.
 //! - [`eval`] runs `srs eval`.
 //! - [`draft`] runs `srs draft`: checks, renders or previews a draft.
+//! - [`show`] runs `srs show`: reopens a saved map and shows its page.
 //! - [`implementations`] names the graphers and evaluators a command can
 //!   select, and the contract for supplying them.
 //! - [`serve`] serves one page over HTTP.
@@ -24,3 +25,4 @@ pub mod eval;
 pub mod implementations;
 pub mod run;
 pub mod serve;
+pub mod show;

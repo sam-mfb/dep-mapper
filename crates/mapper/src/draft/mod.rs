@@ -267,7 +267,8 @@ pub fn describe(problem: &DraftProblem) -> String {
     }
 }
 
-fn describe_map(problem: &MapProblem) -> String {
+/// One line describing a problem `ProjectMap::problems` found.
+pub fn describe_map(problem: &MapProblem) -> String {
     match problem {
         MapProblem::MissingEvidence { part: p, citation } => {
             format!(

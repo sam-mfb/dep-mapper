@@ -1,6 +1,6 @@
 # mapper: the `srs` program
 
-`srs map` analyzes one build of a project, has it evaluated, and saves and shows the resulting map. `srs eval` is how a person or an agent answers the manual evaluator's questions.
+`srs map` analyzes one build of a project, has it evaluated, and saves and shows the resulting map. `srs show` shows a saved map again. `srs eval` is how a person or an agent answers the manual evaluator's questions.
 
 ## `srs map`
 
@@ -23,6 +23,14 @@ srs map <root> --language <rust|typescript> [--cache <dir>] --target <target> --
 | `--serve` | Also serve the page at this address, such as `127.0.0.1:8080`, until stopped. |
 
 Problems the map builder finds while joining the evaluation to the graph are printed as notes. The map is built without them.
+
+## `srs show`
+
+```sh
+srs show <map.toml> [--page <map.html>] [--serve <address>]
+```
+
+Reopens a map saved by `srs map --out`, without analysis or evaluation, and writes or serves its page. For example, the checked-in map of sharsheret: `srs show docs/architecture/sharsheret-map.toml --serve 127.0.0.1:8080`.
 
 ## The LLM evaluator
 
