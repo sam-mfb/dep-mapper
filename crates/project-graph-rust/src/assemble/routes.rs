@@ -25,7 +25,7 @@
 use super::{Ordered, Resolver, Unit, Units, site};
 use project_graph::{Dispatch, Endpoint, Fact, FactKind, ModuleId};
 use project_graph_rust_records as r;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use value_routes::{CallLink, Flow, Limits, Trace, Use};
 
 const LIMITS: Limits = Limits {
@@ -106,6 +106,7 @@ pub(super) fn traced(
             }
         }
     }
+    flows.extend(closure_flows(resolve, units, crates));
     let uses: Vec<Use> = receivers
         .iter()
         .map(|r| Use {
@@ -173,6 +174,158 @@ pub(super) fn traced(
             .then_with(|| format!("{:?}", a.origin).cmp(&format!("{:?}", b.origin)))
     });
     routes
+}
+
+/// Moves into and out of closures called where the compiler did not say
+/// which closure. For a call through a value of generic closure type, the
+/// closures are those whose construction the recorded moves lead back to,
+/// through parameters, captures and async bodies. For a closure passed to
+/// the standard library, the call's other arguments are assumed to reach
+/// it. Either way the moves join every call involved, so a hop that relies
+/// on them is possible.
+fn closure_flows(resolve: &Resolver, units: &Units, crates: &[Vec<r::Record>]) -> Vec<Flow> {
+    let mut into: HashMap<r::Node, Vec<r::Node>> = HashMap::new();
+    for (_, records) in units.iter(crates) {
+        for record in records {
+            if let r::Record::Flow(flow) = record {
+                into.entry(identity(&flow.to))
+                    .or_default()
+                    .push(identity(&flow.from));
+            }
+        }
+    }
+    let through = |unit: &Unit, from: &r::Node, to: r::Node, span: &r::Span| {
+        resolve.at(unit).flow(
+            unit,
+            &r::FlowRecord {
+                from: from.clone(),
+                to,
+                kind: r::FlowKind::Through,
+                call_site: None,
+                span: Some(span.clone()),
+            },
+        )
+    };
+    let parameter = |closure: &r::Def| r::Node::Param {
+        // A closure's argument 0 is its captured environment.
+        function: closure.clone(),
+        index: 1,
+    };
+    let returned = |closure: &r::Def| r::Node::Returned {
+        function: closure.clone(),
+    };
+    let mut flows = Vec::new();
+    for (unit, records) in units.iter(crates) {
+        for record in records {
+            match record {
+                r::Record::ClosureCall(call) => {
+                    for closure in closures_reaching(&into, &call.callable) {
+                        flows.extend(through(
+                            unit,
+                            &call.arguments,
+                            parameter(closure),
+                            &call.span,
+                        ));
+                        flows.extend(through(
+                            unit,
+                            &returned(closure),
+                            call.destination.clone(),
+                            &call.span,
+                        ));
+                    }
+                }
+                r::Record::ClosureBinding(binding) => {
+                    for other in &binding.others {
+                        flows.extend(through(
+                            unit,
+                            other,
+                            parameter(&binding.closure),
+                            &binding.span,
+                        ));
+                    }
+                    flows.extend(through(
+                        unit,
+                        &returned(&binding.closure),
+                        binding.destination.clone(),
+                        &binding.span,
+                    ));
+                }
+                _ => {}
+            }
+        }
+    }
+    flows
+}
+
+/// The closures whose construction reaches `callable`, following recorded
+/// moves backward without regard to calls. Bounded: a closure called
+/// through a long chain of generic code may be missed.
+fn closures_reaching<'a>(
+    into: &'a HashMap<r::Node, Vec<r::Node>>,
+    callable: &r::Node,
+) -> Vec<&'a r::Def> {
+    const MOST_NODES: usize = 2_000;
+    let start = identity(callable);
+    let mut seen: HashSet<&r::Node> = HashSet::new();
+    let mut queue: VecDeque<&r::Node> = into.get(&start).into_iter().flatten().collect();
+    let mut closures = Vec::new();
+    while let Some(node) = queue.pop_front() {
+        if seen.len() > MOST_NODES || !seen.insert(node) {
+            continue;
+        }
+        match node {
+            r::Node::Type(def) => {
+                if is_closure(def) && !closures.contains(&def) {
+                    closures.push(def);
+                }
+            }
+            _ => queue.extend(into.get(node).into_iter().flatten()),
+        }
+    }
+    closures
+}
+
+/// A node with its definitions' display names removed: the same
+/// definition is named differently from different crates.
+fn identity(node: &r::Node) -> r::Node {
+    let plain = |def: &r::Def| r::Def {
+        name: String::new(),
+        ..def.clone()
+    };
+    match node {
+        r::Node::Local {
+            function,
+            local,
+            name,
+        } => r::Node::Local {
+            function: plain(function),
+            local: *local,
+            name: name.clone(),
+        },
+        r::Node::Param { function, index } => r::Node::Param {
+            function: plain(function),
+            index: *index,
+        },
+        r::Node::Returned { function } => r::Node::Returned {
+            function: plain(function),
+        },
+        r::Node::Field { owner, field } => r::Node::Field {
+            owner: plain(owner),
+            field: field.clone(),
+        },
+        r::Node::Capture { closure, index } => r::Node::Capture {
+            closure: plain(closure),
+            index: *index,
+        },
+        r::Node::Type(def) => r::Node::Type(plain(def)),
+    }
+}
+
+fn is_closure(def: &r::Def) -> bool {
+    def.path
+        .rsplit("::")
+        .next()
+        .is_some_and(|last| last.starts_with("{closure#"))
 }
 
 /// The reported moves of a path, in order. A hop is possible when its own

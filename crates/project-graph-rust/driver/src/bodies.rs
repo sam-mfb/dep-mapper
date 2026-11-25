@@ -39,6 +39,8 @@ struct BodyReader<'tcx> {
     owner: r::Def,
     body: Body,
     names: Vec<Option<String>>,
+    /// For each local, the nodes copied, moved or borrowed into it.
+    copies: std::collections::HashMap<u32, Vec<r::Node>>,
     records: Vec<r::Record>,
 }
 
@@ -71,6 +73,7 @@ impl<'tcx> BodyReader<'tcx> {
             owner: def(tcx, owner),
             body,
             names,
+            copies: Default::default(),
             records: Vec::new(),
         };
         reader.statements();
@@ -161,8 +164,11 @@ impl<'tcx> BodyReader<'tcx> {
     /// library that `ty` mentions, at any depth: `Option<Box<dyn Backups>>`
     /// mentions `Backups`, and `Option<B>` mentions `B`.
     fn mentions(&self, ty: Ty) -> HashSet<Mention> {
+        self.mentions_of(internal(self.tcx, ty))
+    }
+
+    fn mentions_of(&self, ty: rustc_middle::ty::Ty<'tcx>) -> HashSet<Mention> {
         use rustc_middle::ty::TyKind as K;
-        let ty = internal(self.tcx, ty);
         ty.walk()
             .filter_map(|arg| arg.as_type())
             .filter_map(|ty| match *ty.kind() {
@@ -237,6 +243,11 @@ impl<'tcx> BodyReader<'tcx> {
             }
             _ => kind,
         };
+        if kind == r::FlowKind::Copy
+            && let r::Node::Local { local, .. } = &to
+        {
+            self.copies.entry(*local).or_default().push(from.clone());
+        }
         if from != to {
             self.records.push(r::Record::Flow(r::FlowRecord {
                 from,
@@ -450,6 +461,9 @@ impl<'tcx> BodyReader<'tcx> {
                     }));
                 }
             }
+            if let Some(callee) = callee {
+                self.closures(callee, dispatch, args, destination, &at);
+            }
             self.records.push(r::Record::Call(r::CallRecord {
                 owner: self.owner.clone(),
                 callee: callee.map(|c| def(self.tcx, c)),
@@ -457,6 +471,102 @@ impl<'tcx> BodyReader<'tcx> {
                 span: at,
             }));
         }
+    }
+
+    /// A call through a generic closure, and closures passed to the
+    /// standard library.
+    fn closures(
+        &mut self,
+        callee: rustc_span::def_id::DefId,
+        dispatch: r::Dispatch,
+        args: &[Operand],
+        destination: &Place,
+        at: &r::Span,
+    ) {
+        let tcx = self.tcx;
+        let destination = self.node(destination);
+        if dispatch == r::Dispatch::Contract
+            && tcx
+                .trait_of_assoc(callee)
+                .is_some_and(|t| tcx.fn_trait_kind_from_def_id(t).is_some())
+            && let [callable, arguments] = args
+            && let Some((callable, r::FlowKind::Copy)) = self.operand(callable)
+            && let Some((arguments, r::FlowKind::Copy)) = self.operand(arguments)
+        {
+            let callable = self.root(callable);
+            self.records
+                .push(r::Record::ClosureCall(r::ClosureCallRecord {
+                    callable,
+                    arguments,
+                    destination: destination.clone(),
+                    span: at.clone(),
+                }));
+        }
+        // Elsewhere the closure's own construction is followed to its call.
+        if !is_std(tcx, callee) {
+            return;
+        }
+        for (position, arg) in args.iter().enumerate() {
+            let Some((closure, inputs)) = arg
+                .ty(self.body.locals())
+                .ok()
+                .and_then(|ty| self.closure_of(ty))
+            else {
+                continue;
+            };
+            let others = args
+                .iter()
+                .enumerate()
+                .filter(|(other, _)| *other != position)
+                .filter(|(_, other)| {
+                    other
+                        .ty(self.body.locals())
+                        .is_ok_and(|ty| !self.mentions(ty).is_disjoint(&inputs))
+                })
+                .filter_map(|(_, other)| match self.operand(other) {
+                    Some((node, r::FlowKind::Copy)) => Some(node),
+                    _ => None,
+                })
+                .collect();
+            self.records
+                .push(r::Record::ClosureBinding(r::ClosureBindingRecord {
+                    function: def(tcx, callee),
+                    index: position as u32,
+                    closure: def(tcx, closure),
+                    others,
+                    destination: destination.clone(),
+                    span: at.clone(),
+                }));
+        }
+    }
+
+    /// The closure a value's type is, through references, and what its
+    /// parameters mention.
+    fn closure_of(&self, ty: Ty) -> Option<(rustc_span::def_id::DefId, HashSet<Mention>)> {
+        let mut ty = internal(self.tcx, ty);
+        while let rustc_middle::ty::Ref(_, inner, _) = *ty.kind() {
+            ty = inner;
+        }
+        let rustc_middle::ty::Closure(id, args) = *ty.kind() else {
+            return None;
+        };
+        let inputs = args.as_closure().sig().skip_binder().inputs()[0];
+        Some((id, self.mentions_of(inputs)))
+    }
+
+    /// Follows single copies back within this body: a closure is often moved
+    /// into a temporary before it is called.
+    fn root(&self, mut node: r::Node) -> r::Node {
+        for _ in 0..8 {
+            let r::Node::Local { local, .. } = &node else {
+                break;
+            };
+            match self.copies.get(local).map(Vec::as_slice) {
+                Some([only]) => node = only.clone(),
+                _ => break,
+            }
+        }
+        node
     }
 
     fn callee(&self, func: &Operand) -> (Option<rustc_span::def_id::DefId>, r::Dispatch) {

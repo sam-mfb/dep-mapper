@@ -373,3 +373,37 @@ fn a_type_from_an_indirect_dependency_is_named_through_the_declared_one() {
         "{names:?}"
     );
 }
+
+#[test]
+fn a_closure_called_through_a_generic_parameter_or_by_the_standard_library_is_traced() {
+    let graph = graph();
+    // `with_backups(&OsBackups, |b| b.write())` and
+    // `Some(…).map(|b| b.write())`, both inside `main`.
+    let calls = find(
+        &item("app/bin:app::main"),
+        &FactKind::Call(Dispatch::Contract),
+        &item("supplier/lib:supplier::Backups::write"),
+    );
+    assert_eq!(calls.len(), 2, "{calls:#?}");
+    for call in calls {
+        let call_id = graph
+            .facts
+            .iter()
+            .find(|(_, f)| *f == call)
+            .map(|(id, _)| id.clone())
+            .unwrap();
+        let reached: Vec<_> = graph
+            .routes
+            .values()
+            .filter(|r| r.use_site.as_ref() == Some(&call_id))
+            .filter(|r| r.origin == item("supplier/lib:supplier::OsBackups"))
+            .filter(|r| r.end == project_graph::RouteEnd::ReachedUse)
+            .collect();
+        assert_eq!(reached.len(), 1, "no route for the call at {:?}", call.site);
+        let last = reached[0].hops.last().unwrap();
+        assert!(matches!(
+            last.support,
+            project_graph::Support::Possible { .. }
+        ));
+    }
+}
