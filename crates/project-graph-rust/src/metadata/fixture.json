@@ -1,0 +1,100 @@
+{
+ "workspace_root": "/work",
+ "workspace_members": [
+  "path+file:///work/supplier#0.1.0",
+  "path+file:///work/consumer#0.1.0",
+  "path+file:///work/app#0.1.0"
+ ],
+ "packages": [
+  {
+   "id": "path+file:///work/app#0.1.0",
+   "name": "app",
+   "manifest_path": "/work/app/Cargo.toml",
+   "targets": [
+    {
+     "name": "app",
+     "kind": [
+      "bin"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "path+file:///work/vendor/clock#0.1.0",
+   "name": "clock",
+   "manifest_path": "/work/vendor/clock/Cargo.toml",
+   "targets": [
+    {
+     "name": "clock",
+     "kind": [
+      "lib"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "path+file:///work/consumer#0.1.0",
+   "name": "consumer",
+   "manifest_path": "/work/consumer/Cargo.toml",
+   "targets": [
+    {
+     "name": "consumer",
+     "kind": [
+      "lib"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "path+file:///work/supplier#0.1.0",
+   "name": "supplier",
+   "manifest_path": "/work/supplier/Cargo.toml",
+   "targets": [
+    {
+     "name": "supplier",
+     "kind": [
+      "lib"
+     ]
+    }
+   ]
+  }
+ ],
+ "resolve": {
+  "nodes": [
+   {
+    "id": "path+file:///work/app#0.1.0",
+    "deps": [
+     {
+      "name": "consumer",
+      "pkg": "path+file:///work/consumer#0.1.0"
+     },
+     {
+      "name": "supplier",
+      "pkg": "path+file:///work/supplier#0.1.0"
+     }
+    ]
+   },
+   {
+    "id": "path+file:///work/vendor/clock#0.1.0",
+    "deps": []
+   },
+   {
+    "id": "path+file:///work/consumer#0.1.0",
+    "deps": [
+     {
+      "name": "clock",
+      "pkg": "path+file:///work/vendor/clock#0.1.0"
+     },
+     {
+      "name": "store",
+      "pkg": "path+file:///work/supplier#0.1.0"
+     }
+    ]
+   },
+   {
+    "id": "path+file:///work/supplier#0.1.0",
+    "deps": []
+   }
+  ]
+ }
+}

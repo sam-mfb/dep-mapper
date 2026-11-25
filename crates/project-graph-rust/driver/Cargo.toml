@@ -1,0 +1,22 @@
+# Built only by project-graph-rust's driver builder, with the pinned toolchain's
+# rustc-dev component. It links the compiler, so it stays out of the workspace.
+[package]
+name = "project-graph-rust-driver"
+description = "A rustc wrapper that records what the compiler resolved for sharsheret"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "srs-rustc-driver"
+path = "src/main.rs"
+
+[dependencies]
+project-graph-rust-records = { path = "../records" }
+
+[package.metadata.rust-analyzer]
+rustc_private = true
+
+# Its own workspace: it links the compiler, so it is built separately.
+[workspace]

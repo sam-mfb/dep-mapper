@@ -31,7 +31,8 @@ export type FactKind =
   | { kind: "read" }
   | { kind: "pass" }
   | { kind: "return" }
-  | { kind: "coerce" };
+  | { kind: "coerce" }
+  | { kind: "capture" };
 
 export type ItemKind = "type" | "value" | "function" | "method" | "module";
 export type Visibility = "exported" | "internal" | "unknown";
