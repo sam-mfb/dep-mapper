@@ -122,7 +122,8 @@ impl GraphEvaluator for ManualEvaluator {
         }
         if !self.store.submitted().map_err(store_failed)? {
             return Err(failed(format!(
-                "the answers at {location} were not submitted; they are kept, and evaluating again resumes them"
+                "the answers at {location} were not submitted yet. Answer the workbook with `{c} index`, `{c} show` and the other `{c}` commands, finish with `{c} submit`, then evaluate again; the answers recorded so far are kept and resumed",
+                c = self.settings.command
             )));
         }
         let answers = self.store.load_answers().map_err(store_failed)?;
