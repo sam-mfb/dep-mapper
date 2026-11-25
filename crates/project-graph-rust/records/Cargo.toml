@@ -1,0 +1,12 @@
+[package]
+name = "project-graph-rust-records"
+description = "The records the sharsheret rustc driver writes about one compiled crate"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
