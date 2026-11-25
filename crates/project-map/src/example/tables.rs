@@ -52,7 +52,7 @@ pub(super) fn modules() -> Vec<ModuleRow> {
                 "build_map",
                 ItemKind::Function,
                 Some(
-                    "fn build_map(graph: &ProjectGraph, evaluation: &GraphEvaluation) -> ProjectMap",
+                    "fn build_map(graph: &ProjectGraph, evaluation: &GraphEvaluation) -> Result<MapBuild, GraphMismatch>",
                 ),
             )],
         },
@@ -112,14 +112,20 @@ pub(super) fn modules() -> Vec<ModuleRow> {
             kind: ModuleKind::Composition,
             concern: "Coordinates collection, review, map construction and publication.",
             ownership: "Gets a ProjectGraph from the selected language grapher and passes it to Graph evaluator for a GraphEvaluation. Supplies both to Map builder, then sends the resulting ProjectMap to Map persist and Map web.",
-            surface: vec![("main", ItemKind::Function, None)],
+            surface: vec![(
+                "srs map",
+                ItemKind::Function,
+                Some(
+                    "srs map <root> --language <rust|typescript> --target <target> --configuration <settings> --evaluator <manual|llm> --out <file> [--page <file>] [--serve <address>]",
+                ),
+            )],
         },
         ModuleRow {
             key: "graph-evaluator-llm",
             layer: "Evaluation",
             kind: ModuleKind::Effect,
             concern: "Obtains an architectural judgment from a language model.",
-            ownership: "Owns model interaction and interpretation of the API response. Provider-specific requests and responses stay inside this module.",
+            ownership: "Owns model interaction and interpretation of the API response. Provider-specific requests and responses stay inside this module, behind its own model-client contract; Mapper injects the HTTP transport.",
             surface: vec![("LlmEvaluator", ItemKind::Type, None)],
         },
         ModuleRow {
