@@ -1,6 +1,6 @@
 # Discover an adapter path from its supplier
 
-From the dep-mapper checkout, run:
+From the sharsheret checkout, run:
 
 ```sh
 python3 proof/discovery/run.py /path/to/pinned/kashkeshet kkt-llm-agent-command

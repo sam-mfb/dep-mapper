@@ -1,4 +1,4 @@
-use super::dep_mapper;
+use super::sharsheret;
 use crate::*;
 
 fn citations(map: &ProjectMap) -> Vec<&CitationId> {
@@ -33,7 +33,7 @@ fn citations(map: &ProjectMap) -> Vec<&CitationId> {
 
 #[test]
 fn records_every_module_dependency_and_route_of_the_proposal() {
-    let map = dep_mapper();
+    let map = sharsheret();
     assert_eq!(map.modules.len(), 13);
     assert_eq!(map.dependencies.len(), 24);
     assert_eq!(map.routes.len(), 11);
@@ -41,7 +41,7 @@ fn records_every_module_dependency_and_route_of_the_proposal() {
 
 #[test]
 fn every_citation_resolves_to_evidence() {
-    let map = dep_mapper();
+    let map = sharsheret();
     for citation in citations(&map) {
         assert!(map.evidence.contains_key(citation), "missing {citation:?}");
     }
@@ -49,7 +49,7 @@ fn every_citation_resolves_to_evidence() {
 
 #[test]
 fn every_dependency_and_route_joins_modules_on_the_map() {
-    let map = dep_mapper();
+    let map = sharsheret();
     for id in map.dependencies.keys() {
         assert!(
             map.modules.contains_key(&id.from),
@@ -77,7 +77,7 @@ fn every_dependency_and_route_joins_modules_on_the_map() {
 
 #[test]
 fn every_hop_travels_along_a_dependency_on_the_map() {
-    let map = dep_mapper();
+    let map = sharsheret();
     for (id, route) in &map.routes {
         for index in 0..route.hops.len() {
             let dependency = route
@@ -93,7 +93,7 @@ fn every_hop_travels_along_a_dependency_on_the_map() {
 
 #[test]
 fn every_assigned_layer_is_listed() {
-    let map = dep_mapper();
+    let map = sharsheret();
     for module in map.modules.values() {
         let Review::Judged { judgment, .. } = &module.description else {
             panic!("{} is unreviewed", module.name)

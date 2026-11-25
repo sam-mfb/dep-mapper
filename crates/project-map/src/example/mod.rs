@@ -1,4 +1,4 @@
-//! dep-mapper's own proposed architecture as a `ProjectMap`, for consumers
+//! sharsheret's own proposed architecture as a `ProjectMap`, for consumers
 //! that need a realistic map to display or store. This is the project's
 //! module map: update it as the architecture changes, and view it with
 //! `cargo run -p map-web --example preview`.
@@ -86,9 +86,9 @@ fn proposal_evidence(summary: String) -> MapEvidence {
     }
 }
 
-/// The dep-mapper module map. Every route reaches its use; the TypeScript
+/// The sharsheret module map. Every route reaches its use; the TypeScript
 /// reader's hops are possible only for a TypeScript project.
-pub fn dep_mapper() -> ProjectMap {
+pub fn sharsheret() -> ProjectMap {
     let mut evidence = BTreeMap::new();
     let mut modules = BTreeMap::new();
     for row in tables::modules() {
@@ -200,8 +200,8 @@ pub fn dep_mapper() -> ProjectMap {
         .collect();
 
     ProjectMap {
-        graph_id: GraphId("dep-mapper/proposal@e525f96".into()),
-        project: "dep-mapper".into(),
+        graph_id: GraphId("sharsheret/proposal@e525f96".into()),
+        project: "sharsheret".into(),
         source_revision: SourceRevision("e525f96".into()),
         target: "proposed architecture".into(),
         configuration: "design proposal, not built".into(),

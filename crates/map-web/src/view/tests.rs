@@ -1,5 +1,5 @@
 use super::*;
-use project_map::example::dep_mapper;
+use project_map::example::sharsheret;
 use project_map::*;
 
 fn module(review: Review<ModuleDescription>) -> MapModule {
@@ -136,7 +136,7 @@ fn crate_named<'a>(view: &'a View, name: &str) -> &'a Crate {
 
 #[test]
 fn the_example_keeps_every_module_dependency_and_route() {
-    let view = view(&dep_mapper());
+    let view = view(&sharsheret());
     assert_eq!(
         (view.crates.len(), view.edges.len(), view.routes.len()),
         (13, 24, 11)
@@ -154,7 +154,7 @@ fn the_example_keeps_every_module_dependency_and_route() {
 
 #[test]
 fn only_judged_injections_through_three_modules_are_drawn() {
-    let view = view(&dep_mapper());
+    let view = view(&sharsheret());
     let mut drawn: Vec<&str> = view
         .routes
         .iter()
@@ -186,7 +186,7 @@ fn only_judged_injections_through_three_modules_are_drawn() {
 
 #[test]
 fn a_contract_groups_its_implementations_in_the_same_layer() {
-    let view = view(&dep_mapper());
+    let view = view(&sharsheret());
     assert_eq!(
         view.groups,
         BTreeMap::from([

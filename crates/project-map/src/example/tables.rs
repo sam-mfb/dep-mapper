@@ -1,4 +1,4 @@
-// dep-mapper's modules, dependencies and routes. See the module documentation in mod.rs.
+// sharsheret's modules, dependencies and routes. See the module documentation in mod.rs.
 
 use super::{DependencyRow, ModuleRow, RouteRow};
 use crate::{ItemKind, ModuleKind, UseRole};
