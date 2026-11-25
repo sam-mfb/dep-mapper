@@ -1,0 +1,12 @@
+[package]
+name = "map-preview"
+description = "A live preview of a map page in the browser, reloaded when the map changes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+serde_json = "1.0.145"
+thiserror.workspace = true
