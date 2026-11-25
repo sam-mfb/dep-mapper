@@ -41,3 +41,10 @@ fn slot_names_in_map_text_are_kept_as_data() {
 fn the_viewer_script_cannot_end_its_own_element() {
     assert!(!SCRIPT.to_ascii_lowercase().contains("</script"));
 }
+
+#[test]
+fn a_map_without_a_source_embeds_none() {
+    let mut map = sharsheret();
+    map.source = None;
+    assert!(embedded(&page(&map))["meta"]["source"].is_null());
+}
