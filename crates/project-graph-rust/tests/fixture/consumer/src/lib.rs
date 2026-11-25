@@ -38,3 +38,19 @@ const _: () = {
 pub async fn write_later(backups: Box<dyn Backups>) -> u32 {
     backups.write()
 }
+
+/// Receives the supplier wrapped in an `Option`, and takes it out through
+/// the standard library.
+pub fn write_some(backups: Option<Box<dyn Backups>>) -> u32 {
+    backups.unwrap().write()
+}
+
+/// The same through a type parameter: `Option<B>` to `B`.
+pub fn write_generic<B: Backups>(backups: Option<B>) -> u32 {
+    backups.unwrap().write()
+}
+
+/// Uses a type `clock` re-exports from its own dependency, `tick`.
+pub fn first_tick() -> clock::Tick {
+    clock::Tick(1)
+}
