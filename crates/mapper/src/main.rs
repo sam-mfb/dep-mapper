@@ -75,18 +75,19 @@ impl PreviewSink for Shown {
     }
 }
 
-/// Watches the files of the latest build, starting again when they change.
-struct Polling(Option<(Vec<PathBuf>, PollingWatcher)>);
+/// Watches the files of the latest build by polling.
+struct Polling(Option<PollingWatcher>);
 
 impl WatchFiles for Polling {
-    fn wait(&mut self, paths: &[PathBuf]) -> Result<(), String> {
-        let current = matches!(&self.0, Some((watched, _)) if watched == paths);
-        if !current {
-            let watcher = PollingWatcher::new(paths.to_vec(), WATCH_INTERVAL)
-                .map_err(|error| error.to_string())?;
-            self.0 = Some((paths.to_vec(), watcher));
-        }
-        let (_, watcher) = self.0.as_mut().expect("set above");
+    fn watch(&mut self, paths: &[PathBuf]) -> Result<(), String> {
+        let watcher = PollingWatcher::new(paths.to_vec(), WATCH_INTERVAL)
+            .map_err(|error| error.to_string())?;
+        self.0 = Some(watcher);
+        Ok(())
+    }
+
+    fn wait(&mut self) -> Result<(), String> {
+        let watcher = self.0.as_mut().ok_or("nothing is watched yet")?;
         watcher
             .wait_for_change()
             .map(|_| ())

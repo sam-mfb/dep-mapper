@@ -38,10 +38,14 @@ pub trait PreviewSink {
     fn show_problems(&self, problems: Vec<String>);
 }
 
-/// Waits until any of the given files changes. A new watcher is made when
-/// the set of files changes, such as when a draft names another base.
+/// Watches a set of files.
 pub trait WatchFiles {
-    fn wait(&mut self, paths: &[PathBuf]) -> Result<(), String>;
+    /// Watches `paths` from now on: what they hold now is the baseline, and
+    /// only a later change counts.
+    fn watch(&mut self, paths: &[PathBuf]) -> Result<(), String>;
+    /// Waits until any watched file changes from its baseline, which then
+    /// becomes the new baseline.
+    fn wait(&mut self) -> Result<(), String>;
 }
 
 #[derive(Debug, Error)]
@@ -132,19 +136,35 @@ pub fn render(draft: &Path, out: &Path, files: &mut dyn DraftFiles) -> Result<()
 /// `srs draft preview`: builds the draft and shows the result, then waits
 /// for its files to change and does it again. Returns only when watching
 /// fails.
+///
+/// Each build reads files that are already watched, so an edit made while
+/// they are read is noticed. A build that reads a new set of files, such as
+/// when the draft names another base, watches the new set and builds again
+/// before showing anything.
 pub fn preview(
     draft: &Path,
     files: &dyn DraftFiles,
     sink: &dyn PreviewSink,
     watch: &mut dyn WatchFiles,
 ) -> DraftError {
+    let mut watched = vec![draft.to_path_buf()];
+    if let Err(error) = watch.watch(&watched) {
+        return DraftError::Watch(error);
+    }
     loop {
         let built = build(draft, files);
+        if built.sources != watched {
+            watched = built.sources;
+            if let Err(error) = watch.watch(&watched) {
+                return DraftError::Watch(error);
+            }
+            continue;
+        }
         match built.page {
             Ok(page) => sink.show_page(page),
             Err(problems) => sink.show_problems(problems),
         }
-        if let Err(error) = watch.wait(&built.sources) {
+        if let Err(error) = watch.wait() {
             return DraftError::Watch(error);
         }
     }
