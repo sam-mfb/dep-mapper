@@ -14,6 +14,14 @@ fn citations() -> Value {
     })
 }
 
+/// Structured output needs an object at the root, so the decision sits
+/// under `answer`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModuleReply {
+    pub answer: ModuleAnswer,
+}
+
 #[derive(Deserialize)]
 #[serde(tag = "decision", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ModuleAnswer {
@@ -30,7 +38,7 @@ pub enum ModuleAnswer {
 }
 
 pub fn module_schema() -> Value {
-    json!({
+    let decision = json!({
         "anyOf": [
             {
                 "type": "object",
@@ -55,6 +63,12 @@ pub fn module_schema() -> Value {
                 "additionalProperties": false,
             },
         ],
+    });
+    json!({
+        "type": "object",
+        "properties": {"answer": decision},
+        "required": ["answer"],
+        "additionalProperties": false,
     })
 }
 
@@ -225,6 +239,9 @@ impl RoutesAnswer {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;
 
 /// Reads the model's text as `T`, or says why it could not.
 pub fn parse<T: for<'de> Deserialize<'de>>(text: &str) -> Result<T, Vec<String>> {

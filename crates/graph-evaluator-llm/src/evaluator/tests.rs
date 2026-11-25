@@ -102,10 +102,10 @@ fn sensible(request: &ModelRequest) -> Reply {
             "disk" => ("effect", "Storage"),
             _ => ("contract", "Contracts"),
         };
-        return answer(json!({
+        return answer(json!({"answer": {
             "decision": "judge", "concern": format!("The {module} module."), "kind": kind,
             "cluster": cluster, "reason": "Its items say so.", "evidence": [format!("item:{module}::{}", match module { "app" => "main", "disk" => "DiskStore", _ => "Store" })],
-        }));
+        }}));
     }
     if text.starts_with("Clusters piece") {
         return answer(json!({"clusters": [
@@ -225,13 +225,21 @@ fn pieces_carry_source_excerpts_and_the_decisions_so_far() {
         "{}",
         turns[3]
     );
+    let wire = turns
+        .iter()
+        .find(|t| t.starts_with("Routes piece") && routes_in(t) == ["route:r-wire"])
+        .unwrap();
+    assert!(
+        wire.contains("- module:disk (effect, cluster \"Storage\")"),
+        "after the clusters piece the cluster is settled: {wire}"
+    );
     let disk_store = turns
         .iter()
         .find(|t| t.starts_with("Routes piece") && routes_in(t) == ["route:r-impl"])
         .unwrap();
     assert!(
-        disk_store.contains("- module:disk (effect, proposed cluster \"Storage\")"),
-        "{disk_store}"
+        disk_store.contains("- module:store (contract, cluster \"Storage\")"),
+        "moved by the clusters piece: {disk_store}"
     );
 }
 
@@ -240,7 +248,7 @@ fn a_refused_answer_goes_back_with_its_problems_and_the_repair_is_kept() {
     let model = FakeModel::new(|request: &ModelRequest| {
         if piece_module(request) == Some("disk") && request.turns.len() == 1 {
             return answer(
-                json!({"decision": "judge", "concern": "x", "kind": "effect", "cluster": "Storage", "reason": "y", "evidence": ["route:nope"]}),
+                json!({"answer": {"decision": "judge", "concern": "x", "kind": "effect", "cluster": "Storage", "reason": "y", "evidence": ["route:nope"]}}),
             );
         }
         sensible(request)
@@ -419,7 +427,9 @@ fn a_refusal_truncation_or_model_error_fails_with_the_piece_named() {
 fn with_no_judged_modules_the_clusters_piece_is_skipped() {
     let model = FakeModel::new(|request: &ModelRequest| {
         if piece_module(request).is_some() {
-            return answer(json!({"decision": "defer", "reason": "Not enough evidence."}));
+            return answer(
+                json!({"answer": {"decision": "defer", "reason": "Not enough evidence."}}),
+            );
         }
         sensible(request)
     });

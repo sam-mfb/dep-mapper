@@ -127,7 +127,17 @@ fn apply(workbook: &Workbook, answers: &Answers, edits: Vec<Edit>) -> Result<Kep
     }
 }
 
+/// One module's decision so far. Before the clusters piece, its cluster is
+/// only proposed.
 fn module_line(answers: &Answers, module: &str) -> String {
+    let settled = answers
+        .get(&PieceId::clusters())
+        .is_some_and(|piece| piece.clusters.is_some());
+    let cluster_label = if settled {
+        "cluster"
+    } else {
+        "proposed cluster"
+    };
     match answers
         .get(&PieceId::module(module))
         .and_then(|piece| piece.modules.get(module))
@@ -137,7 +147,7 @@ fn module_line(answers: &Answers, module: &str) -> String {
             kind,
             cluster,
             ..
-        }) => format!("- module:{module} ({kind}, proposed cluster \"{cluster}\"): {concern}"),
+        }) => format!("- module:{module} ({kind}, {cluster_label} \"{cluster}\"): {concern}"),
         Some(ModuleAnswer::Deferred { reason }) => {
             format!("- module:{module} (undecided): {reason}")
         }
@@ -358,8 +368,8 @@ impl<M: ModelClient, S: SourceText, L: EvaluationLog> GraphEvaluator for LlmEval
                         self.page_text(graph, &workbook, piece, &page, &name)
                     );
                     answers = self.ask(&name, &system, text, wire::module_schema(), |reply| {
-                        let reply: wire::ModuleAnswer = wire::parse(reply)?;
-                        apply(&workbook, &answers, vec![reply.into_edit(module)])
+                        let reply: wire::ModuleReply = wire::parse(reply)?;
+                        apply(&workbook, &answers, vec![reply.answer.into_edit(module)])
                     })?;
                 }
                 PieceSubject::Clusters => {
