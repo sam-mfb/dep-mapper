@@ -31,7 +31,7 @@ pub(super) fn modules() -> Vec<ModuleRow> {
             layer: "Evidence",
             kind: ModuleKind::Effect,
             concern: "Builds the project graph for a selected Rust build, tracing its routes from compiler evidence.",
-            ownership: "Owns Cargo and rustc access and the Rust rules that connect surfaces and handoffs into source-backed routes. Mapper constructs it and calls it through the ProjectGrapher contract.",
+            ownership: "Owns Cargo and rustc access and the Rust rules that connect surfaces and handoffs into source-backed routes. Its rustc driver (built separately, on the pinned toolchain) and the records crate the driver writes are part of it. Mapper constructs it and calls it through the ProjectGrapher contract.",
             surface: vec![("RustGrapher", ItemKind::Type, None)],
         },
         ModuleRow {
