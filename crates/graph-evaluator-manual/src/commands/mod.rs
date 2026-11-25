@@ -83,6 +83,10 @@ pub fn run(
             route: args.required_positional("a route handle")?,
             reason: args.required("--reason")?,
         },
+        "skip-rest" => Edit::SetAsideRest {
+            piece: PieceId(args.required_positional("a routes piece")?),
+            reason: args.required("--reason")?,
+        },
         other => return Err(CommandError::Usage(format!("unknown command {other:?}"))),
     };
     args.finish()?;
@@ -91,6 +95,11 @@ pub fn run(
             store.save_answers(&recorded.piece, &recorded.answers[&recorded.piece])?;
             store.set_submitted(false)?;
             writeln!(out, "Recorded {}.", subject_text(&recorded.subject))?;
+            if let checking::Subject::Piece(piece) = &recorded.subject {
+                let before = answers.get(piece).map_or(0, |a| a.set_aside.len());
+                let after = recorded.answers[piece].set_aside.len();
+                writeln!(out, "{} routes set aside.", after - before)?;
+            }
             print_findings(out, "Warning", &recorded.warnings)?;
             Ok(Outcome::Done)
         }
@@ -122,6 +131,9 @@ pub fn help(command: &str) -> String {
   withdraw <relationship>    remove a relationship by its identifier
   skip-route <route> --reason <text>
                              record that a route was considered and carries no relationship
+  skip-rest <routes piece> --reason <text>
+                             set aside every route of the piece that no relationship
+                             cites and that is not set aside already
   check                      list every problem and warning
   submit                     check, then mark the answers as finished
 Each answer is checked when it is recorded. A problem refuses it; a warning keeps it.",
@@ -147,7 +159,17 @@ Work in this order:
    reader should meet them.
 3. Routes pieces (`routes/...`). For the routes in each piece, record the
    relationships they show, or set a route aside with a reason. One
-   relationship can cite routes from several pieces.
+   relationship can cite routes from several pieces. A relationship needs
+   only the routes that show it, not every route of the same kind.
+
+A large project has far more routes than anyone can judge one by one. Every
+module decision and the cluster list matter most. Then judge the pieces
+between two modules, since they show how the architecture is joined. A route
+you leave alone stays on the map as unreviewed, which is allowed. When the
+rest of a piece is routine, such as formatting calls or reads of a
+dependency's helpers, `skip-rest` sets it aside in one step with one reason.
+Each module piece counts its routes by where they lead and names the piece
+that lists them.
 
 Cite evidence by handle: `route:<id>`, `fact:<id>` or `item:<id>`. Each piece
 lists the handles it covers; `{c} show <handle>` shows one in full. Read the
