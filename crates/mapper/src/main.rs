@@ -1,9 +1,11 @@
 //! The `srs` binary: parses the command line and runs the command with the
 //! installed implementations, the file system, the terminal and the network.
 
+use graph_evaluator_manual::commands::Outcome;
 use map_preview::{PollingWatcher, Preview, Settings, Watcher};
 use mapper::cli::{self, Command};
 use mapper::draft::{self, DraftCommand, DraftError, DraftFiles, PreviewSink, WatchFiles};
+use mapper::eval;
 use mapper::implementations::Installed;
 use mapper::run::{self, MapOutputs};
 use mapper::serve::PageServer;
@@ -113,7 +115,14 @@ fn preview(draft: &Path, listen: SocketAddr) -> Result<(), String> {
 }
 
 fn main() -> ExitCode {
-    let command = match cli::parse(std::env::args_os()) {
+    let current_dir = match std::env::current_dir() {
+        Ok(dir) => dir,
+        Err(error) => {
+            eprintln!("srs: cannot read the current directory: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let command = match cli::parse(std::env::args_os(), &current_dir) {
         Ok(command) => command,
         Err(outcome) if outcome.requested => {
             print!("{}", outcome.text);
@@ -125,6 +134,18 @@ fn main() -> ExitCode {
         }
     };
     let result = match command {
+        // A refused answer is reported in the output; a usage or store
+        // failure is not an answer at all.
+        Command::Eval(command) => {
+            return match eval::eval(&command, &mut std::io::stdout()) {
+                Ok(Outcome::Done) => ExitCode::SUCCESS,
+                Ok(Outcome::Refused) => ExitCode::FAILURE,
+                Err(error) => {
+                    eprintln!("srs eval: {error}");
+                    ExitCode::from(2)
+                }
+            };
+        }
         Command::Map(command) => {
             run::map(&command, &Installed, &mut Terminal).map_err(|e| e.to_string())
         }

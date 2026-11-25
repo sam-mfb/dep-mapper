@@ -60,7 +60,7 @@ impl Implementations for StandIns {
 
     fn evaluator(
         &self,
-        _choice: EvaluatorChoice,
+        _choice: &EvaluatorChoice,
         _selection: &BuildSelection,
     ) -> Result<Box<dyn graph_evaluator::GraphEvaluator>, Unavailable> {
         Ok(Box::new(FixedEvaluator(evaluation())))
@@ -98,7 +98,7 @@ fn command() -> MapCommand {
             configuration: "default".into(),
         },
         language: Language::Rust,
-        evaluator: EvaluatorChoice::Manual,
+        evaluator: EvaluatorChoice::Llm,
         out: "map.toml".into(),
         page: Some("map.html".into()),
         serve: None,
