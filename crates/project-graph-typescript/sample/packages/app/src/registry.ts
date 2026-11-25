@@ -26,3 +26,16 @@ export function writeOne(given?: Backups): string {
   const chosen = given || quietBackups;
   return chosen.write("one");
 }
+
+class Tally {
+  count(): void {}
+}
+
+// reduce passes its accumulator first and an element second.
+export function tallyAll(): Tally {
+  return ALL.reduce((total: Tally, next) => {
+    total.count();
+    next.prune(0);
+    return total;
+  }, new Tally());
+}

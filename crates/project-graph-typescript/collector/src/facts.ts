@@ -286,7 +286,8 @@ class FileFacts {
     }
     this.arguments(call, call.arguments, declaration, target);
     if (isArrayMethod(target) && ts.isPropertyAccessExpression(call.expression)) {
-      this.arrayCallbacks(call.expression.expression, call.arguments);
+      const positions = ELEMENT_PARAMETERS.get(call.expression.name.text);
+      if (positions) this.arrayCallbacks(call.expression.expression, call.arguments, positions);
     }
   }
 
@@ -476,14 +477,16 @@ class FileFacts {
     this.write(elements, { kind: "read" }, this.placeOf(declaration, declaration.name.text), declaration);
   }
 
-  /** The first parameter of a callback given to an array method receives the array's elements. */
-  private arrayCallbacks(array: ts.Expression, args: ts.NodeArray<ts.Expression>): void {
+  /**
+   * The parameters at `positions` of the callback given to an array method
+   * receive the array's elements. The callback is the method's first argument.
+   */
+  private arrayCallbacks(array: ts.Expression, args: ts.NodeArray<ts.Expression>, positions: readonly number[]): void {
     const elements = this.elementPlace(this.checker.typeAt(array));
-    if (!elements) return;
-    for (const arg of args) {
-      const callback = skipOuter(arg);
-      if (!ts.isArrowFunction(callback) && !ts.isFunctionExpression(callback)) continue;
-      const parameter = callback.parameters[0];
+    const callback = args[0] && skipOuter(args[0]);
+    if (!elements || !callback || (!ts.isArrowFunction(callback) && !ts.isFunctionExpression(callback))) return;
+    for (const position of positions) {
+      const parameter = callback.parameters[position];
       if (!parameter || !ts.isIdentifier(parameter.name)) continue;
       this.write(elements, { kind: "read" }, this.placeOf(parameter, parameter.name.text), parameter);
     }
@@ -751,6 +754,22 @@ class FileFacts {
     return this.fileItem;
   }
 }
+
+/**
+ * For array methods that take a callback, which of the callback's parameters
+ * receive elements. `reduce` passes its accumulator first and an element
+ * second; the accumulator is not followed. Callbacks of other methods are
+ * not followed.
+ */
+const ELEMENT_PARAMETERS: ReadonlyMap<string, readonly number[]> = new Map<string, readonly number[]>([
+  ...["map", "flatMap", "forEach", "filter", "find", "findLast", "findIndex", "findLastIndex", "some", "every"].map(
+    (method): [string, readonly number[]] => [method, [0]],
+  ),
+  ["sort", [0, 1]],
+  ["toSorted", [0, 1]],
+  ["reduce", [1]],
+  ["reduceRight", [1]],
+]);
 
 /** Array methods whose result is one of the array's elements. */
 const ELEMENT_RESULT = new Set(["find", "findLast", "at", "pop", "shift"]);

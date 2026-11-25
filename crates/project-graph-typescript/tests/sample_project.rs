@@ -904,3 +904,32 @@ fn an_unbuilt_workspace_package_resolves_to_its_source_entry() {
         graph().facts.keys().collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn reduce_gives_elements_to_its_second_parameter_not_its_accumulator() {
+    let call_routes = |call: &str| {
+        let (id, _) = only_fact(|f| {
+            matches!(f.kind, FactKind::Call(_)) && f.site.as_ref().is_some_and(|s| text(s) == call)
+        });
+        routes_to(id)
+    };
+    let mut element_origins: Vec<_> = call_routes("next.prune(0)")
+        .iter()
+        .map(|r| format!("{:?}", r.origin))
+        .collect();
+    element_origins.sort();
+    let mut expected = vec![
+        format!("{:?}", item(OS, "OsBackups")),
+        format!("{:?}", item(REGISTRY, "quietBackups")),
+    ];
+    expected.sort();
+    assert_eq!(element_origins, expected);
+
+    let accumulator = call_routes("total.count()");
+    assert!(
+        accumulator
+            .iter()
+            .all(|r| matches!(r.end, RouteEnd::Stopped { .. })),
+        "no array element reaches the accumulator: {accumulator:#?}"
+    );
+}
