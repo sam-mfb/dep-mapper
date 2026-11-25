@@ -19,3 +19,34 @@ fn other_paths_are_quoted_for_the_shell() {
         r"srs eval --workbook '/tmp/it'\''s $HOME'"
     );
 }
+
+fn selection() -> BuildSelection {
+    BuildSelection {
+        root: "/src/project".into(),
+        target: "lib".into(),
+        configuration: "default features".into(),
+    }
+}
+
+#[test]
+fn the_llm_evaluator_needs_an_api_key() {
+    let installed = Installed {
+        anthropic_api_key: None,
+    };
+    let Err(error) = installed.evaluator(&EvaluatorChoice::Llm, &selection()) else {
+        panic!("no evaluator without a key")
+    };
+    assert!(error.0.contains("ANTHROPIC_API_KEY"));
+}
+
+#[test]
+fn with_a_key_the_llm_evaluator_is_supplied_without_contacting_the_api() {
+    let installed = Installed {
+        anthropic_api_key: Some("test-key".into()),
+    };
+    assert!(
+        installed
+            .evaluator(&EvaluatorChoice::Llm, &selection())
+            .is_ok()
+    );
+}
