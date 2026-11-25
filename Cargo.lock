@@ -90,6 +90,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "project-graph-typescript"
+version = "0.1.0"
+dependencies = [
+ "project-graph",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "project-map"
 version = "0.1.0"
 

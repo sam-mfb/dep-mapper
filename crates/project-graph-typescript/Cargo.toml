@@ -1,0 +1,14 @@
+[package]
+name = "project-graph-typescript"
+description = "Builds the project graph for a TypeScript npm workspace with the TypeScript checker"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+project-graph.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
