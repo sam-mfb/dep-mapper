@@ -16,7 +16,9 @@ clap = { version = "4.6.0", features = ["derive"] }
 graph-evaluator.workspace = true
 graph-evaluator-manual = { path = "../graph-evaluator-manual" }
 map-builder.workspace = true
+map-draft.workspace = true
 map-persist.workspace = true
+map-preview.workspace = true
 map-web.workspace = true
 project-graph.workspace = true
 project-graph-rust = { path = "../project-graph-rust" }
@@ -27,3 +29,5 @@ thiserror.workspace = true
 [dev-dependencies]
 graph-evaluator = { workspace = true, features = ["testing"] }
 project-graph = { workspace = true, features = ["testing"] }
+project-map = { workspace = true, features = ["example"] }
+map-persist.workspace = true

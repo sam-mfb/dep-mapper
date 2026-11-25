@@ -1,6 +1,7 @@
 //! The command line: `srs <command> ...`. Each subcommand parses into one of
 //! the program's own commands; the argument parser stays inside this module.
 
+use crate::draft::DraftCommand;
 use crate::eval::EvalCommand;
 use crate::implementations::{Agent, EvaluatorChoice, Language};
 use crate::run::MapCommand;
@@ -15,6 +16,7 @@ use std::path::{Path, PathBuf};
 pub enum Command {
     Map(MapCommand),
     Eval(EvalCommand),
+    Draft(DraftCommand),
 }
 
 /// Why the arguments could not be parsed, or a request for help or the
@@ -46,6 +48,7 @@ where
             workbook: current_dir.join(args.workbook),
             arguments: args.arguments,
         }),
+        CliCommand::Draft(args) => Command::Draft(args.command.into()),
     })
 }
 
@@ -64,6 +67,9 @@ enum CliCommand {
     /// Read a manual evaluation's workbook and record answers. Run
     /// `srs eval --workbook <dir> help` for its commands.
     Eval(EvalArgs),
+    /// Work with a draft: proposed changes to a saved map, or a map made
+    /// only of proposals.
+    Draft(DraftArgs),
 }
 
 #[derive(Args)]
@@ -74,6 +80,49 @@ struct EvalArgs {
     /// The answer command and its arguments.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     arguments: Vec<String>,
+}
+
+#[derive(Args)]
+struct DraftArgs {
+    #[command(subcommand)]
+    command: DraftSubcommand,
+}
+
+#[derive(Subcommand)]
+enum DraftSubcommand {
+    /// Report the draft's problems, with file, line and column where known.
+    /// Exits with status 1 if there are any.
+    Check {
+        /// The draft file.
+        draft: PathBuf,
+    },
+    /// Write the draft's map page to a file. Refuses a draft with problems.
+    Render {
+        /// The draft file.
+        draft: PathBuf,
+        /// Where to write the page.
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Serve a live preview of the draft, rebuilt and reloaded whenever the
+    /// draft or its base map changes, until stopped.
+    Preview {
+        /// The draft file.
+        draft: PathBuf,
+        /// Where to serve the preview.
+        #[arg(long, default_value = "127.0.0.1:8000")]
+        listen: SocketAddr,
+    },
+}
+
+impl From<DraftSubcommand> for DraftCommand {
+    fn from(command: DraftSubcommand) -> Self {
+        match command {
+            DraftSubcommand::Check { draft } => DraftCommand::Check { draft },
+            DraftSubcommand::Render { draft, out } => DraftCommand::Render { draft, out },
+            DraftSubcommand::Preview { draft, listen } => DraftCommand::Preview { draft, listen },
+        }
+    }
 }
 
 #[derive(Args)]
