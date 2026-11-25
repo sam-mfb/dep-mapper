@@ -91,9 +91,3 @@ The preview serves a small outer page. That page holds `map-web`'s page in a fra
 - `map-web`: the view marks proposed modules, edges and routes and separates notes from evidence. A map without a source renders.
 - `map-preview`: a change triggers a reload event. A failed load keeps the last good page and reports the problems.
 - `shrsh draft check`: exit codes and the reported positions.
-
-## Open questions for Sam
-
-1. **Removing or changing observed parts.** A plan often removes a module, such as the readers in PR #6, or changes an observed module's concern. Two states cannot say "this observed part is proposed for removal." Should `Status` gain `ProposedRemoval`, and should a draft be able to propose a new description for an observed part? I recommend adding `ProposedRemoval` now and leaving changed descriptions for later.
-2. **Overlay or full copy.** This plan makes a draft lay its changes over a base map file. The alternative is a full copy of the map with edits, which is simpler but goes stale when analysis reruns. Is the overlay right?
-3. **Shorter route syntax.** Writing each hop's link by hand is tedious. `map-draft` could accept a route written as a list of modules and work out each link from the declared dependencies, rejecting ambiguous cases. Should that be in the first version or added later?
