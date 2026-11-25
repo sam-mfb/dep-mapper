@@ -126,9 +126,14 @@ pub(super) fn modules() -> Vec<ModuleRow> {
             key: "graph-evaluator-manual",
             layer: "Evaluation",
             kind: ModuleKind::Effect,
-            concern: "Asks a human to make an architectural judgment in the terminal.",
-            ownership: "Owns the terminal conversation. The human chooses the label. Other user interfaces can implement the same review contract.",
-            surface: vec![("ManualEvaluator", ItemKind::Type, None)],
+            concern: "Has an agent harness or a person evaluate a graph through a workbook of pieces and checked answers.",
+            ownership: "Owns the workbook, the answer commands and the checks on each answer and citation. The worker is reached through an injected agent runner, and the workbook through an injected store.",
+            surface: vec![
+                ("ManualEvaluator", ItemKind::Type, None),
+                ("AgentRunner", ItemKind::Type, None),
+                ("WorkbookStore", ItemKind::Type, None),
+                ("commands::run", ItemKind::Function, None),
+            ],
         },
     ]
 }
