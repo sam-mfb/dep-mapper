@@ -3,6 +3,9 @@
 //! different wiring sites, even when their supplier and consumer coincide.
 //! Route hops follow the capability or value from its origin toward a consumer.
 
+mod graph_ref;
+
+pub use graph_ref::{Cited, GraphRef};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -17,6 +20,8 @@ pub struct ItemId(pub String);
 pub struct EvidenceId(pub String);
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RouteId(pub String);
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ConnectionId(pub String);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProjectGraph {
@@ -28,6 +33,8 @@ pub struct ProjectGraph {
     pub items: BTreeMap<ItemId, Item>,
     pub evidence: BTreeMap<EvidenceId, Evidence>,
     pub routes: BTreeMap<RouteId, Route>,
+    /// The ways modules are connected, each of which can be judged.
+    pub connections: BTreeMap<ConnectionId, Connection>,
     /// Missing coverage can apply to a whole unit before any route is discovered.
     pub gaps: Vec<CoverageGap>,
 }
@@ -176,6 +183,8 @@ pub struct Route {
     /// The use being explained, when known. Alternative and stopped traces
     /// can belong to the same call site; a supply with no known use has none.
     pub use_site: Option<EvidenceId>,
+    /// The connection this route traces, when it joins two project modules.
+    pub connection: Option<ConnectionId>,
     pub origin: Endpoint,
     pub hops: Vec<Hop>,
     pub end: RouteEnd,
@@ -207,6 +216,18 @@ pub enum RouteEnd {
         at: EvidenceId,
         reason: String,
     },
+}
+
+/// One way a module uses another. The use can be in `user`'s own code or
+/// arrive through other modules, as when a capability `used` supplies is
+/// handed to `user`. Two modules can be connected in several ways; how the
+/// grapher groups facts into connections is its own choice.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Connection {
+    pub user: ModuleId,
+    pub used: ModuleId,
+    /// The facts that establish the connection.
+    pub evidence: Vec<EvidenceId>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

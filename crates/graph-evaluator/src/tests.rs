@@ -1,12 +1,14 @@
 use super::*;
 use crate::testing::FixedEvaluator;
 use project_graph::{
-    Build, BuildUnit, Endpoint, Evidence, Fact, Hop, Module, Route, RouteEnd, Support, UnitId,
+    Build, BuildUnit, Cited, Connection, ConnectionId, Endpoint, Evidence, EvidenceId, Fact, Hop,
+    Module, Route, RouteEnd, RouteId, Support, UnitId,
 };
 
 #[test]
-fn evaluation_is_scoped_to_one_snapshot_and_can_defer_one_of_two_routes() {
+fn evaluation_is_scoped_to_one_snapshot_and_interprets_one_of_two_connections() {
     let module = ModuleId("kashkeshet".into());
+    let claude = ModuleId("kkt-claude".into());
     let unit = UnitId("kkt".into());
     let mut graph = ProjectGraph {
         id: GraphId("kkt/linux:fixture".into()),
@@ -16,13 +18,22 @@ fn evaluation_is_scoped_to_one_snapshot_and_can_defer_one_of_two_routes() {
             target: "kkt".into(),
             configuration: "linux, default features".into(),
         },
-        modules: BTreeMap::from([(
-            module.clone(),
-            Module {
-                name: "kashkeshet".into(),
-                root: ".".into(),
-            },
-        )]),
+        modules: BTreeMap::from([
+            (
+                module.clone(),
+                Module {
+                    name: "kashkeshet".into(),
+                    root: ".".into(),
+                },
+            ),
+            (
+                claude.clone(),
+                Module {
+                    name: "kkt-claude".into(),
+                    root: "crates/kkt-claude".into(),
+                },
+            ),
+        ]),
         items: BTreeMap::new(),
         units: BTreeMap::from([(
             unit.clone(),
@@ -33,12 +44,13 @@ fn evaluation_is_scoped_to_one_snapshot_and_can_defer_one_of_two_routes() {
             },
         )]),
         routes: BTreeMap::new(),
+        connections: BTreeMap::new(),
         evidence: BTreeMap::new(),
         gaps: vec![],
     };
-    let agent = RouteId("ClaudeCommand/add_server via agent parts".into());
-    let install = RouteId("ClaudeCommand/add_server via install parts".into());
-    for (route, site, file, bytes) in [
+    let agent = ConnectionId("ClaudeCommand/add_server via agent parts".into());
+    let install = ConnectionId("ClaudeCommand/add_server via install parts".into());
+    for (connection, site, file, bytes) in [
         (
             &agent,
             "agent_parts",
@@ -83,11 +95,21 @@ fn evaluation_is_scoped_to_one_snapshot_and_can_defer_one_of_two_routes() {
                 }),
             },
         );
+        graph.connections.insert(
+            connection.clone(),
+            Connection {
+                user: module.clone(),
+                used: claude.clone(),
+                evidence: vec![fact.clone()],
+            },
+        );
         graph.routes.insert(
-            route.clone(),
+            RouteId(connection.0.clone()),
             Route {
                 origin,
                 use_site: None,
+                // The partial route stops inside kashkeshet.
+                connection: None,
                 hops: vec![Hop {
                     to: field,
                     evidence: fact.clone(),
@@ -102,36 +124,24 @@ fn evaluation_is_scoped_to_one_snapshot_and_can_defer_one_of_two_routes() {
     }
     let evaluation = GraphEvaluation {
         graph: graph.id.clone(),
-        layers: vec![],
+        clusters: Clusters::empty(),
         modules: BTreeMap::new(),
-        routes: BTreeMap::from([
-            (
-                agent.clone(),
-                Decision::Judged {
-                    judgment: RouteJudgment {
-                        role: UseKind::Wires,
-                        other_roles: vec![],
-                        hops: BTreeMap::new(),
-                    },
-                    reason: "The program supplies the client command in the agent parts field."
-                        .into(),
-                    primary: Citation::Route(agent.clone()),
-                    supporting: vec![],
-                },
-            ),
-            (
-                install.clone(),
-                Decision::Deferred {
-                    reason: "Review this wiring site separately.".into(),
-                },
-            ),
-        ]),
+        relationships: vec![Relationship {
+            kind: RelationshipKind::Wires,
+            reason: "The program supplies the client command in the agent parts field.".into(),
+            evidence: vec![
+                GraphRef::from(agent.clone()),
+                GraphRef::from(EvidenceId("agent_parts.client_command".into())),
+            ],
+        }],
     };
     let fixed = FixedEvaluator(evaluation);
     let evaluator: &dyn GraphEvaluator = &fixed;
     let answer = evaluator.evaluate(&graph).unwrap();
-    assert!(matches!(answer.routes[&agent], Decision::Judged { .. }));
-    assert!(matches!(answer.routes[&install], Decision::Deferred { .. }));
+    assert!(matches!(
+        graph.resolve(&answer.relationships[0].evidence[0]),
+        Some(Cited::Connection(found)) if found == &graph.connections[&agent]
+    ));
     let another_build = ProjectGraph {
         id: GraphId("kkt/other:fixture".into()),
         ..graph
