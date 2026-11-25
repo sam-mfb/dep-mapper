@@ -231,6 +231,10 @@ dependencies = [
 name = "graph-evaluator-llm"
 version = "0.1.0"
 dependencies = [
+ "graph-evaluator",
+ "graph-evaluator-pieces",
+ "project-graph",
+ "serde",
  "serde_json",
  "thiserror",
  "ureq",
@@ -381,7 +385,9 @@ dependencies = [
  "clap",
  "graph-evaluator",
  "map-builder",
+ "map-draft",
  "map-persist",
+ "map-preview",
  "map-web",
  "project-graph",
  "project-map",

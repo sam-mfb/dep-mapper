@@ -12,6 +12,8 @@ repository = "https://github.com/sam-mfb/sharsheret"
 [workspace.dependencies]
 graph-evaluator = { path = "crates/graph-evaluator" }
 map-builder = { path = "crates/map-builder" }
+map-draft = { path = "crates/map-draft" }
+map-preview = { path = "crates/map-preview" }
 map-persist = { path = "crates/map-persist" }
 map-web = { path = "crates/map-web" }
 graph-evaluator-pieces = { path = "crates/graph-evaluator-pieces" }
