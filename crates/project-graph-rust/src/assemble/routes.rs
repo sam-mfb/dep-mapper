@@ -75,11 +75,13 @@ fn implementors(resolve: &Resolver, units: &Units, crates: &[Vec<r::Record>]) ->
                 .as_ref()
                 .and_then(|def| resolve.endpoint(def))
                 .map(|(endpoint, _)| endpoint);
-            match (entry.as_mut(), provider) {
-                (Some(types), Some(provider)) => types.push(provider),
+            match (entry.as_mut(), &implementation.self_type, provider) {
+                (Some(types), _, Some(provider)) => types.push(provider),
                 // A blanket or structural implementation: any type may.
-                (Some(_), None) => *entry = None,
-                (None, _) => {}
+                (Some(_), None, _) => *entry = None,
+                // A type outside the project, such as `String`, cannot be an
+                // origin of a traced route, so the list stays as it is.
+                (Some(_), Some(_), None) | (None, _, _) => {}
             }
         }
     }
@@ -112,6 +114,16 @@ pub(super) fn traced(
     let traces = value_routes::trace(&flows, &uses, LIMITS);
     let mut routes = Vec::new();
     for (receiver, traces) in receivers.iter().zip(traces) {
+        let crosses_modules =
+            receiver.contract_module.is_some() && receiver.contract_module != receiver.owner_module;
+        let stop = |reason: String| TracedRoute {
+            call: receiver.call.clone(),
+            origin: receiver.receiver.clone(),
+            hops: Vec::new(),
+            stopped: Some(reason),
+        };
+        let mut implementer_reached = false;
+        let mut stopped = false;
         for trace in traces {
             match trace {
                 Trace::Reached { origin, path, .. } => {
@@ -125,6 +137,7 @@ pub(super) fn traced(
                     if !implements {
                         continue;
                     }
+                    implementer_reached = true;
                     if resolve
                         .module(&origin)
                         .is_none_or(|m| Some(m) == receiver.owner_module)
@@ -139,19 +152,17 @@ pub(super) fn traced(
                     });
                 }
                 Trace::Stopped { reason } => {
-                    if receiver.contract_module.is_none()
-                        || receiver.contract_module == receiver.owner_module
-                    {
-                        continue;
+                    stopped = true;
+                    if crosses_modules {
+                        routes.push(stop(reason));
                     }
-                    routes.push(TracedRoute {
-                        call: receiver.call.clone(),
-                        origin: receiver.receiver.clone(),
-                        hops: Vec::new(),
-                        stopped: Some(reason),
-                    });
                 }
             }
+        }
+        if crosses_modules && !implementer_reached && !stopped {
+            routes.push(stop(
+                "only types that do not implement the trait reach the receiver".to_string(),
+            ));
         }
     }
     routes.sort_by(|a, b| {

@@ -331,3 +331,28 @@ fn a_value_passed_through_the_standard_library_is_followed_as_a_possible_route()
         last.support
     );
 }
+
+#[test]
+fn a_unit_struct_in_an_option_reaches_a_generic_receiver_through_unwrap() {
+    let graph = graph();
+    let call = find(
+        &item("consumer/lib:consumer::write_generic"),
+        &FactKind::Call(Dispatch::Contract),
+        &item("supplier/lib:supplier::Backups::write"),
+    );
+    assert_eq!(call.len(), 1);
+    let call_id = graph
+        .facts
+        .iter()
+        .find(|(_, f)| *f == call[0])
+        .map(|(id, _)| id.clone())
+        .unwrap();
+    let reached: Vec<_> = graph
+        .routes
+        .values()
+        .filter(|r| r.use_site.as_ref() == Some(&call_id))
+        .filter(|r| r.origin == item("supplier/lib:supplier::OsBackups"))
+        .collect();
+    assert_eq!(reached.len(), 1, "{reached:#?}");
+    assert_eq!(reached[0].end, project_graph::RouteEnd::ReachedUse);
+}

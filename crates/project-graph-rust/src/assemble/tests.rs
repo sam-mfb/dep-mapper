@@ -343,6 +343,12 @@ fn crates_with_flows() -> Vec<Vec<r::Record>> {
     ]);
     crates[1].extend([
         item("consumer", CONSUMER, "::Local", r::ItemKind::Type),
+        // `Local` implements `Backups` in consumer itself.
+        r::Record::Impl(r::ImplRecord {
+            self_type: Some(def("consumer", CONSUMER, "::Local")),
+            contract: def("supplier", SUPPLIER, "::Backups"),
+            span: span(0),
+        }),
         flow(
             r::Node::Type(def("supplier", SUPPLIER, "::OsBackups")),
             local("::consume", 2),
@@ -527,6 +533,65 @@ fn an_origin_that_does_not_implement_the_trait_is_not_a_route() {
     ]);
     crates[1].extend([
         // An enum-like local holding both a Settings and the backups.
+        flow(
+            r::Node::Type(def("supplier", SUPPLIER, "::Settings")),
+            local("::consume", 2),
+            r::FlowKind::Construct,
+        ),
+        flow(
+            r::Node::Type(def("supplier", SUPPLIER, "::OsBackups")),
+            local("::consume", 2),
+            r::FlowKind::Coerce,
+        ),
+        receiver(local("::consume", 2), 10),
+    ]);
+    let graph = graph(&workspace(), &crates, snapshot());
+    let origins: Vec<_> = traced_routes(&graph)
+        .into_iter()
+        .map(|r| r.origin.clone())
+        .collect();
+    assert_eq!(origins, [item_id("supplier/lib:supplier::OsBackups")]);
+}
+
+#[test]
+fn a_cross_module_call_reached_only_by_non_implementers_stops() {
+    let mut crates = crates();
+    crates[0].extend([
+        item("supplier", SUPPLIER, "::Settings", r::ItemKind::Type),
+        os_backups_implements(),
+    ]);
+    crates[1].extend([
+        flow(
+            r::Node::Type(def("supplier", SUPPLIER, "::Settings")),
+            local("::consume", 2),
+            r::FlowKind::Construct,
+        ),
+        receiver(local("::consume", 2), 10),
+    ]);
+    let graph = graph(&workspace(), &crates, snapshot());
+    let traced = traced_routes(&graph);
+    assert_eq!(traced.len(), 1);
+    let RouteEnd::Stopped { reason, .. } = &traced[0].end else {
+        panic!("expected a stopped route: {traced:#?}");
+    };
+    assert!(reason.contains("do not implement"));
+}
+
+#[test]
+fn an_implementation_for_a_standard_library_type_keeps_the_filter() {
+    let mut crates = crates();
+    crates[0].extend([
+        item("supplier", SUPPLIER, "::OsBackups", r::ItemKind::Type),
+        item("supplier", SUPPLIER, "::Settings", r::ItemKind::Type),
+        os_backups_implements(),
+        // `impl Backups for String`
+        r::Record::Impl(r::ImplRecord {
+            self_type: Some(def("alloc", "a1", "::string::String")),
+            contract: def("supplier", SUPPLIER, "::Backups"),
+            span: span(0),
+        }),
+    ]);
+    crates[1].extend([
         flow(
             r::Node::Type(def("supplier", SUPPLIER, "::Settings")),
             local("::consume", 2),

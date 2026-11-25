@@ -44,3 +44,8 @@ pub async fn write_later(backups: Box<dyn Backups>) -> u32 {
 pub fn write_some(backups: Option<Box<dyn Backups>>) -> u32 {
     backups.unwrap().write()
 }
+
+/// The same through a type parameter: `Option<B>` to `B`.
+pub fn write_generic<B: Backups>(backups: Option<B>) -> u32 {
+    backups.unwrap().write()
+}

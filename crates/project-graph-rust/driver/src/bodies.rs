@@ -14,6 +14,7 @@ use rustc_public::{
     rustc_internal::{internal, run},
     ty::{AdtKind, RigidTy, Ty, TyKind},
 };
+use std::collections::HashSet;
 
 pub fn collect(tcx: TyCtxt<'_>) -> Vec<r::Record> {
     match run(tcx, || {
@@ -149,29 +150,31 @@ impl<'tcx> BodyReader<'tcx> {
         }
     }
 
-    fn mentions_place(
-        &self,
-        place: &Place,
-    ) -> std::collections::HashSet<rustc_span::def_id::DefId> {
+    fn mentions_place(&self, place: &Place) -> HashSet<Mention> {
         place
             .ty(self.body.locals())
             .map(|ty| self.mentions(ty))
             .unwrap_or_default()
     }
 
-    /// The named types and traits outside the standard library that `ty`
-    /// mentions, at any depth: `Option<Box<dyn Backups>>` mentions `Backups`.
-    fn mentions(&self, ty: Ty) -> std::collections::HashSet<rustc_span::def_id::DefId> {
+    /// The named types, traits and type parameters outside the standard
+    /// library that `ty` mentions, at any depth: `Option<Box<dyn Backups>>`
+    /// mentions `Backups`, and `Option<B>` mentions `B`.
+    fn mentions(&self, ty: Ty) -> HashSet<Mention> {
+        use rustc_middle::ty::TyKind as K;
         let ty = internal(self.tcx, ty);
         ty.walk()
             .filter_map(|arg| arg.as_type())
             .filter_map(|ty| match *ty.kind() {
-                rustc_middle::ty::Adt(adt, _) => Some(adt.did()),
-                rustc_middle::ty::Dynamic(predicates, ..) => predicates.principal_def_id(),
-                rustc_middle::ty::Closure(id, _) | rustc_middle::ty::Coroutine(id, _) => Some(id),
+                K::Adt(adt, _) => Some(Mention::Def(adt.did())),
+                K::Dynamic(predicates, ..) => predicates.principal_def_id().map(Mention::Def),
+                K::Closure(id, _) | K::Coroutine(id, _) | K::CoroutineClosure(id, _) => {
+                    Some(Mention::Def(id))
+                }
+                K::Param(param) => Some(Mention::Param(param.index)),
                 _ => None,
             })
-            .filter(|id| !is_std(self.tcx, *id))
+            .filter(|m| !matches!(m, Mention::Def(id) if is_std(self.tcx, *id)))
             .collect()
     }
 
@@ -320,8 +323,8 @@ impl<'tcx> BodyReader<'tcx> {
                 // the place it builds; its fields are not followed one by one.
                 if adt.kind() != AdtKind::Struct {
                     for operand in operands {
-                        if let Some((from, r::FlowKind::Copy)) = self.operand(operand) {
-                            self.flow(from, to.clone(), r::FlowKind::Copy, None, at.clone());
+                        if let Some((from, kind)) = self.operand(operand) {
+                            self.flow(from, to.clone(), kind, None, at.clone());
                         }
                     }
                 }
@@ -419,14 +422,14 @@ impl<'tcx> BodyReader<'tcx> {
                         if !shared {
                             continue;
                         }
-                        if let Some((from, r::FlowKind::Copy)) = self.operand(arg) {
-                            self.flow(
-                                from,
-                                to.clone(),
-                                r::FlowKind::Through,
-                                None,
-                                Some(at.clone()),
-                            );
+                        // A unit struct passed in, as in `Arc::new(OsBackups)`,
+                        // is constructed into the result.
+                        let kind = |kind| match kind {
+                            r::FlowKind::Construct => r::FlowKind::Construct,
+                            _ => r::FlowKind::Through,
+                        };
+                        if let Some((from, passed)) = self.operand(arg) {
+                            self.flow(from, to.clone(), kind(passed), None, Some(at.clone()));
                         }
                     }
                 }
@@ -486,6 +489,14 @@ impl<'tcx> BodyReader<'tcx> {
             _ => (None, r::Dispatch::Indirect),
         }
     }
+}
+
+/// Something a type mentions that ties two values together.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Mention {
+    Def(rustc_span::def_id::DefId),
+    /// A type parameter of the function being read.
+    Param(u32),
 }
 
 /// Whether `id` is defined in the standard library's own crates.
