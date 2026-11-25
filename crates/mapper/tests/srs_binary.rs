@@ -5,6 +5,7 @@ use std::process::Command;
 fn srs(args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_srs"))
         .args(args)
+        .env_remove("ANTHROPIC_API_KEY")
         .output()
         .expect("srs runs")
 }
@@ -23,7 +24,7 @@ fn a_usage_mistake_exits_with_status_2() {
 }
 
 #[test]
-fn map_says_which_piece_is_missing() {
+fn map_without_an_api_key_stops_before_analysis() {
     let output = srs(&[
         "map",
         ".",
@@ -41,7 +42,7 @@ fn map_says_which_piece_is_missing() {
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
-        "srs: graph-evaluator-llm is not built yet\n"
+        "srs: --evaluator llm needs a Claude API key in ANTHROPIC_API_KEY\n"
     );
 }
 
@@ -102,4 +103,32 @@ fn the_architecture_map_has_no_problems() {
     );
     let output = srs(&["draft", "check", draft]);
     assert!(output.status.success(), "{output:?}");
+}
+
+#[test]
+fn show_refuses_a_saved_map_whose_parts_do_not_fit() {
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("show_refuses");
+    std::fs::create_dir_all(&dir).expect("scratch directory created");
+    let mut map = project_map::example::sharsheret();
+    map.modules.clear();
+    let saved = dir.join("broken.toml");
+    std::fs::write(
+        &saved,
+        map_persist::save(&map_persist::MapDocument::Map(map)),
+    )
+    .expect("map written");
+    let page = dir.join("broken.html");
+    if page.exists() {
+        std::fs::remove_file(&page).expect("old page removed");
+    }
+    let output = srs(&[
+        "show",
+        &saved.display().to_string(),
+        "--page",
+        &page.display().to_string(),
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("broken.toml is not shown"), "{stderr}");
+    assert!(!page.exists());
 }

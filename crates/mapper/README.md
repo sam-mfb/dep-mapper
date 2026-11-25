@@ -1,6 +1,6 @@
 # mapper: the `srs` program
 
-`srs map` analyzes one build of a project, has it evaluated, and saves and shows the resulting map. `srs eval` is how a person or an agent answers the manual evaluator's questions.
+`srs map` analyzes one build of a project, has it evaluated, and saves and shows the resulting map. `srs show` shows a saved map again. `srs eval` is how a person or an agent answers the manual evaluator's questions.
 
 ## `srs map`
 
@@ -16,13 +16,25 @@ srs map <root> --language <rust|typescript> [--cache <dir>] --target <target> --
 | `--language` | Selects the grapher: project-graph-rust or project-graph-typescript. |
 | `--cache` | For Rust: where the grapher keeps its rustc driver and build output between runs. Without it, `<root>/target/srs`. The first run builds the driver, which takes about a minute. |
 | `--target`, `--configuration` | The build to analyze, in the grapher's terms. For Rust, the target is a package, optionally with one target as `package/bin:name`, and the configuration is `default features` or Cargo flags such as `--features x`. For TypeScript, the target is the tsconfig file, relative to the root, and the configuration is `tsconfig`. |
-| `--evaluator` | Who judges the graph. `manual` needs `--workbook`. The LLM evaluator is not available yet. |
+| `--evaluator` | Who judges the graph. `manual` needs `--workbook`. `llm` asks Claude and needs `ANTHROPIC_API_KEY`; without it, `srs map` stops before analysis. |
 | `--agent` | For `manual`: who answers while `srs map` runs. `none` (the default when the option is left out) stops after writing the workbook. `wait` shows the request and checks every 5 seconds for a submission, for up to 4 hours. `claude` runs Claude Code in the project directory; `srs` must be on `PATH` for it to run `srs eval`. |
 | `--out` | Where to save the map. map-persist writes it, and it can be reopened without analysis. |
 | `--page` | Also write the map-web page to this file. |
 | `--serve` | Also serve the page at this address, such as `127.0.0.1:8080`, until stopped. |
 
 Problems the map builder finds while joining the evaluation to the graph are printed as notes. The map is built without them.
+
+## `srs show`
+
+```sh
+srs show <map.toml> [--page <map.html>] [--serve <address>]
+```
+
+Reopens a map saved by `srs map --out`, without analysis or evaluation, and writes or serves its page. For example, the checked-in map of sharsheret: `srs show docs/architecture/sharsheret-map.toml --serve 127.0.0.1:8080`.
+
+## The LLM evaluator
+
+`--evaluator llm` sends each module piece, the clusters and each page of routes to Claude (graph-evaluator-llm's recommended model and settings) with excerpts of the cited source, at most 40 lines each. A request may take up to 10 minutes, and one that fails for a passing reason is retried after 2, 8 and 30 seconds. Progress goes to standard error. Answers the evaluator's checks refuse go back to the model for repair; if they still fail, `srs map` stops and names the piece.
 
 ## The manual evaluator and `srs eval`
 
@@ -61,7 +73,7 @@ To refresh it after the code changes, run the command above again with `--out do
 
 ## Example: the TypeScript sample
 
-After `npm ci` in `crates/project-graph-typescript/collector` (the collector needs Node 22.18 or later):
+`srs` runs the TypeScript collector from the checkout it was built from, so run `npm ci` in that checkout's `crates/project-graph-typescript/collector` first, even for an `srs` copied elsewhere. The collector needs Node 22.18 or later.
 
 ```sh
 cargo build -p mapper

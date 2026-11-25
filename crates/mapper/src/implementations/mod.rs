@@ -3,6 +3,10 @@
 //! tests supply stand-ins.
 
 use graph_evaluator::GraphEvaluator;
+use graph_evaluator_llm::{
+    AnthropicClient, AnthropicConfig, EvaluatorSettings, LlmEvaluator, ProjectFiles,
+    RetryingClient, StderrLog, ThreadPause, UreqTransport,
+};
 use graph_evaluator_manual::checkout::CheckoutLines;
 use graph_evaluator_manual::evaluator::{AgentRunner, ManualEvaluator, ReturnAtOnce, Settings};
 use graph_evaluator_manual::runners::{
@@ -104,9 +108,23 @@ fn shell_word(text: &str) -> String {
     }
 }
 
+/// How long one request to the model may take.
+pub const MODEL_TIMEOUT: Duration = Duration::from_secs(600);
+/// The waits before each retry of a request that failed for a passing reason.
+pub const MODEL_RETRY_DELAYS: [Duration; 3] = [
+    Duration::from_secs(2),
+    Duration::from_secs(8),
+    Duration::from_secs(30),
+];
+/// The most lines of one source excerpt shown to the model.
+pub const EXCERPT_LINES: usize = 40;
+
 /// The implementations in this build of the program, with the tools they
 /// run found on `PATH`.
-pub struct Installed;
+pub struct Installed {
+    /// The Claude API key for `--evaluator llm`, if one was given.
+    pub anthropic_api_key: Option<String>,
+}
 
 impl Implementations for Installed {
     fn grapher(&self, language: &Language) -> Result<Box<dyn ProjectGrapher>, Unavailable> {
@@ -165,7 +183,27 @@ impl Implementations for Installed {
                     },
                 )))
             }
-            EvaluatorChoice::Llm => Err(Unavailable("graph-evaluator-llm is not built yet".into())),
+            EvaluatorChoice::Llm => {
+                let Some(api_key) = &self.anthropic_api_key else {
+                    return Err(Unavailable(
+                        "--evaluator llm needs a Claude API key in ANTHROPIC_API_KEY".into(),
+                    ));
+                };
+                let model = RetryingClient::new(
+                    AnthropicClient::new(
+                        AnthropicConfig::recommended(api_key.clone()),
+                        UreqTransport::new(MODEL_TIMEOUT),
+                    ),
+                    ThreadPause,
+                    MODEL_RETRY_DELAYS.to_vec(),
+                );
+                Ok(Box::new(LlmEvaluator::new(
+                    model,
+                    ProjectFiles::new(selection.root.clone(), EXCERPT_LINES),
+                    StderrLog,
+                    EvaluatorSettings::recommended(),
+                )))
+            }
         }
     }
 }
