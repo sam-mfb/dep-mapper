@@ -93,3 +93,13 @@ fn draft_render_writes_the_page() {
     assert!(output.status.success(), "{output:?}");
     assert!(std::fs::read_to_string(out).unwrap().contains("map-cache"));
 }
+
+#[test]
+fn the_architecture_map_has_no_problems() {
+    let draft = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/architecture/sharsheret.toml"
+    );
+    let output = srs(&["draft", "check", draft]);
+    assert!(output.status.success(), "{output:?}");
+}
