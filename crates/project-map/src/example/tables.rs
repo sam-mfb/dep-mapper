@@ -52,7 +52,7 @@ pub(super) fn modules() -> Vec<ModuleRow> {
                 "build_map",
                 ItemKind::Function,
                 Some(
-                    "fn build_map(graph: &ProjectGraph, evaluation: &GraphEvaluation) -> ProjectMap",
+                    "fn build_map(graph: &ProjectGraph, evaluation: &GraphEvaluation) -> Result<MapBuild, GraphMismatch>",
                 ),
             )],
         },
