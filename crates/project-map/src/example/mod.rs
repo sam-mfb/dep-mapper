@@ -3,7 +3,8 @@
 //! module map: update it as the architecture changes, and view it with
 //! `cargo run -p map-web --example preview`.
 //! No source was analyzed, so evidence entries describe the proposal and
-//! carry no source locations.
+//! carry no source locations. Every part is marked observed except one
+//! proposed route, `PROPOSED_ROUTE`, until the map becomes a draft file.
 
 mod tables;
 
@@ -46,6 +47,9 @@ struct RouteRow {
     note: &'static str,
 }
 
+/// The one route marked proposed, so consumers have a proposal to show.
+pub const PROPOSED_ROUTE: &str = "present-the-project-map";
+
 fn module_citation(key: &str) -> CitationId {
     CitationId(format!("module:{key}"))
 }
@@ -80,6 +84,7 @@ fn hop_target(module: &str, link: HopLink) -> HopTarget {
 
 fn proposal_evidence(summary: String) -> MapEvidence {
     MapEvidence {
+        kind: EvidenceKind::Source,
         build_unit: None,
         summary,
         location: None,
@@ -118,6 +123,7 @@ pub fn sharsheret() -> ProjectMap {
         modules.insert(
             ModuleId(row.key.into()),
             MapModule {
+                status: Status::Observed,
                 name: row.key.into(),
                 surface,
                 description: judged(description, row.ownership, citation, vec![]),
@@ -139,6 +145,7 @@ pub fn sharsheret() -> ProjectMap {
                 to: ModuleId(row.to.into()),
             };
             let dependency = MapDependency {
+                status: Status::Observed,
                 evidence: vec![citation.clone()],
                 description: judged(description, row.detail, citation, vec![]),
             };
@@ -149,11 +156,13 @@ pub fn sharsheret() -> ProjectMap {
     let routes = tables::routes()
         .into_iter()
         .map(|row| {
-            let support = match row.condition {
-                Some(condition) => HopSupport::Possible {
+            let proposed = row.key == PROPOSED_ROUTE;
+            let support = match (proposed, row.condition) {
+                (true, _) => HopSupport::Proposed,
+                (false, Some(condition)) => HopSupport::Possible {
                     condition: Some(condition.into()),
                 },
-                None => HopSupport::Established,
+                (false, None) => HopSupport::Established,
             };
             let obtained = dependency_citation(row.program, row.supplier);
             let mut hops = vec![MapHop {
@@ -177,7 +186,25 @@ pub fn sharsheret() -> ProjectMap {
                 }
                 None => (obtained, vec![]),
             };
+            // A proposed route rests its judgment on a proposal note.
+            let (status, primary, supporting) = if proposed {
+                let note = CitationId(format!("proposal:{}", row.key));
+                evidence.insert(
+                    note.clone(),
+                    MapEvidence {
+                        kind: EvidenceKind::Proposal,
+                        build_unit: None,
+                        summary: row.note.into(),
+                        location: None,
+                    },
+                );
+                let supporting = std::iter::once(used.clone()).chain(supporting).collect();
+                (Status::ProposedAddition, note, supporting)
+            } else {
+                (Status::Observed, used.clone(), supporting)
+            };
             let route = MapRoute {
+                status,
                 use_site: Some(used.clone()),
                 origin: RoutePoint::Project(ProjectPoint {
                     module: ModuleId(row.supplier.into()),
@@ -191,7 +218,7 @@ pub fn sharsheret() -> ProjectMap {
                         other_roles: vec![],
                     },
                     row.note,
-                    used,
+                    primary,
                     supporting,
                 ),
             };
@@ -200,11 +227,13 @@ pub fn sharsheret() -> ProjectMap {
         .collect();
 
     ProjectMap {
-        graph_id: GraphId("sharsheret/proposal@e525f96".into()),
         project: "sharsheret".into(),
-        source_revision: SourceRevision("e525f96".into()),
-        target: "proposed architecture".into(),
-        configuration: "design proposal, not built".into(),
+        source: Some(MapSource {
+            graph_id: GraphId("sharsheret/proposal@e525f96".into()),
+            source_revision: SourceRevision("e525f96".into()),
+            target: "proposed architecture".into(),
+            configuration: "design proposal, not built".into(),
+        }),
         layers: Layers::new(
             tables::LAYERS
                 .iter()

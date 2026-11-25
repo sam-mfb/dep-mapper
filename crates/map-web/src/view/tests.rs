@@ -4,6 +4,7 @@ use project_map::*;
 
 fn module(review: Review<ModuleDescription>) -> MapModule {
     MapModule {
+        status: Status::Observed,
         name: "ignored".into(),
         surface: vec![],
         description: review,
@@ -29,11 +30,13 @@ fn judged_module(kind: ModuleKind, layer: &str) -> MapModule {
 fn mixed_map() -> ProjectMap {
     let fact = CitationId("fact".into());
     ProjectMap {
-        graph_id: GraphId("g".into()),
         project: "p".into(),
-        source_revision: SourceRevision("r".into()),
-        target: "t".into(),
-        configuration: "c".into(),
+        source: Some(MapSource {
+            graph_id: GraphId("g".into()),
+            source_revision: SourceRevision("r".into()),
+            target: "t".into(),
+            configuration: "c".into(),
+        }),
         layers: Layers::new(vec![LayerName("Core".into())]).unwrap(),
         modules: BTreeMap::from([
             (
@@ -53,6 +56,7 @@ fn mixed_map() -> ProjectMap {
                     to: ModuleId("core".into()),
                 },
                 MapDependency {
+                    status: Status::Observed,
                     evidence: vec![fact.clone()],
                     description: Review::Unreviewed,
                 },
@@ -63,6 +67,7 @@ fn mixed_map() -> ProjectMap {
                     to: ModuleId("core".into()),
                 },
                 MapDependency {
+                    status: Status::Observed,
                     evidence: vec![fact.clone()],
                     description: Review::Judged {
                         judgment: RouteDescription {
@@ -79,6 +84,7 @@ fn mixed_map() -> ProjectMap {
         routes: BTreeMap::from([(
             RouteId("open".into()),
             MapRoute {
+                status: Status::Observed,
                 use_site: None,
                 origin: RoutePoint::Project(ProjectPoint {
                     module: ModuleId("core".into()),
@@ -118,6 +124,7 @@ fn mixed_map() -> ProjectMap {
         evidence: BTreeMap::from([(
             fact,
             MapEvidence {
+                kind: EvidenceKind::Source,
                 build_unit: Some(UnitId("core/lib".into())),
                 summary: "core defines Store.".into(),
                 location: Some(Location {
@@ -180,6 +187,7 @@ fn route_through(modules: &[&str], description: Review<RouteDescription>) -> Map
         })
         .collect();
     MapRoute {
+        status: Status::Observed,
         use_site: Some(fact.clone()),
         origin: RoutePoint::Project(ProjectPoint {
             module: ModuleId("a".into()),
@@ -247,8 +255,9 @@ fn only_judged_injections_through_three_modules_are_drawn() {
 #[test]
 fn a_contract_groups_its_implementations_in_the_same_layer() {
     let view = view(&sharsheret());
+    assert_eq!(view.groups.current, view.groups.planned);
     assert_eq!(
-        view.groups,
+        view.groups.current,
         BTreeMap::from([
             (
                 "graph-evaluator".to_string(),
@@ -304,9 +313,9 @@ fn a_deferred_route_keeps_its_possible_hop_external_point_and_stop() {
     assert_eq!(route.first_role, "unreviewed");
     assert_eq!(route.hops[0].to.module, None);
     assert_eq!(route.hops[0].to.label, "tokio (external)");
-    assert!(!route.hops[0].established);
+    assert_eq!(route.hops[0].support, "possible");
     assert_eq!(route.hops[0].condition.as_deref(), Some("async build"));
-    assert!(route.hops[1].established);
+    assert_eq!(route.hops[1].support, "established");
     assert!(!route.end.reached);
     assert_eq!(route.end.at.as_deref(), Some("fact"));
     assert_eq!(route.end.reason.as_deref(), Some("Unknown receiver."));
@@ -323,5 +332,219 @@ fn evidence_keeps_its_build_unit_and_location() {
     assert_eq!(
         (location.file.as_str(), location.start, location.end),
         ("src/lib.rs", 10, 20)
+    );
+}
+
+#[test]
+fn a_proposed_hop_is_marked_proposed() {
+    let view = view(&sharsheret());
+    let route = view
+        .routes
+        .iter()
+        .find(|r| r.id == project_map::example::PROPOSED_ROUTE)
+        .unwrap();
+    assert!(route.hops.iter().all(|hop| hop.support == "proposed"));
+    assert!(route.hops.iter().all(|hop| hop.condition.is_none()));
+}
+
+#[test]
+fn the_source_build_is_kept_and_a_map_without_one_has_none() {
+    let mut map = mixed_map();
+    let source = view(&map).meta.source.expect("the fixture has a source");
+    assert_eq!(
+        [
+            source.graph_id,
+            source.revision,
+            source.target,
+            source.configuration
+        ],
+        ["g", "r", "t", "c"]
+    );
+    map.source = None;
+    assert!(view(&map).meta.source.is_none());
+}
+
+#[test]
+fn each_part_keeps_its_status_and_each_note_its_kind() {
+    let mut map = mixed_map();
+    map.modules.get_mut(&ModuleId("new".into())).unwrap().status = Status::ProposedAddition;
+    map.modules
+        .get_mut(&ModuleId("stray".into()))
+        .unwrap()
+        .status = Status::ProposedRemoval;
+    for dependency in map.dependencies.values_mut() {
+        dependency.status = Status::ProposedAddition;
+    }
+    map.routes.get_mut(&RouteId("open".into())).unwrap().status = Status::ProposedRemoval;
+    map.evidence.insert(
+        CitationId("note".into()),
+        MapEvidence {
+            kind: EvidenceKind::Proposal,
+            build_unit: None,
+            summary: "Why.".into(),
+            location: None,
+        },
+    );
+    let view = view(&map);
+    let statuses: Vec<(&str, &str)> = view
+        .crates
+        .iter()
+        .map(|c| (c.name.as_str(), c.status))
+        .collect();
+    assert_eq!(
+        statuses,
+        [
+            ("core", "observed"),
+            ("new", "addition"),
+            ("stray", "removal")
+        ]
+    );
+    assert!(
+        view.edges
+            .iter()
+            .all(|e| e.status == "addition" && e.update.is_none())
+    );
+    assert_eq!(view.routes[0].status, "removal");
+    assert_eq!(view.evidence["fact"].kind, "source");
+    assert_eq!(view.evidence["note"].kind, "proposal");
+}
+
+#[test]
+fn an_update_keeps_the_part_in_code_and_lists_what_changes() {
+    let mut map = mixed_map();
+    let core = map.modules.get_mut(&ModuleId("core".into())).unwrap();
+    let mut proposed = core.description.clone();
+    if let Review::Judged { judgment, .. } = &mut proposed {
+        judgment.kind = ModuleKind::Effect;
+        judgment.layer = Some(LayerName("Elsewhere".into()));
+    }
+    core.status = Status::ProposedUpdate { proposed };
+    let stray = DependencyId {
+        from: ModuleId("stray".into()),
+        to: ModuleId("core".into()),
+    };
+    let dependency = map.dependencies.get_mut(&stray).unwrap();
+    dependency.status = Status::ProposedUpdate {
+        proposed: Review::Deferred {
+            reason: "Unsure.".into(),
+        },
+    };
+    let view = view(&map);
+    let core = crate_named(&view, "core");
+    assert_eq!((core.status, core.kind.as_str()), ("update", "logic"));
+    let update = core.update.as_ref().expect("an update");
+    assert_eq!(update.kind, "effect");
+    // "Elsewhere" is not a listed layer, so the module would be unassigned.
+    assert_eq!(update.layer, UNASSIGNED_LAYER);
+    let changes: Vec<(&str, &str, &str)> = update
+        .changes
+        .iter()
+        .map(|c| (c.field, c.before.as_str(), c.after.as_str()))
+        .collect();
+    assert_eq!(
+        changes,
+        [
+            ("kind", "logic", "effect"),
+            ("layer", "Core", UNASSIGNED_LAYER)
+        ]
+    );
+    let edge = view.edges.iter().find(|e| e.from == "stray").unwrap();
+    let update = edge.update.as_ref().expect("an update");
+    assert_eq!(update.roles, ["unreviewed"]);
+    let changes: Vec<(&str, &str, &str)> = update
+        .changes
+        .iter()
+        .map(|c| (c.field, c.before.as_str(), c.after.as_str()))
+        .collect();
+    assert_eq!(
+        changes,
+        [
+            ("roles", "direct use, other: logs through", ""),
+            ("review", "judged", "deferred")
+        ]
+    );
+}
+
+/// A contract `port` and an `adapter` in one layer, the adapter's dependency
+/// on the port judged with `role` and marked with `status`.
+fn port_and_adapter(role: UseRole, status: Status<RouteDescription>) -> ProjectMap {
+    let mut map = mixed_map();
+    map.layers = Layers::new(vec![LayerName("Core".into())]).unwrap();
+    map.modules = BTreeMap::from([
+        (
+            ModuleId("port".into()),
+            judged_module(ModuleKind::Contract, "Core"),
+        ),
+        (
+            ModuleId("adapter".into()),
+            judged_module(ModuleKind::Effect, "Core"),
+        ),
+    ]);
+    map.dependencies = BTreeMap::from([(
+        DependencyId {
+            from: ModuleId("adapter".into()),
+            to: ModuleId("port".into()),
+        },
+        MapDependency {
+            status,
+            evidence: vec![CitationId("fact".into())],
+            description: Review::Judged {
+                judgment: RouteDescription {
+                    role,
+                    other_roles: vec![],
+                },
+                reason: "Because.".into(),
+                primary: CitationId("fact".into()),
+                supporting: vec![],
+            },
+        },
+    )]);
+    map.routes = BTreeMap::new();
+    map
+}
+
+#[test]
+fn each_view_groups_by_what_it_shows() {
+    let grouped = BTreeMap::from([("port".to_string(), vec!["adapter".to_string()])]);
+    let none = BTreeMap::new();
+    let groups = |map: &ProjectMap| {
+        let view = view(map);
+        [
+            view.groups.current,
+            view.groups.planned,
+            view.groups.changes,
+        ]
+    };
+    // An update turns "implements" into direct use: only Current groups them.
+    let update = Status::ProposedUpdate {
+        proposed: Review::Judged {
+            judgment: RouteDescription {
+                role: UseRole::DirectUse,
+                other_roles: vec![],
+            },
+            reason: "No longer implements it.".into(),
+            primary: CitationId("fact".into()),
+            supporting: vec![],
+        },
+    };
+    assert_eq!(
+        groups(&port_and_adapter(UseRole::Implements, update)),
+        [grouped.clone(), none.clone(), none.clone()]
+    );
+    // A removal: Planned leaves the dependency out; Changes still draws it.
+    assert_eq!(
+        groups(&port_and_adapter(
+            UseRole::Implements,
+            Status::ProposedRemoval
+        )),
+        [grouped.clone(), none.clone(), grouped.clone()]
+    );
+    // An addition: Current leaves it out.
+    assert_eq!(
+        groups(&port_and_adapter(
+            UseRole::Implements,
+            Status::ProposedAddition
+        )),
+        [none, grouped.clone(), grouped]
     );
 }
