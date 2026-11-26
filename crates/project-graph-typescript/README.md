@@ -53,7 +53,7 @@ There are three kinds of route:
 - **Value route.** The shared `value-routes` tracer searches back from a method call's receiver to each `new` expression that can supply it, keeping one path per origin. A value returned from a call is matched to that call's own arguments. A move into or out of a field, or out of a closure's captured variable, stands for every instance of that place, so its hop is possible. If no origin is reached, the route stops at the call and says why.
 - **Receiver bound.** For a call through an interface, one bound for each class with an `Implements` fact for that interface.
 
-Routes that follow the same path are then merged by the shared `route-merging` library, so the graph has one route per distinct path. A direct use made at ten call sites is one route that names all ten sites, and its hop cites all ten facts.
+Routes that follow the same path are then merged by the shared `route-merging` library, so the graph has one route per distinct path. Before that, a route that never leaves one package ends at the package rather than at the items inside it. A direct use made at ten call sites is one route that names all ten sites, and its hop cites all ten facts.
 
 Not yet covered: arrays kept per variable rather than per element type, other containers such as `Map` and `Set`, and calls through function-typed values beyond recording them as indirect. A closure is followed when it is given as an argument for a parameter; one stored in a variable or a field and called later is not. A value that comes from outside the project is not an origin, so its trace stops.
 

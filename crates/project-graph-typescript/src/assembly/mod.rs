@@ -37,8 +37,9 @@ pub enum AssemblyError {
     UnknownModule(String),
 }
 
-/// Assembles the graph, merges routes that follow the same path as
-/// `route-merging` describes, then leaves out the routes that start in the
+/// Assembles the graph, ends routes that stay in one module at the module
+/// and merges routes that follow the same path, as `route-merging`
+/// describes, then leaves out the routes that start in the
 /// `excluded` packages as `route-exclusion` describes. An outside name lies in
 /// a package when the package is the part before its `#`, as `clock` in
 /// `clock#now`. The graph's ID covers what is left.
@@ -207,6 +208,7 @@ pub fn assemble(
             (unit_of(&module.0), unit)
         })
         .collect();
+    let routes = route_merging::merge(routes, &items);
     let mut graph = ProjectGraph {
         id: GraphId(String::new()),
         build: Build {
@@ -219,7 +221,7 @@ pub fn assemble(
         units,
         items,
         facts,
-        routes: route_merging::merge(routes),
+        routes,
         gaps,
     };
     route_exclusion::exclude(&mut graph, excluded, |name| in_packages(excluded, name));
