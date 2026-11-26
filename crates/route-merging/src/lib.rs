@@ -12,22 +12,76 @@
 //! - The merged route keeps the first route ID of its group, in ID order.
 //! - Routes whose paths differ in any step stay separate. Facts are not
 //!   touched.
+//!
+//! Before merging, a route that never leaves one project module ends at the
+//! module rather than at the items inside it. A route qualifies when every
+//! hop goes to an endpoint in the same project module, its origin lies
+//! outside the project or in that module, and it reaches its use. Each of its
+//! hops then goes to the module itself, keeping its facts and support, so
+//! uses of one outside item anywhere in a module fold into one route. A
+//! route that crosses modules, or that stops, keeps its detail.
 
-use project_graph::{Endpoint, FactId, Route, RouteEnd, RouteId, Support};
+use project_graph::{Endpoint, FactId, Item, ItemId, ModuleId, Route, RouteEnd, RouteId, Support};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// The routes of `routes`, with those that follow the same path merged as
-/// the crate documentation describes.
-pub fn merge(routes: BTreeMap<RouteId, Route>) -> BTreeMap<RouteId, Route> {
+/// The routes of `routes`, with those that stay in one module ending at the
+/// module and those that follow the same path merged, as the crate
+/// documentation describes. `items` are the graph's items, which say the
+/// module each item endpoint lies in.
+pub fn merge(
+    routes: BTreeMap<RouteId, Route>,
+    items: &BTreeMap<ItemId, Item>,
+) -> BTreeMap<RouteId, Route> {
     // `routes` iterates in ID order, so each group's first route comes first.
     let mut groups: BTreeMap<PathKey, Vec<(RouteId, Route)>> = BTreeMap::new();
     for (id, route) in routes {
+        let route = coarsen(route, items);
         groups
             .entry(PathKey::of(&route))
             .or_default()
             .push((id, route));
     }
     groups.into_values().filter_map(combine).collect()
+}
+
+/// `route` with each hop going to its module, when the route stays in one
+/// project module and reaches its use; otherwise `route` unchanged.
+fn coarsen(mut route: Route, items: &BTreeMap<ItemId, Item>) -> Route {
+    let Some(module) = local_module(&route, items) else {
+        return route;
+    };
+    for hop in &mut route.hops {
+        hop.to = Endpoint::Module(module.clone());
+    }
+    route
+}
+
+/// The one project module a route stays in, if it qualifies.
+fn local_module(route: &Route, items: &BTreeMap<ItemId, Item>) -> Option<ModuleId> {
+    if route.end != RouteEnd::ReachedUse {
+        return None;
+    }
+    let (first, rest) = route.hops.split_first()?;
+    let module = module_of(&first.to, items)?;
+    let hops_stay = rest
+        .iter()
+        .all(|hop| module_of(&hop.to, items).as_ref() == Some(&module));
+    let origin_fits = match &route.origin {
+        Endpoint::External(_) | Endpoint::Unresolved(_) => true,
+        origin => module_of(origin, items).as_ref() == Some(&module),
+    };
+    (hops_stay && origin_fits).then_some(module)
+}
+
+/// The project module an endpoint lies in, or `None` outside the project.
+fn module_of(endpoint: &Endpoint, items: &BTreeMap<ItemId, Item>) -> Option<ModuleId> {
+    match endpoint {
+        Endpoint::Module(module) => Some(module.clone()),
+        Endpoint::Item(id) | Endpoint::Place { owner: id, .. } => {
+            items.get(id).map(|item| item.module.clone())
+        }
+        Endpoint::External(_) | Endpoint::Unresolved(_) => None,
+    }
 }
 
 /// What two routes must share to merge. Endpoints and support have no

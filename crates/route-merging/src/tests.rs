@@ -1,6 +1,12 @@
 use super::*;
-use project_graph::{Hop, ItemId};
+use project_graph::{Hop, ItemKind, Visibility};
 use std::collections::BTreeSet;
+
+/// Merges routes whose endpoints name no known items, so none of them lies
+/// in a project module and only merging by path applies.
+fn merge(routes: BTreeMap<RouteId, Route>) -> BTreeMap<RouteId, Route> {
+    super::merge(routes, &BTreeMap::new())
+}
 
 fn item(name: &str) -> Endpoint {
     Endpoint::Item(ItemId(name.into()))
@@ -210,4 +216,167 @@ fn merging_keeps_every_cited_fact_and_the_first_id_of_each_group() {
         merged.keys().map(|id| id.0.as_str()).collect::<Vec<_>>(),
         ["route:a", "route:c", "route:d"]
     );
+}
+
+/// Items `app::main` and `app::run` in module `app`, and `store::Save` in
+/// module `store`.
+fn items() -> BTreeMap<ItemId, Item> {
+    [
+        ("app::main", "app"),
+        ("app::run", "app"),
+        ("store::Save", "store"),
+    ]
+    .into_iter()
+    .map(|(id, module)| {
+        let item = Item {
+            module: ModuleId(module.into()),
+            name: id.into(),
+            kind: ItemKind::Function,
+            visibility: Visibility::Exported,
+            signature: None,
+            declaration: None,
+        };
+        (ItemId(id.into()), item)
+    })
+    .collect()
+}
+
+fn outside(name: &str) -> Endpoint {
+    Endpoint::External(name.into())
+}
+
+fn module(name: &str) -> Endpoint {
+    Endpoint::Module(ModuleId(name.into()))
+}
+
+/// A route from `origin` used at `site`, through `hops`, each `(to, fact)`.
+fn route(origin: Endpoint, site: &str, hops: &[(&str, &str)]) -> Route {
+    Route {
+        origin,
+        ..reached(
+            "unused",
+            site,
+            hops.iter().map(|(to, f)| hop(to, f)).collect(),
+        )
+    }
+}
+
+#[test]
+fn an_outside_value_used_only_inside_one_module_ends_at_the_module() {
+    let before = routes(vec![
+        (
+            "route:1",
+            route(outside("clap::Arg"), "use:1", &[("app::main", "f1")]),
+        ),
+        (
+            "route:2",
+            route(outside("clap::Arg"), "use:2", &[("app::run", "f2")]),
+        ),
+        (
+            "route:3",
+            route(
+                outside("clap::Arg"),
+                "use:3",
+                &[("app::main", "f3"), ("app::run", "f4")],
+            ),
+        ),
+    ]);
+    let merged = super::merge(before.clone(), &items());
+    assert_eq!(
+        merged,
+        routes(vec![
+            (
+                "route:1",
+                Route {
+                    use_sites: ids(&["use:1", "use:2"]),
+                    origin: outside("clap::Arg"),
+                    hops: vec![Hop {
+                        to: module("app"),
+                        facts: ids(&["f1", "f2"]),
+                        support: Support::Established,
+                    }],
+                    end: RouteEnd::ReachedUse,
+                }
+            ),
+            // A longer path in the module ends at the module too, step by step.
+            (
+                "route:3",
+                Route {
+                    use_sites: ids(&["use:3"]),
+                    origin: outside("clap::Arg"),
+                    hops: vec![
+                        Hop {
+                            to: module("app"),
+                            facts: ids(&["f3"]),
+                            support: Support::Established,
+                        },
+                        Hop {
+                            to: module("app"),
+                            facts: ids(&["f4"]),
+                            support: Support::Established,
+                        },
+                    ],
+                    end: RouteEnd::ReachedUse,
+                }
+            ),
+        ])
+    );
+    assert_eq!(cited(&merged), cited(&before));
+}
+
+#[test]
+fn a_route_from_inside_its_module_ends_at_the_module() {
+    let merged = super::merge(
+        routes(vec![(
+            "route:1",
+            route(item("app::run"), "use:1", &[("app::main", "f1")]),
+        )]),
+        &items(),
+    );
+    assert_eq!(merged[&RouteId("route:1".into())].hops[0].to, module("app"));
+}
+
+#[test]
+fn a_value_that_crosses_modules_keeps_its_detail() {
+    let before = routes(vec![
+        // From an outside crate through `app` into `store`.
+        (
+            "route:1",
+            route(
+                outside("clap::Arg"),
+                "use:1",
+                &[("app::main", "f1"), ("store::Save", "f2")],
+            ),
+        ),
+        // From `store` into `app`.
+        (
+            "route:2",
+            route(item("store::Save"), "use:2", &[("app::main", "f3")]),
+        ),
+        (
+            "route:3",
+            route(item("store::Save"), "use:3", &[("app::run", "f4")]),
+        ),
+        // Through `app` and out of the project.
+        (
+            "route:4",
+            route(
+                outside("clap::Arg"),
+                "use:4",
+                &[("app::main", "f5"), ("unknown::thing", "f6")],
+            ),
+        ),
+    ]);
+    assert_eq!(super::merge(before.clone(), &items()), before);
+}
+
+#[test]
+fn a_stopped_route_keeps_its_detail() {
+    let mut stopped = route(outside("clap::Arg"), "use:1", &[("app::main", "f1")]);
+    stopped.end = RouteEnd::Stopped {
+        at: ids(&["use:1"]),
+        reason: "no origin".into(),
+    };
+    let before = routes(vec![("route:1", stopped)]);
+    assert_eq!(super::merge(before.clone(), &items()), before);
 }

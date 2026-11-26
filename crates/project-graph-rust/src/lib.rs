@@ -14,8 +14,9 @@
 //! arguments and returned values), and the `value-routes` tracer follows the
 //! receiver back to the types supplied for it.
 //!
-//! Routes that follow the same path are then merged, so the graph has one
-//! route per distinct path; the merged route names every use site and cites
+//! A route that never leaves one module then ends at the module, and routes
+//! that follow the same path are merged, so the graph has one route per
+//! distinct path; the merged route names every use site and cites
 //! every fact behind each hop. See the `route-merging` crate.
 //!
 //! ## Excluding crates
@@ -131,7 +132,7 @@ impl<C: Cargo> ProjectGrapher for RustGrapher<C> {
                 configuration: selection.configuration.clone(),
             },
         );
-        graph.routes = route_merging::merge(std::mem::take(&mut graph.routes));
+        graph.routes = route_merging::merge(std::mem::take(&mut graph.routes), &graph.items);
         let excluded = &self.settings.excluded;
         route_exclusion::exclude(&mut graph, excluded, |name| in_crates(excluded, name));
         // Graphs of one build with different lists hold different evidence.

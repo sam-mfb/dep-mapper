@@ -1243,3 +1243,45 @@ fn routes_that_follow_the_same_path_are_merged() {
         "some use in the sample is made at several sites"
     );
 }
+
+#[test]
+fn routes_that_stay_in_one_module_end_at_the_module() {
+    use project_graph::{Endpoint, ModuleId, RouteEnd};
+    let graph = graph();
+    let module_of = |endpoint: &Endpoint| -> Option<ModuleId> {
+        match endpoint {
+            Endpoint::Module(module) => Some(module.clone()),
+            Endpoint::Item(id) | Endpoint::Place { owner: id, .. } => {
+                graph.items.get(id).map(|item| item.module.clone())
+            }
+            Endpoint::External(_) | Endpoint::Unresolved(_) => None,
+        }
+    };
+    let mut at_module = 0;
+    let mut detailed = 0;
+    for (id, route) in &graph.routes {
+        let modules: Vec<Option<ModuleId>> =
+            route.hops.iter().map(|hop| module_of(&hop.to)).collect();
+        let one_module = modules.first().is_some_and(Option::is_some)
+            && modules.iter().all(|m| m == &modules[0]);
+        let from_outside = module_of(&route.origin).is_none();
+        if one_module && from_outside && route.end == RouteEnd::ReachedUse {
+            assert!(
+                route
+                    .hops
+                    .iter()
+                    .all(|hop| matches!(hop.to, Endpoint::Module(_))),
+                "{id:?} stays in one module but ends at items"
+            );
+            at_module += 1;
+        } else if route
+            .hops
+            .iter()
+            .any(|hop| matches!(hop.to, Endpoint::Item(_) | Endpoint::Place { .. }))
+        {
+            detailed += 1;
+        }
+    }
+    assert!(at_module > 0, "some outside use stays in one module");
+    assert!(detailed > 0, "routes that cross modules keep their items");
+}
