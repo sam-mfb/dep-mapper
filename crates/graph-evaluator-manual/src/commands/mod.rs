@@ -111,13 +111,17 @@ pub fn run(
     }
 }
 
+/// The most lines of a handle's detail `show` prints at once. A route used
+/// at many sites names a fact on each line.
+const HANDLE_PAGE_LINES: usize = 80;
+
 /// What the commands are and how to use them.
 pub fn help(command: &str) -> String {
     format!(
         "Commands, run as `{c} <command>`:
   index                      list the pieces and how far each has got
   show <piece> [--page N]    show a piece, such as module/core, clusters or routes/a+b
-  show <handle>              show a route, fact or item in full, such as route:R12
+  show <handle> [--page N]   show a route, fact or item in full, such as route:R12
   judge <module> --concern <text> --kind logic|effect|composition|contract
         --cluster <name> --reason <text> --cite <handle> [--cite <handle>...]
                              record a module's decision; recording again replaces it
@@ -239,7 +243,22 @@ fn show(
     };
     args.finish()?;
     if let Some(info) = workbook.refs.get(&target) {
-        writeln!(out, "{}", info.detail)?;
+        let lines: Vec<&str> = info.detail.lines().collect();
+        let pages: Vec<&[&str]> = lines.chunks(HANDLE_PAGE_LINES).collect();
+        let Some(shown) = pages.get(page - 1) else {
+            return Err(CommandError::Usage(format!(
+                "{target} has {} pages",
+                pages.len()
+            )));
+        };
+        writeln!(out, "{}", shown.join("\n"))?;
+        if pages.len() > 1 {
+            writeln!(
+                out,
+                "(page {page} of {}; `show {target} --page N` shows another)",
+                pages.len()
+            )?;
+        }
         return Ok(Outcome::Done);
     }
     let Some(piece) = workbook.piece(&PieceId(target.clone())) else {

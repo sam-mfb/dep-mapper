@@ -12,14 +12,16 @@ use toml::Spanned;
 type Result<T> = std::result::Result<T, LoadError>;
 
 pub fn document(text: &str) -> Result<MapDocument> {
-    let decoder = Decoder { text };
-    let header: Header = decoder.parse()?;
-    if *header.format.get_ref() != VERSION {
+    // Reading the header does not depend on the version it names.
+    let header: Header = Decoder { text, version: 0 }.parse()?;
+    let version = *header.format.get_ref();
+    let decoder = Decoder { text, version };
+    if version != VERSION && version != FIRST_VERSION {
         return Err(decoder.error(
             header.format.span(),
             format!(
-                "format version {} is not supported; this program reads version {VERSION}",
-                header.format.get_ref()
+                "format version {version} is not supported; this program reads versions \
+                 {FIRST_VERSION} to {VERSION}"
             ),
         ));
     }
@@ -57,6 +59,8 @@ enum Subject {
 
 struct Decoder<'a> {
     text: &'a str,
+    /// The file's format version, which decides how citations are written.
+    version: u32,
 }
 
 impl Decoder<'_> {
@@ -320,7 +324,7 @@ impl Decoder<'_> {
                         route.span(),
                         |review| self.connection_review(review),
                     )?,
-                    use_site: doc.use_site.clone().map(CitationId),
+                    use_sites: self.use_sites(doc)?,
                     origin,
                     hops,
                     end: self.end(&doc.end)?,
@@ -329,6 +333,53 @@ impl Decoder<'_> {
                 Ok((RouteId(key.clone()), value))
             })
             .collect()
+    }
+
+    /// A route's use sites: `use_site`, a citation ID, in format 1, and
+    /// `use_sites`, a list, in format 2.
+    fn use_sites(&self, doc: &RouteDoc) -> Result<Vec<CitationId>> {
+        match (self.version, &doc.use_site, &doc.use_sites) {
+            (FIRST_VERSION, Some(site), None) => Ok(vec![CitationId(site.get_ref().clone())]),
+            (FIRST_VERSION, None, None) => Ok(Vec::new()),
+            (FIRST_VERSION, _, Some(sites)) => Err(self.error(
+                sites.span(),
+                format!("`use_sites` is written in format {VERSION}; format {FIRST_VERSION} has `use_site`"),
+            )),
+            (_, Some(site), _) => Err(self.error(
+                site.span(),
+                format!("`use_site` is written in format {FIRST_VERSION}; format {VERSION} has `use_sites`, a list"),
+            )),
+            (_, None, sites) => Ok(sites
+                .iter()
+                .flat_map(|sites| sites.get_ref())
+                .cloned()
+                .map(CitationId)
+                .collect()),
+        }
+    }
+
+    /// Citations that format 1 writes as one ID and format 2 as a list of at
+    /// least one. `what` names them in an error.
+    fn citations(
+        &self,
+        citations: &Citations,
+        span: Range<usize>,
+        what: &str,
+    ) -> Result<Vec<CitationId>> {
+        match (self.version, citations) {
+            (FIRST_VERSION, Citations::One(id)) => Ok(vec![CitationId(id.clone())]),
+            (FIRST_VERSION, Citations::List(_)) => Err(self.error(
+                span,
+                format!("in format {FIRST_VERSION}, {what} is one citation ID"),
+            )),
+            (_, Citations::List(ids)) if !ids.is_empty() => {
+                Ok(ids.iter().cloned().map(CitationId).collect())
+            }
+            (_, Citations::List(_) | Citations::One(_)) => Err(self.error(
+                span,
+                format!("in format {VERSION}, {what} is a list of at least one citation ID"),
+            )),
+        }
     }
 
     fn hop(&self, hop: &HopDoc) -> Result<MapHop> {
@@ -350,7 +401,11 @@ impl Decoder<'_> {
         };
         Ok(MapHop {
             to,
-            evidence: CitationId(hop.evidence.clone()),
+            evidence: self.citations(
+                hop.evidence.get_ref(),
+                hop.evidence.span(),
+                "a hop's `evidence`",
+            )?,
             support,
             role: hop.role.as_ref().map(|role| self.role(role)).transpose()?,
         })
@@ -396,7 +451,7 @@ impl Decoder<'_> {
         match (doc.state, &doc.at, &doc.reason) {
             (EndStateDoc::Reached, None, None) => Ok(MapRouteEnd::ReachedUse),
             (EndStateDoc::Stopped, Some(at), Some(reason)) => Ok(MapRouteEnd::Stopped {
-                at: CitationId(at.clone()),
+                at: self.citations(at, end.span(), "a stopped route's `at`")?,
                 reason: reason.clone(),
             }),
             (EndStateDoc::Reached, _, _) => Err(self.error(

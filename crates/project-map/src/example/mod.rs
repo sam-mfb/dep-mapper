@@ -167,7 +167,7 @@ pub fn sharsheret() -> ProjectMap {
             let obtained = dependency_citation(row.program, row.supplier);
             let mut hops = vec![MapHop {
                 to: hop_target(row.program, HopLink::ReceiverUsesSender),
-                evidence: obtained.clone(),
+                evidence: vec![obtained.clone()],
                 support: support.clone(),
                 role: Some(row.first_role),
             }];
@@ -178,7 +178,7 @@ pub fn sharsheret() -> ProjectMap {
                     let delivered = dependency_citation(row.program, receiver);
                     hops.push(MapHop {
                         to: hop_target(receiver, HopLink::SenderUsesReceiver),
-                        evidence: delivered.clone(),
+                        evidence: vec![delivered.clone()],
                         support,
                         role: Some(UseRole::SuppliesInput),
                     });
@@ -205,7 +205,7 @@ pub fn sharsheret() -> ProjectMap {
             };
             let route = MapRoute {
                 status,
-                use_site: Some(used.clone()),
+                use_sites: vec![used.clone()],
                 origin: RoutePoint::Project(ProjectPoint {
                     module: ModuleId(row.supplier.into()),
                     item: Some(row.carries.into()),

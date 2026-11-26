@@ -9,15 +9,15 @@
 //! references they cite:
 //!
 //! - A module judgment applies to the module it is keyed by.
-//! - A relationship applies to each route it cites, to each hop whose fact it
-//!   cites, and to each dependency whose facts it cites or whose routes it
+//! - A relationship applies to each route it cites, to each hop one of whose
+//!   facts it cites, and to each dependency whose facts it cites or whose routes it
 //!   cites, when every hop of that route between two modules travels along
 //!   that one dependency.
 //!
 //! When several relationships apply to one subject, the first in the
 //! evaluation's order gives the role and the rest give other roles.
-//! A hop has a single role, so only the first relationship citing its fact
-//! applies to it.
+//! A hop has a single role, so only the first relationship citing one of its
+//! facts applies to it.
 //!
 //! Dependencies come from the graph's facts. A fact whose subject uses its
 //! object, such as an import, a reference, an implementation or a call, makes
@@ -25,8 +25,8 @@
 //! move (construct, read, store, pass, return, coerce or capture) makes none
 //! by itself. A route hop
 //! between two modules travels along the dependency that joins them, and adds
-//! its fact to that dependency's evidence. When no use fact joins them, the
-//! hop's own fact decides the direction: after a read or a return, the
+//! its facts to that dependency's evidence. When no use fact joins them, the
+//! hop's own facts decide the direction: after a read or a return, the
 //! receiver uses the sender; after any other move, the sender uses the
 //! receiver. When both directions exist, the receiver using the sender wins.
 //!

@@ -172,12 +172,12 @@ fn graph() -> ProjectGraph {
         (
             "inject",
             Route {
-                use_site: Some(FactId("call".into())),
+                use_sites: vec![FactId("call".into())],
                 origin: item("store::FileSaver"),
                 hops: vec![
                     Hop {
                         to: item("app::main"),
-                        fact: FactId("construct".into()),
+                        facts: vec![FactId("construct".into())],
                         support: Support::Established,
                     },
                     Hop {
@@ -185,7 +185,7 @@ fn graph() -> ProjectGraph {
                             owner: ItemId("port::Saver".into()),
                             projection: "self".into(),
                         },
-                        fact: FactId("pass".into()),
+                        facts: vec![FactId("pass".into())],
                         support: Support::Possible {
                             condition: Some("feature files".into()),
                         },
@@ -197,11 +197,11 @@ fn graph() -> ProjectGraph {
         (
             "log",
             Route {
-                use_site: Some(FactId("log".into())),
+                use_sites: vec![FactId("log".into())],
                 origin: item("app::main"),
                 hops: vec![Hop {
                     to: Endpoint::External("log::info".into()),
-                    fact: FactId("log".into()),
+                    facts: vec![FactId("log".into())],
                     support: Support::Established,
                 }],
                 end: RouteEnd::ReachedUse,
@@ -210,11 +210,11 @@ fn graph() -> ProjectGraph {
         (
             "stopped",
             Route {
-                use_site: Some(FactId("call".into())),
+                use_sites: vec![FactId("call".into())],
                 origin: item("app::main"),
                 hops: vec![],
                 end: RouteEnd::Stopped {
-                    at: FactId("call".into()),
+                    at: vec![FactId("call".into())],
                     reason: "the receiver was not traced".into(),
                 },
             },
@@ -495,7 +495,7 @@ fn hops_say_how_they_reach_each_module_and_keep_their_support() {
         unreachable!()
     };
     assert_eq!(point.item.as_deref(), Some("Saver.self"));
-    assert_eq!(route.use_site, Some(cite("fact:call")));
+    assert_eq!(route.use_sites, [cite("fact:call")]);
     assert_eq!(
         map.routes[&map_route("log")].hops[0].to,
         HopTarget::Outside(OutsidePoint::External("log::info".into()))
@@ -510,7 +510,7 @@ fn a_stopped_trace_keeps_where_and_why_it_stopped() {
     assert_eq!(
         route.end,
         MapRouteEnd::Stopped {
-            at: cite("fact:call"),
+            at: vec![cite("fact:call")],
             reason: "the receiver was not traced".into(),
         }
     );
@@ -592,11 +592,11 @@ fn a_route_along_one_dependency_reviews_that_dependency() {
     graph.routes.insert(
         RouteId("implemented".into()),
         Route {
-            use_site: None,
+            use_sites: Vec::new(),
             origin: item("port::Saver"),
             hops: vec![Hop {
                 to: item("store::FileSaver"),
-                fact: FactId("implements".into()),
+                facts: vec![FactId("implements".into())],
                 support: Support::Established,
             }],
             end: RouteEnd::ReachedUse,
@@ -631,11 +631,11 @@ fn a_value_move_with_no_use_behind_it_picks_its_direction_from_the_move() {
     graph.routes.insert(
         RouteId("returned".into()),
         Route {
-            use_site: None,
+            use_sites: Vec::new(),
             origin: item("port::Saver"),
             hops: vec![Hop {
                 to: item("store::helper"),
-                fact: FactId("returned".into()),
+                facts: vec![FactId("returned".into())],
                 support: Support::Established,
             }],
             end: RouteEnd::ReachedUse,
@@ -668,11 +668,11 @@ fn references_the_graph_cannot_resolve_are_reported_and_kept_visible() {
     graph.routes.insert(
         RouteId("broken".into()),
         Route {
-            use_site: None,
+            use_sites: Vec::new(),
             origin: item("gone::Thing"),
             hops: vec![Hop {
                 to: item("app::main"),
-                fact: FactId("vanished".into()),
+                facts: vec![FactId("vanished".into())],
                 support: Support::Established,
             }],
             end: RouteEnd::ReachedUse,
@@ -762,5 +762,70 @@ fn a_cluster_listed_twice_is_reported_and_keeps_its_first_place() {
         [BuildProblem::DuplicateCluster(ClusterName(
             "Program".into()
         ))]
+    );
+}
+
+#[test]
+fn a_route_merged_from_several_sites_keeps_every_site_and_fact() {
+    let mut graph = graph();
+    let again = |fact: &str, at: usize| {
+        let mut copy = graph.facts[&FactId(fact.into())].clone();
+        copy.site.as_mut().unwrap().bytes = at..at + 5;
+        copy
+    };
+    let (construct, log) = (again("construct", 60), again("log", 70));
+    graph
+        .facts
+        .insert(FactId("construct-again".into()), construct);
+    graph.facts.insert(FactId("log-again".into()), log);
+    let route = graph.routes.get_mut(&RouteId("inject".into())).unwrap();
+    route.hops[0].facts.push(FactId("construct-again".into()));
+    let route = graph.routes.get_mut(&RouteId("log".into())).unwrap();
+    route.use_sites.push(FactId("log-again".into()));
+    route.hops[0].facts.push(FactId("log-again".into()));
+    let mut evaluation = evaluation();
+    // Cites only the second site's fact, which still reaches the hop.
+    evaluation.relationships[2].evidence = vec![fact_ref("log-again")];
+
+    let build = build_map(&graph, &evaluation).unwrap();
+    let log = &build.map.routes[&map_route("log")];
+    assert_eq!(log.use_sites, [cite("fact:log"), cite("fact:log-again")]);
+    assert_eq!(
+        log.hops[0].evidence,
+        [cite("fact:log"), cite("fact:log-again")]
+    );
+    assert_eq!(log.hops[0].role, Some(UseRole::Incidental));
+    assert!(
+        !build
+            .problems
+            .contains(&BuildProblem::UnplacedRelationship { relationship: 2 })
+    );
+    let inject = &build.map.routes[&map_route("inject")];
+    assert_eq!(
+        inject.hops[0].evidence,
+        [cite("fact:construct"), cite("fact:construct-again")]
+    );
+    let evidence = &build.map.dependencies[&dependency("app", "store")].evidence;
+    assert!(evidence.contains(&cite("fact:construct")));
+    assert!(evidence.contains(&cite("fact:construct-again")));
+    assert_eq!(build.map.problems(), vec![]);
+}
+
+#[test]
+fn a_stopped_end_cites_every_place_its_uses_stopped() {
+    let mut graph = graph();
+    let route = graph.routes.get_mut(&RouteId("stopped".into())).unwrap();
+    route.use_sites.push(FactId("log".into()));
+    route.end = RouteEnd::Stopped {
+        at: vec![FactId("call".into()), FactId("log".into())],
+        reason: "the receiver was not traced".into(),
+    };
+    let map = build_map(&graph, &evaluation()).unwrap().map;
+    assert_eq!(
+        map.routes[&map_route("stopped")].end,
+        MapRouteEnd::Stopped {
+            at: vec![cite("fact:call"), cite("fact:log")],
+            reason: "the receiver was not traced".into(),
+        }
     );
 }

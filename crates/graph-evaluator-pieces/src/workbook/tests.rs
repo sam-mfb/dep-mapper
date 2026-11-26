@@ -1,5 +1,6 @@
 use super::*;
 use crate::testing;
+use project_graph::{FactId, RouteEnd};
 
 struct EveryTenBytes;
 
@@ -203,4 +204,95 @@ fn every_module_piece_shows_the_routes_left_out_of_the_whole_graph() {
         app.contains("Coverage gaps:\n- macro not expanded"),
         "{app}"
     );
+}
+
+#[test]
+fn a_route_used_at_many_sites_shows_the_first_few_and_counts_the_rest() {
+    let mut graph = testing::graph();
+    let write = graph.facts[&FactId("f-write".into())].clone();
+    let sites: Vec<FactId> = (1..=5).map(|n| FactId(format!("f-write-{n}"))).collect();
+    for (n, id) in sites.iter().enumerate() {
+        let mut fact = write.clone();
+        fact.site.as_mut().unwrap().bytes = n * 10..n * 10 + 5;
+        graph.facts.insert(id.clone(), fact);
+    }
+    let route = graph.routes.get_mut(&RouteId("r-write".into())).unwrap();
+    route.use_sites = sites.clone();
+    route.hops[0].facts = sites.clone();
+    route.end = RouteEnd::Stopped {
+        at: sites,
+        reason: "no origin".into(),
+    };
+    let workbook = present(
+        &graph,
+        &Presentation {
+            page_size: 10,
+            source: &ByteOffsets,
+            command: Some("srs eval"),
+        },
+    );
+    let info = &workbook.refs["route:r-write"];
+    // The handle's own detail names every site of every list.
+    let detail = &info.detail;
+    assert!(
+        detail.contains("explains the uses at 5 sites:\n    fact:f-write-1 ("),
+        "{detail}"
+    );
+    for n in 1..=5 {
+        assert_eq!(
+            detail.matches(&format!("fact:f-write-{n} (")).count(),
+            3,
+            "site {n} is a use, the hop's fact and a stop: {detail}"
+        );
+    }
+    assert!(detail.contains("stops: no origin; at\n"), "{detail}");
+    // Pieces show the summary, which names the first few and points to the
+    // handle for the rest.
+    let summary = info.summary.as_deref().unwrap();
+    assert_eq!(info.brief_detail(), summary);
+    assert!(
+        summary.contains("explains the uses at 5 sites: fact:f-write-1 ("),
+        "{summary}"
+    );
+    assert_eq!(
+        summary
+            .matches("and 2 more, which `srs eval show route:r-write` lists")
+            .count(),
+        3,
+        "{summary}"
+    );
+    assert!(!summary.contains("fact:f-write-4"), "{summary}");
+    let piece = &workbook.piece_of_route("route:r-write").unwrap().pages[0];
+    assert!(piece.contains(summary), "{piece}");
+    // A route with one fact per list needs no summary.
+    assert_eq!(workbook.refs["route:r-wire"].summary, None);
+    for n in 1..=5 {
+        assert!(workbook.refs.contains_key(&format!("fact:f-write-{n}")));
+    }
+}
+
+#[test]
+fn without_a_command_a_summary_counts_the_rest_without_naming_a_command() {
+    let mut graph = testing::graph();
+    let write = graph.facts[&FactId("f-write".into())].clone();
+    let sites: Vec<FactId> = (1..=4).map(|n| FactId(format!("f-write-{n}"))).collect();
+    for id in &sites {
+        graph.facts.insert(id.clone(), write.clone());
+    }
+    graph
+        .routes
+        .get_mut(&RouteId("r-write".into()))
+        .unwrap()
+        .use_sites = sites;
+    let workbook = present(
+        &graph,
+        &Presentation {
+            page_size: 10,
+            source: &ByteOffsets,
+            command: None,
+        },
+    );
+    let summary = workbook.refs["route:r-write"].brief_detail();
+    assert!(summary.contains(") and 1 more\n"), "{summary}");
+    assert!(!summary.contains("show"), "{summary}");
 }

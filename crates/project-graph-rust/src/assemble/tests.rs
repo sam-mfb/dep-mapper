@@ -281,7 +281,7 @@ fn every_fact_is_a_route_of_one_hop_from_what_is_used_to_its_user() {
     let graph = built();
     assert_eq!(graph.routes.len(), graph.facts.len());
     for route in graph.routes.values() {
-        let fact = &graph.facts[route.use_site.as_ref().unwrap()];
+        let fact = &graph.facts[&route.use_sites[0]];
         assert_eq!(route.origin, fact.object);
         assert_eq!(route.hops.len(), 1);
         assert_eq!(route.hops[0].to, fact.subject);
@@ -402,7 +402,7 @@ fn a_traced_route_runs_from_the_supplied_type_through_reported_moves_to_the_call
         1,
         "the copy between temporaries is not a hop"
     );
-    assert_eq!(graph.facts[&route.hops[0].fact].kind, FactKind::Coerce);
+    assert_eq!(graph.facts[&route.hops[0].facts[0]].kind, FactKind::Coerce);
     assert_eq!(
         route.hops[0].to,
         Endpoint::Place {
@@ -410,7 +410,7 @@ fn a_traced_route_runs_from_the_supplied_type_through_reported_moves_to_the_call
             projection: "_2".into(),
         }
     );
-    let call = &graph.facts[route.use_site.as_ref().unwrap()];
+    let call = &graph.facts[&route.use_sites[0]];
     assert_eq!(call.kind, FactKind::Call(Dispatch::Contract));
     assert_eq!(
         call.site.as_ref().unwrap().bytes,
@@ -430,8 +430,8 @@ fn a_cross_module_call_with_no_origin_found_stops_at_the_call() {
     let RouteEnd::Stopped { at, reason } = &stopped[0].end else {
         unreachable!()
     };
-    assert_eq!(stopped[0].use_site.as_ref(), Some(at));
-    assert_eq!(graph.facts[at].site.as_ref().unwrap().bytes, 80..84);
+    assert_eq!(&stopped[0].use_sites, at);
+    assert_eq!(graph.facts[&at[0]].site.as_ref().unwrap().bytes, 80..84);
     assert!(reason.contains("no flow"));
     assert!(stopped[0].hops.is_empty());
 }

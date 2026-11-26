@@ -142,7 +142,8 @@ pub struct Route {
     pub other_roles: Vec<String>,
     /// Drawn on the map as an injection; otherwise described in the panel only.
     pub injection: bool,
-    pub use_site: Option<String>,
+    /// The uses the route explains, one for each site that follows it.
+    pub use_sites: Vec<String>,
     pub hops: Vec<HopView>,
     pub end: EndView,
     pub review: ReviewView,
@@ -159,7 +160,8 @@ pub struct PointView {
 #[derive(Debug, Serialize)]
 pub struct HopView {
     pub to: PointView,
-    pub evidence: String,
+    /// Every fact behind the step, one for each use site that takes it.
+    pub evidence: Vec<String>,
     /// "established", "possible" or "proposed".
     pub support: &'static str,
     /// Present only for a possible hop with a stated condition.
@@ -170,7 +172,8 @@ pub struct HopView {
 #[derive(Debug, Serialize)]
 pub struct EndView {
     pub reached: bool,
-    pub at: Option<String>,
+    /// Where each use stopped; empty when the route reached its use.
+    pub at: Vec<String>,
     pub reason: Option<String>,
 }
 
@@ -498,7 +501,7 @@ fn route_view(id: &RouteId, route: &project_map::MapRoute) -> Route {
         roles,
         other_roles: other_roles(&route.description),
         injection,
-        use_site: route.use_site.as_ref().map(citation),
+        use_sites: route.use_sites.iter().map(citation).collect(),
         hops: route
             .hops
             .iter()
@@ -510,7 +513,7 @@ fn route_view(id: &RouteId, route: &project_map::MapRoute) -> Route {
                 };
                 HopView {
                     to: point_view(&hop.to.point()),
-                    evidence: citation(&hop.evidence),
+                    evidence: hop.evidence.iter().map(citation).collect(),
                     support,
                     condition,
                     role: hop.role.as_ref().map(|role| role_slug(role).to_string()),
@@ -520,12 +523,12 @@ fn route_view(id: &RouteId, route: &project_map::MapRoute) -> Route {
         end: match &route.end {
             MapRouteEnd::ReachedUse => EndView {
                 reached: true,
-                at: None,
+                at: Vec::new(),
                 reason: None,
             },
             MapRouteEnd::Stopped { at, reason } => EndView {
                 reached: false,
-                at: Some(citation(at)),
+                at: at.iter().map(citation).collect(),
                 reason: Some(reason.clone()),
             },
         },

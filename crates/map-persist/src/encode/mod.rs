@@ -226,7 +226,8 @@ fn routes(routes: &BTreeMap<RouteId, MapRoute>) -> BTreeMap<String, Spanned<Rout
             let (status, proposed) = status(&route.status, connection_review);
             let doc = RouteDoc {
                 status,
-                use_site: route.use_site.as_ref().map(|c| c.0.clone()),
+                use_site: None,
+                use_sites: Some(unplaced(citations(&route.use_sites))),
                 origin: unplaced(match &route.origin {
                     RoutePoint::Project(point) => project_point(point),
                     RoutePoint::Outside(point) => outside_point(point),
@@ -240,7 +241,7 @@ fn routes(routes: &BTreeMap<RouteId, MapRoute>) -> BTreeMap<String, Spanned<Rout
                     },
                     MapRouteEnd::Stopped { at, reason } => EndDoc {
                         state: EndStateDoc::Stopped,
-                        at: Some(at.0.clone()),
+                        at: Some(Citations::List(citations(at))),
                         reason: Some(reason.clone()),
                     },
                 }),
@@ -267,7 +268,7 @@ fn hop(hop: &MapHop) -> HopDoc {
     };
     HopDoc {
         to: unplaced(to),
-        evidence: hop.evidence.0.clone(),
+        evidence: unplaced(Citations::List(citations(&hop.evidence))),
         support: unplaced(support),
         condition,
         role: hop.role.as_ref().map(|role| unplaced(role_name(role))),

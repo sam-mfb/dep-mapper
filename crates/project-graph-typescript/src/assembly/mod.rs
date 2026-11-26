@@ -37,7 +37,8 @@ pub enum AssemblyError {
     UnknownModule(String),
 }
 
-/// Assembles the graph, then leaves out the routes that start in the
+/// Assembles the graph, merges routes that follow the same path as
+/// `route-merging` describes, then leaves out the routes that start in the
 /// `excluded` packages as `route-exclusion` describes. An outside name lies in
 /// a package when the package is the part before its `#`, as `clock` in
 /// `clock#now`. The graph's ID covers what is left.
@@ -218,7 +219,7 @@ pub fn assemble(
         units,
         items,
         facts,
-        routes,
+        routes: route_merging::merge(routes),
         gaps,
     };
     route_exclusion::exclude(&mut graph, excluded, |name| in_packages(excluded, name));

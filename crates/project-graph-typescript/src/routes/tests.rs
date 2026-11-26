@@ -36,7 +36,12 @@ fn receiver(call: &str, moves: &[&str]) -> ReceiverUse {
 }
 
 fn hop_facts(route: &Route) -> Vec<&str> {
-    route.hops.iter().map(|h| h.fact.0.as_str()).collect()
+    route
+        .hops
+        .iter()
+        .flat_map(|h| &h.facts)
+        .map(|fact| fact.0.as_str())
+        .collect()
 }
 
 fn argument(site: &str) -> MoveLink {
@@ -108,7 +113,7 @@ fn a_value_route_runs_forward_from_construction_to_the_receiver() {
     let routes = trace(&graph, &[], &[], &[receiver("call", &["recv"])]);
     let route = &routes[&RouteId("value:call:0".into())];
     assert_eq!(route.origin, item("Os"));
-    assert_eq!(route.use_site, Some(FactId("call".into())));
+    assert_eq!(route.use_sites, [FactId("call".into())]);
     assert_eq!(hop_facts(route), ["new", "arg", "field", "recv"]);
     assert_eq!(route.hops.last().unwrap().to, place("api_write", "self"));
     assert_eq!(route.end, RouteEnd::ReachedUse);
@@ -427,7 +432,7 @@ fn a_trace_that_reaches_no_origin_stops_at_the_call() {
     assert!(route.hops.is_empty());
     assert!(matches!(
         &route.end,
-        RouteEnd::Stopped { at, .. } if at == &FactId("call".into())
+        RouteEnd::Stopped { at, .. } if at == &[FactId("call".into())]
     ));
 }
 
@@ -498,7 +503,7 @@ fn a_direct_use_across_modules_is_a_route_of_one_hop() {
     assert_eq!(route.origin, item("os/OsBackups"));
     assert_eq!(route.hops.len(), 1);
     assert_eq!(route.hops[0].to, item("app/main"));
-    assert_eq!(route.use_site, Some(FactId("cross".into())));
+    assert_eq!(route.use_sites, [FactId("cross".into())]);
 }
 
 #[test]

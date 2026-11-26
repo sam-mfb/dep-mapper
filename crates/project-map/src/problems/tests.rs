@@ -76,7 +76,7 @@ fn route(
     };
     MapRoute {
         status,
-        use_site: None,
+        use_sites: Vec::new(),
         origin: RoutePoint::Project(ProjectPoint {
             module: id(origin),
             item: None,
@@ -89,7 +89,7 @@ fn route(
                 },
                 link: HopLink::ReceiverUsesSender,
             },
-            evidence: cite(citation),
+            evidence: vec![cite(citation)],
             support,
             role: None,
         }],
@@ -288,7 +288,7 @@ fn a_route_in_code_resting_on_an_added_dependency_is_reported() {
 #[test]
 fn evidence_and_reviews_in_code_citing_a_note_are_reported() {
     let mut map = mixed();
-    map.routes.get_mut(&RouteId("seen".into())).unwrap().hops[0].evidence = cite("note");
+    map.routes.get_mut(&RouteId("seen".into())).unwrap().hops[0].evidence = vec![cite("note")];
     map.dependencies.get_mut(&dep("r", "b")).unwrap().evidence = vec![cite("note")];
     // The review an updated module has in code cannot cite a note either.
     map.modules.get_mut(&id("u")).unwrap().description = module_review(ModuleKind::Logic, "note");

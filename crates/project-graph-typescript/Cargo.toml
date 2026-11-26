@@ -15,3 +15,4 @@ sha2.workspace = true
 thiserror.workspace = true
 value-routes = { path = "../value-routes" }
 route-exclusion.workspace = true
+route-merging.workspace = true

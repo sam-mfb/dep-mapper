@@ -8,6 +8,18 @@ use project_graph::{
 use std::collections::BTreeMap;
 use std::fmt::Write;
 
+/// How many of a route step's facts its summary shows.
+const SHOWN_FACTS: usize = 3;
+
+/// How much of a route's facts its description names.
+#[derive(Clone, Copy)]
+pub(super) enum Length {
+    /// Every use site and fact, for the route's own handle.
+    Full,
+    /// The first few of each list, for pieces that list many routes.
+    Summary,
+}
+
 /// Converts a span's byte offsets into line numbers, when the source is available.
 pub trait SourceLines {
     /// The first and last line, counting from 1.
@@ -232,7 +244,10 @@ impl<'a> Renderer<'a> {
             ),
             None => String::new(),
         };
-        let details: Vec<String> = routes.iter().map(|r| self.route_detail(r)).collect();
+        let details: Vec<String> = routes
+            .iter()
+            .map(|r| self.route_detail(r, Length::Summary))
+            .collect();
         paged(&head, "Routes", &details, page_size, &record)
     }
 
@@ -285,19 +300,27 @@ impl<'a> Renderer<'a> {
         text
     }
 
-    pub(super) fn route_detail(&self, id: &RouteId) -> String {
+    /// A route's description. `Length::Full` names every use site and every
+    /// fact; `Length::Summary` names the first few of each list and counts
+    /// the rest.
+    pub(super) fn route_detail(&self, id: &RouteId, length: Length) -> String {
         let route = &self.graph.routes[id];
-        let mut text = format!("route:{}", id.0);
-        match &route.use_site {
-            Some(fact) => {
+        let handle = format!("route:{}", id.0);
+        let facts = |facts: &[FactId]| self.fact_list(facts, length, &handle);
+        let mut text = handle.clone();
+        match route.use_sites.as_slice() {
+            [] => text.push_str("\n  no known use"),
+            [_] => {
+                let _ = write!(text, "\n  explains the use at{}", facts(&route.use_sites));
+            }
+            sites => {
                 let _ = write!(
                     text,
-                    "\n  explains the use at fact:{} ({})",
-                    fact.0,
-                    self.fact_brief(fact)
+                    "\n  explains the uses at {} sites:{}",
+                    sites.len(),
+                    facts(sites)
                 );
             }
-            None => text.push_str("\n  no known use"),
         }
         let _ = write!(text, "\n  from {}", self.endpoint(&route.origin));
         for hop in &route.hops {
@@ -308,19 +331,42 @@ impl<'a> Renderer<'a> {
             };
             let _ = write!(
                 text,
-                "\n  -> {} via fact:{} ({}{support})",
+                "\n  -> {}{support} via{}",
                 self.endpoint(&hop.to),
-                hop.fact.0,
-                self.fact_brief(&hop.fact)
+                facts(&hop.facts)
             );
         }
         match &route.end {
             RouteEnd::ReachedUse => text.push_str("\n  reaches its use"),
             RouteEnd::Stopped { at, reason } => {
-                let _ = write!(text, "\n  stops at fact:{}: {reason}", at.0);
+                let _ = write!(text, "\n  stops: {reason}; at{}", facts(at));
             }
         }
         text
+    }
+
+    /// The facts of one list in a route's description, each with its brief,
+    /// to follow a label. One fact stays on the label's line. In full, each
+    /// of several facts gets a line of its own. In summary, the first few
+    /// follow the label and the rest are counted, with the command that
+    /// lists them all when there is one.
+    fn fact_list(&self, facts: &[FactId], length: Length, route: &str) -> String {
+        let line = |fact: &FactId| format!("fact:{} ({})", fact.0, self.fact_brief(fact));
+        match (length, facts) {
+            (_, [one]) => format!(" {}", line(one)),
+            (Length::Full, facts) => facts.iter().map(|f| format!("\n    {}", line(f))).collect(),
+            (Length::Summary, facts) => {
+                let shown: Vec<String> = facts.iter().take(SHOWN_FACTS).map(line).collect();
+                let shown = shown.join(", ");
+                match (facts.len().saturating_sub(SHOWN_FACTS), self.command) {
+                    (0, _) => format!(" {shown}"),
+                    (more, Some(c)) => {
+                        format!(" {shown} and {more} more, which `{c} show {route}` lists")
+                    }
+                    (more, None) => format!(" {shown} and {more} more"),
+                }
+            }
+        }
     }
 
     fn item_line(&self, id: &ItemId) -> String {

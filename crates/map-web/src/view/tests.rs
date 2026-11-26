@@ -85,7 +85,7 @@ fn mixed_map() -> ProjectMap {
             RouteId("open".into()),
             MapRoute {
                 status: Status::Observed,
-                use_site: None,
+                use_sites: Vec::new(),
                 origin: RoutePoint::Project(ProjectPoint {
                     module: ModuleId("core".into()),
                     item: Some("Store".into()),
@@ -93,7 +93,7 @@ fn mixed_map() -> ProjectMap {
                 hops: vec![
                     MapHop {
                         to: HopTarget::Outside(OutsidePoint::External("tokio".into())),
-                        evidence: fact.clone(),
+                        evidence: vec![fact.clone()],
                         support: HopSupport::Possible {
                             condition: Some("async build".into()),
                         },
@@ -107,13 +107,13 @@ fn mixed_map() -> ProjectMap {
                             },
                             link: HopLink::FromOutside,
                         },
-                        evidence: fact.clone(),
+                        evidence: vec![fact.clone()],
                         support: HopSupport::Established,
                         role: None,
                     },
                 ],
                 end: MapRouteEnd::Stopped {
-                    at: fact.clone(),
+                    at: vec![fact.clone()],
                     reason: "Unknown receiver.".into(),
                 },
                 description: Review::Deferred {
@@ -177,7 +177,7 @@ fn route_through(modules: &[&str], description: Review<RouteDescription>) -> Map
                     HopLink::SenderUsesReceiver
                 },
             },
-            evidence: fact.clone(),
+            evidence: vec![fact.clone()],
             support: HopSupport::Established,
             role: Some(if index == 0 {
                 UseRole::Wires
@@ -188,7 +188,7 @@ fn route_through(modules: &[&str], description: Review<RouteDescription>) -> Map
         .collect();
     MapRoute {
         status: Status::Observed,
-        use_site: Some(fact.clone()),
+        use_sites: vec![fact.clone()],
         origin: RoutePoint::Project(ProjectPoint {
             module: ModuleId("a".into()),
             item: Some("Thing".into()),
@@ -317,7 +317,7 @@ fn a_deferred_route_keeps_its_possible_hop_external_point_and_stop() {
     assert_eq!(route.hops[0].condition.as_deref(), Some("async build"));
     assert_eq!(route.hops[1].support, "established");
     assert!(!route.end.reached);
-    assert_eq!(route.end.at.as_deref(), Some("fact"));
+    assert_eq!(route.end.at, ["fact"]);
     assert_eq!(route.end.reason.as_deref(), Some("Unknown receiver."));
     assert_eq!(route.review.status, "deferred");
     assert_eq!(route.review.reason.as_deref(), Some("Needs the receiver."));

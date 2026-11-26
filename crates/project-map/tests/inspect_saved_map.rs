@@ -31,11 +31,11 @@ fn follow_a_reviewed_handoff_to_source_and_distinguish_a_deferred_route() {
     let route = MapRoute {
         status: Status::Observed,
         origin: origin("kkt-backup-os", "OsBackups"),
-        use_site: Some(used.clone()),
+        use_sites: vec![used.clone()],
         hops: vec![
             MapHop {
                 to: field,
-                evidence: supply.clone(),
+                evidence: vec![supply.clone()],
                 support: HopSupport::Established,
                 role: Some(UseRole::Wires),
             },
@@ -45,7 +45,7 @@ fn follow_a_reviewed_handoff_to_source_and_distinguish_a_deferred_route() {
                     "local_backup",
                     HopLink::SenderUsesReceiver,
                 ),
-                evidence: used.clone(),
+                evidence: vec![used.clone()],
                 support: HopSupport::Established,
                 role: Some(UseRole::DirectUse),
             },
@@ -64,10 +64,10 @@ fn follow_a_reviewed_handoff_to_source_and_distinguish_a_deferred_route() {
     let another = MapRoute {
         status: Status::Observed,
         origin: origin("kkt-backup-os", "OsBackups"),
-        use_site: None,
+        use_sites: Vec::new(),
         hops: vec![],
         end: MapRouteEnd::Stopped {
-            at: supply.clone(),
+            at: vec![supply.clone()],
             reason: "Untraced beyond the handoff.".into(),
         },
         description: Review::Deferred {
@@ -141,14 +141,14 @@ fn follow_a_reviewed_handoff_to_source_and_distinguish_a_deferred_route() {
     };
     assert_eq!(judgment.role, UseRole::FullInjection);
     let call = &reviewed.hops[1];
-    assert_eq!(Some(&call.evidence), reviewed.use_site.as_ref());
-    let location = map.evidence[&call.evidence].location.as_ref().unwrap();
+    assert_eq!(reviewed.use_sites, call.evidence);
+    let location = map.evidence[&call.evidence[0]].location.as_ref().unwrap();
     assert_eq!(
         location.file,
         SourcePath("crates/kkt-install-commands/src/lifecycle.rs".into())
     );
     assert_eq!(map.evidence[primary].build_unit, Some(UnitId("kkt".into())));
-    assert_eq!(reviewed.hops[0].evidence, *primary);
+    assert_eq!(reviewed.hops[0].evidence, std::slice::from_ref(primary));
     assert!(matches!(deferred.end, MapRouteEnd::Stopped { .. }));
     assert!(matches!(deferred.description, Review::Deferred { .. }));
     assert!(matches!(

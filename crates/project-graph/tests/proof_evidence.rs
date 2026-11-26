@@ -63,10 +63,10 @@ fn two_possible_providers_can_reach_one_use_and_a_trace_can_stop_before_reaching
             let id = RouteId(format!("{provider} through active"));
             let route = Route {
                 origin: item(provider),
-                use_site: Some(used.clone()),
+                use_sites: vec![used.clone()],
                 hops: vec![Hop {
                     to: endpoint.clone(),
-                    fact: FactId("console:active=choose(adapted)".into()),
+                    facts: vec![FactId("console:active=choose(adapted)".into())],
                     support: Support::Possible {
                         condition: Some(condition.into()),
                     },
@@ -77,13 +77,13 @@ fn two_possible_providers_can_reach_one_use_and_a_trace_can_stop_before_reaching
         })
         .collect();
     assert_eq!(routes.len(), 2);
-    assert!(routes.values().all(|r| r.use_site.as_ref() == Some(&used)));
+    assert!(routes.values().all(|r| r.use_sites.contains(&used)));
     let stopped = Route {
         origin: item("console::edit"),
-        use_site: Some(FactId("port::after_edit:value.read".into())),
+        use_sites: vec![FactId("port::after_edit:value.read".into())],
         hops: vec![],
         end: RouteEnd::Stopped {
-            at: FactId("console:edit(&mut slot)".into()),
+            at: vec![FactId("console:edit(&mut slot)".into())],
             reason: "mutable borrow on incoming path".into(),
         },
     };
@@ -108,17 +108,17 @@ fn identifying_a_receiver_package_does_not_require_inventing_a_handoff() {
         }),
     };
     let partial = Route {
-        use_site: Some(call.clone()),
+        use_sites: vec![call.clone()],
         origin: bound.object.clone(),
         hops: vec![],
         end: RouteEnd::Stopped {
-            at: call.clone(),
+            at: vec![call.clone()],
             reason: "No source-backed handoff recovered for this use.".into(),
         },
     };
     let FactKind::ReceiverBound { call: site, .. } = bound.kind else {
         panic!("expected receiver bound")
     };
-    assert_eq!(partial.use_site.as_ref(), Some(&site));
+    assert_eq!(partial.use_sites, [site]);
     assert!(partial.hops.is_empty());
 }

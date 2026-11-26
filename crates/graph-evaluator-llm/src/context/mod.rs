@@ -74,7 +74,7 @@ pub fn supplement(
         if !routes.is_empty() {
             text.push_str("\n\nRoute details:");
             for route in routes {
-                let _ = write!(text, "\n{}", workbook.refs[&route].detail);
+                let _ = write!(text, "\n{}", workbook.refs[&route].brief_detail());
             }
         }
     }

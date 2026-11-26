@@ -24,7 +24,7 @@ fn refused(text: &str) -> LoadError {
 fn proposed_route(origin: &str, receiver: &str, note: &str) -> MapRoute {
     MapRoute {
         status: Status::ProposedAddition,
-        use_site: None,
+        use_sites: Vec::new(),
         origin: RoutePoint::Project(ProjectPoint {
             module: ModuleId(origin.into()),
             item: Some("Thing".into()),
@@ -38,13 +38,13 @@ fn proposed_route(origin: &str, receiver: &str, note: &str) -> MapRoute {
                     },
                     link: HopLink::ReceiverUsesSender,
                 },
-                evidence: CitationId(note.into()),
+                evidence: vec![CitationId(note.into())],
                 support: HopSupport::Proposed,
                 role: Some(UseRole::Other("logs through".into())),
             },
             MapHop {
                 to: HopTarget::Outside(OutsidePoint::Unresolved("plugin".into())),
-                evidence: CitationId(note.into()),
+                evidence: vec![CitationId(note.into())],
                 support: HopSupport::Possible {
                     condition: Some("with plugins".into()),
                 },
@@ -52,7 +52,7 @@ fn proposed_route(origin: &str, receiver: &str, note: &str) -> MapRoute {
             },
         ],
         end: MapRouteEnd::Stopped {
-            at: CitationId(note.into()),
+            at: vec![CitationId(note.into())],
             reason: "Unknown plugin.".into(),
         },
         description: Review::Deferred {
@@ -265,9 +265,9 @@ review = { state = "unreviewed" }
 
 #[test]
 fn an_unknown_version_is_refused_at_its_line() {
-    let error = refused("kind = \"map\"\nformat = 2\n");
+    let error = refused("kind = \"map\"\nformat = 3\n");
     assert_eq!(error.position, position(2, 10));
-    assert!(error.message.contains("version 2"), "{}", error.message);
+    assert!(error.message.contains("version 3"), "{}", error.message);
 }
 
 #[test]
@@ -359,6 +359,101 @@ fn a_route_written_by_hand_loads() {
     ));
 }
 
+/// `ROUTE` in format 2, using a site twice and stopping at two places.
+const ROUTE_2: &str = r#"format = 2
+kind = "draft"
+project = "p"
+
+[routes.r]
+use_sites = ["s1", "s2"]
+origin = { module = "a" }
+end = { state = "stopped", at = ["s1", "s2"], reason = "Untraced." }
+review = { state = "judged", role = "wires", reason = "Why.", primary = "n" }
+
+[[routes.r.hops]]
+to = { module = "b", link = "receiver-uses-sender" }
+evidence = ["n", "m"]
+support = "proposed"
+"#;
+
+#[test]
+fn format_2_lists_every_site_and_fact() {
+    let Ok(MapDocument::Draft(draft)) = load(ROUTE_2) else {
+        panic!("not a draft")
+    };
+    let route = &draft.routes[&RouteId("r".into())];
+    let ids = |names: &[&str]| -> Vec<CitationId> {
+        names.iter().map(|n| CitationId(n.to_string())).collect()
+    };
+    assert_eq!(route.use_sites, ids(&["s1", "s2"]));
+    assert_eq!(route.hops[0].evidence, ids(&["n", "m"]));
+    assert_eq!(
+        route.end,
+        MapRouteEnd::Stopped {
+            at: ids(&["s1", "s2"]),
+            reason: "Untraced.".into(),
+        }
+    );
+    round_trip(MapDocument::Draft(draft));
+}
+
+#[test]
+fn format_1_still_loads_each_citation_as_a_list_of_one() {
+    let text = ROUTE.replace(
+        "origin = { module = \"a\" }",
+        "use_site = \"s\"\norigin = { module = \"a\" }",
+    );
+    let Ok(MapDocument::Draft(draft)) = load(&text) else {
+        panic!("not a draft")
+    };
+    let route = &draft.routes[&RouteId("r".into())];
+    assert_eq!(route.use_sites, [CitationId("s".into())]);
+    assert_eq!(route.hops[0].evidence, [CitationId("n".into())]);
+    let saved = save(&MapDocument::Draft(draft.clone()));
+    assert!(saved.starts_with("format = 2"), "{saved}");
+    assert!(saved.contains("use_sites = [\"s\"]"), "{saved}");
+    assert!(saved.contains("evidence = [\"n\"]"), "{saved}");
+    assert_eq!(load(&saved).unwrap(), MapDocument::Draft(draft));
+}
+
+#[test]
+fn citations_must_take_the_form_of_their_format() {
+    let error = refused(&ROUTE_2.replace("use_sites = [\"s1\", \"s2\"]", "use_site = \"s1\""));
+    assert!(
+        error.message.contains("format 2 has `use_sites`"),
+        "{}",
+        error.message
+    );
+    assert_eq!(error.position, position(6, 12));
+    let error = refused(&ROUTE_2.replace("evidence = [\"n\", \"m\"]", "evidence = \"n\""));
+    assert_eq!(
+        error.message,
+        "in format 2, a hop's `evidence` is a list of at least one citation ID"
+    );
+    assert_eq!(error.position, position(13, 12));
+    let error = refused(&ROUTE_2.replace("evidence = [\"n\", \"m\"]", "evidence = []"));
+    assert!(error.message.contains("at least one"), "{}", error.message);
+    let error = refused(&ROUTE_2.replace("at = [\"s1\", \"s2\"]", "at = []"));
+    assert_eq!(
+        error.message,
+        "in format 2, a stopped route's `at` is a list of at least one citation ID"
+    );
+    let error = refused(&ROUTE.replace("evidence = \"n\"", "evidence = [\"n\"]"));
+    assert_eq!(
+        error.message,
+        "in format 1, a hop's `evidence` is one citation ID"
+    );
+    let error = refused(&ROUTE.replace(
+        "origin = { module = \"a\" }",
+        "use_sites = [\"s\"]\norigin = { module = \"a\" }",
+    ));
+    assert!(
+        error.message.contains("format 1 has `use_site`"),
+        "{}",
+        error.message
+    );
+}
+
 #[test]
 fn an_unknown_role_is_refused_at_its_place() {
     let error = refused(&ROUTE.replace("role = \"wires\"", "role = \"wire\""));
@@ -443,7 +538,7 @@ fn the_examples_in_the_format_document_load_as_one_draft() {
         .collect();
     assert_eq!(blocks.len(), 5);
     let text = format!(
-        "format = 1\nkind = \"draft\"\nbase = \"m.toml\"\n\n{}",
+        "format = 2\nkind = \"draft\"\nbase = \"m.toml\"\n\n{}",
         blocks.join("\n")
     );
     let Ok(MapDocument::Draft(draft)) = load(&text) else {
