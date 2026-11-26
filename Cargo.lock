@@ -234,6 +234,7 @@ dependencies = [
  "graph-evaluator",
  "graph-evaluator-pieces",
  "project-graph",
+ "route-exclusion",
  "serde",
  "serde_json",
  "thiserror",
@@ -258,6 +259,7 @@ version = "0.1.0"
 dependencies = [
  "graph-evaluator",
  "project-graph",
+ "route-exclusion",
  "serde",
  "serde_json",
  "thiserror",

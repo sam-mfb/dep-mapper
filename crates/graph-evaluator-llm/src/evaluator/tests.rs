@@ -511,3 +511,26 @@ fn a_module_piece_with_several_pages_is_asked_whole() {
         .count();
     assert_eq!(asked, 1, "one request for the whole module");
 }
+
+#[test]
+fn the_model_is_told_which_routes_were_left_out_of_the_graph() {
+    let mut graph = testing::graph();
+    route_exclusion::exclude(&mut graph, &["std".to_string()], |name| {
+        name.starts_with("std::")
+    });
+    let model = FakeModel::new(sensible);
+    let log = RecordedLog::default();
+    evaluate_with(&model, &log, EvaluatorSettings::recommended(), &graph).unwrap();
+    let modules: Vec<String> = model
+        .first_turns()
+        .into_iter()
+        .filter(|t| t.starts_with("Module piece"))
+        .collect();
+    assert_eq!(modules.len(), 3);
+    for turn in modules {
+        assert!(
+            turn.contains("Routes that start in the excluded packages std are left out: 0 routes and 0 facts removed."),
+            "{turn}"
+        );
+    }
+}

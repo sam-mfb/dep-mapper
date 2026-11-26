@@ -174,3 +174,33 @@ fn without_a_command_pieces_hold_the_evidence_and_no_command_lines() {
     let clusters = &workbook.piece(&PieceId::clusters()).unwrap().pages[0];
     assert!(clusters.contains("Every cluster a module judgment names must be listed."));
 }
+
+#[test]
+fn every_module_piece_shows_the_routes_left_out_of_the_whole_graph() {
+    let mut graph = testing::graph();
+    route_exclusion::exclude(&mut graph, &["std".to_string()], |name| {
+        name.starts_with("std::")
+    });
+    let workbook = present(
+        &graph,
+        &Presentation {
+            page_size: 10,
+            source: &ByteOffsets,
+            command: Some("srs eval"),
+        },
+    );
+    for module in ["app", "disk", "store"] {
+        let page = &workbook.piece(&PieceId::module(module)).unwrap().pages[0];
+        assert!(
+            page.contains(
+                "Coverage gaps for the whole graph:\n- Routes that start in the excluded packages std are left out: 0 routes and 0 facts removed."
+            ),
+            "{page}"
+        );
+    }
+    let app = &workbook.piece(&PieceId::module("app")).unwrap().pages[0];
+    assert!(
+        app.contains("Coverage gaps:\n- macro not expanded"),
+        "{app}"
+    );
+}

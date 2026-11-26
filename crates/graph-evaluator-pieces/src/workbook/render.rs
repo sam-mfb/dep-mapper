@@ -49,7 +49,7 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    /// A module's page: its units, gaps and a summary of its routes grouped
+    /// A module's page: its units, its gaps and the whole graph's, and a summary of its routes grouped
     /// by where they lead, then its items, paged. The routes themselves are
     /// listed in full in the routes pieces the summary names.
     pub(super) fn module_pages(
@@ -100,8 +100,17 @@ impl<'a> Renderer<'a> {
                     .is_some_and(|u| units.iter().any(|(id, _)| *id == u))
             })
             .collect();
-        if !gaps.is_empty() {
-            let _ = writeln!(head, "\nCoverage gaps:");
+        // Gaps without a unit, such as routes left out of the whole graph,
+        // bear on every module's judgment, so every module page shows them.
+        let whole_graph: Vec<_> = graph.gaps.iter().filter(|gap| gap.unit.is_none()).collect();
+        for (heading, gaps) in [
+            ("Coverage gaps", gaps),
+            ("Coverage gaps for the whole graph", whole_graph),
+        ] {
+            if gaps.is_empty() {
+                continue;
+            }
+            let _ = writeln!(head, "\n{heading}:");
             for gap in gaps {
                 let at = gap
                     .site
