@@ -6,7 +6,7 @@ use crate::citations::Citations;
 use crate::dependencies::Dependencies;
 use crate::points::{item_of, module_of, outside_point, project_point, route_point};
 use crate::reviews::Reviews;
-use project_graph::{FactId, GraphRef, ProjectGraph, Route, RouteEnd, RouteId, Support};
+use project_graph::{FactId, FactKind, GraphRef, ProjectGraph, Route, RouteEnd, RouteId, Support};
 use project_map::{CitationId, HopSupport, HopTarget, MapHop, MapRoute, MapRouteEnd, Status};
 use std::collections::BTreeMap;
 
@@ -56,11 +56,16 @@ impl RouteBuilder<'_, '_> {
         let mut hops = vec![];
         for hop in &route.hops {
             self.check_item(&hop.to);
-            let evidence = self.fact(&hop.fact);
+            let evidence: Vec<CitationId> = hop.facts.iter().map(|id| self.fact(id)).collect();
             let to = match (module_of(graph, &hop.to), project_point(graph, &hop.to)) {
                 (Some(receiver), Some(point)) => {
-                    let kind = graph.facts.get(&hop.fact).map(|fact| &fact.kind);
-                    let link = dependencies.link(sender, receiver, kind, evidence.clone());
+                    let kinds: Vec<&FactKind> = hop
+                        .facts
+                        .iter()
+                        .filter_map(|id| graph.facts.get(id))
+                        .map(|fact| &fact.kind)
+                        .collect();
+                    let link = dependencies.link(sender, receiver, &kinds, &evidence);
                     HopTarget::Project { point, link }
                 }
                 _ => HopTarget::Outside(outside_point(graph, &hop.to)),
@@ -81,13 +86,13 @@ impl RouteBuilder<'_, '_> {
         let end = match &route.end {
             RouteEnd::ReachedUse => MapRouteEnd::ReachedUse,
             RouteEnd::Stopped { at, reason } => MapRouteEnd::Stopped {
-                at: self.fact(at),
+                at: at.iter().map(|id| self.fact(id)).collect(),
                 reason: reason.clone(),
             },
         };
         MapRoute {
             status: Status::Observed,
-            use_site: route.use_site.as_ref().map(|fact| self.fact(fact)),
+            use_sites: route.use_sites.iter().map(|id| self.fact(id)).collect(),
             origin: route_point(graph, &route.origin),
             hops,
             end,

@@ -94,7 +94,7 @@ fn hop_kinds(route: &Route) -> Vec<&'static FactKind> {
     route
         .hops
         .iter()
-        .map(|hop| &graph().facts[&hop.fact].kind)
+        .map(|hop| &graph().facts[&hop.facts[0]].kind)
         .collect()
 }
 
@@ -314,7 +314,7 @@ fn an_implementation_entering_an_interface_slot_is_a_conditional_coercion() {
         .routes
         .values()
         .flat_map(|r| &r.hops)
-        .find(|h| &h.fact == id)
+        .find(|h| h.facts.contains(id))
         .unwrap();
     assert_eq!(
         hop.support,
@@ -336,7 +336,7 @@ fn routes_to(call: &FactId) -> Vec<&'static Route> {
     graph()
         .routes
         .iter()
-        .filter(|(id, r)| id.0.starts_with("value:") && r.use_site.as_ref() == Some(call))
+        .filter(|(id, r)| id.0.starts_with("value:") && r.use_sites.contains(call))
         .map(|(_, r)| r)
         .collect()
 }
@@ -469,14 +469,10 @@ fn direct_uses_between_packages_are_one_hop_routes() {
 fn every_route_cites_facts_in_the_graph() {
     let graph = graph();
     for (id, route) in &graph.routes {
-        for hop in &route.hops {
-            assert!(
-                graph.facts.contains_key(&hop.fact),
-                "{id:?} cites {:?}",
-                hop.fact
-            );
+        for fact in route.hops.iter().flat_map(|hop| &hop.facts) {
+            assert!(graph.facts.contains_key(fact), "{id:?} cites {fact:?}");
         }
-        if let Some(call) = &route.use_site {
+        for call in &route.use_sites {
             assert!(graph.facts.contains_key(call), "{id:?} uses {call:?}");
         }
     }
@@ -683,7 +679,7 @@ fn an_object_pattern_default_and_the_field_read_are_each_conditional() {
     let read = supplied
         .hops
         .iter()
-        .find(|h| graph().facts[&h.fact].kind == FactKind::Read)
+        .find(|h| graph().facts[&h.facts[0]].kind == FactKind::Read)
         .expect("the pattern reads the field");
     assert_eq!(read.to, place(MAIN, "pick", "backups"));
     assert_eq!(read.support, possible("backups !== undefined"));
@@ -700,7 +696,7 @@ fn a_default_after_a_spread_is_only_possible() {
         .routes
         .values()
         .flat_map(|r| &r.hops)
-        .find(|h| &h.fact == construct)
+        .find(|h| h.facts.contains(construct))
         .expect("the default's move is on a route");
     assert_eq!(
         hop.support,
@@ -1221,4 +1217,29 @@ fn calls_into_a_namespace_reach_its_members() {
     only_fact(|f| {
         f.subject == item(PATHS, "Paths.Folder.path") && f.object == item(PATHS, "Paths.folder")
     });
+}
+
+#[test]
+fn routes_that_follow_the_same_path_are_merged() {
+    let graph = graph();
+    let path = |route: &Route| {
+        let hops: Vec<_> = route
+            .hops
+            .iter()
+            .map(|hop| format!("{:?} {:?}", hop.to, hop.support))
+            .collect();
+        let end = match &route.end {
+            RouteEnd::ReachedUse => None,
+            RouteEnd::Stopped { reason, .. } => Some(reason.clone()),
+        };
+        format!("{:?} {hops:?} {end:?}", route.origin)
+    };
+    let mut paths = std::collections::BTreeSet::new();
+    for route in graph.routes.values() {
+        assert!(paths.insert(path(route)), "two routes take {}", path(route));
+    }
+    assert!(
+        graph.routes.values().any(|route| route.use_sites.len() > 1),
+        "some use in the sample is made at several sites"
+    );
 }

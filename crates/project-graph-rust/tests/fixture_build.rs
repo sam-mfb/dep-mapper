@@ -193,7 +193,7 @@ fn the_implementation_behind_a_trait_object_call_is_traced_back_to_where_it_was_
     let routes: Vec<_> = graph
         .routes
         .values()
-        .filter(|r| r.use_site.as_ref() == Some(&call_id) && r.hops.len() > 1)
+        .filter(|r| r.use_sites.contains(&call_id) && r.hops.len() > 1)
         .collect();
     assert_eq!(routes.len(), 1, "{routes:#?}");
     let route = routes[0];
@@ -202,13 +202,13 @@ fn the_implementation_behind_a_trait_object_call_is_traced_back_to_where_it_was_
     let kinds: Vec<_> = route
         .hops
         .iter()
-        .map(|h| &graph.facts[&h.fact].kind)
+        .map(|h| &graph.facts[&h.facts[0]].kind)
         .collect();
     assert_eq!(
         kinds,
         [&FactKind::Coerce, &FactKind::Store, &FactKind::Read]
     );
-    let coerce = &graph.facts[&route.hops[0].fact];
+    let coerce = &graph.facts[&route.hops[0].facts[0]];
     assert_eq!(text(coerce), "Box::new(OsBackups)");
     assert_eq!(
         route.hops[1].to,
@@ -251,9 +251,9 @@ fn a_trait_function_without_self_has_no_receiver_to_trace() {
     );
     assert_eq!(calls.len(), 1, "the call itself is a fact");
     let traced = graph.routes.values().filter(|r| {
-        r.use_site
-            .as_ref()
-            .is_some_and(|id| graph.facts[id].object == build && r.hops.len() != 1)
+        r.use_sites
+            .iter()
+            .any(|id| graph.facts[id].object == build && r.hops.len() != 1)
     });
     assert_eq!(traced.count(), 0, "its argument is not a receiver");
 }
@@ -295,9 +295,7 @@ fn an_implementation_passed_into_an_async_fn_is_traced_through_its_coroutine() {
     let reached: Vec<_> = graph
         .routes
         .values()
-        .filter(|r| {
-            r.use_site.as_ref() == Some(&call_id) && r.end == project_graph::RouteEnd::ReachedUse
-        })
+        .filter(|r| r.use_sites.contains(&call_id) && r.end == project_graph::RouteEnd::ReachedUse)
         .filter(|r| r.origin == item("supplier/lib:supplier::OsBackups"))
         .collect();
     assert_eq!(
@@ -307,13 +305,13 @@ fn an_implementation_passed_into_an_async_fn_is_traced_through_its_coroutine() {
         graph
             .routes
             .values()
-            .filter(|r| r.use_site.as_ref() == Some(&call_id))
+            .filter(|r| r.use_sites.contains(&call_id))
             .collect::<Vec<_>>()
     );
     let kinds: Vec<_> = reached[0]
         .hops
         .iter()
-        .map(|h| &graph.facts[&h.fact].kind)
+        .map(|h| &graph.facts[&h.facts[0]].kind)
         .collect();
     assert!(kinds.contains(&&FactKind::Pass), "{kinds:?}");
     assert!(kinds.contains(&&FactKind::Capture), "{kinds:?}");
@@ -337,7 +335,7 @@ fn a_value_passed_through_the_standard_library_is_followed_as_a_possible_route()
     let reached: Vec<_> = graph
         .routes
         .values()
-        .filter(|r| r.use_site.as_ref() == Some(&call_id))
+        .filter(|r| r.use_sites.contains(&call_id))
         .filter(|r| r.origin == item("supplier/lib:supplier::OsBackups"))
         .collect();
     assert_eq!(reached.len(), 1, "{reached:#?}");
@@ -368,7 +366,7 @@ fn a_unit_struct_in_an_option_reaches_a_generic_receiver_through_unwrap() {
     let reached: Vec<_> = graph
         .routes
         .values()
-        .filter(|r| r.use_site.as_ref() == Some(&call_id))
+        .filter(|r| r.use_sites.contains(&call_id))
         .filter(|r| r.origin == item("supplier/lib:supplier::OsBackups"))
         .collect();
     assert_eq!(reached.len(), 1, "{reached:#?}");
@@ -415,7 +413,7 @@ fn a_closure_called_through_a_generic_parameter_or_by_the_standard_library_is_tr
         let reached: Vec<_> = graph
             .routes
             .values()
-            .filter(|r| r.use_site.as_ref() == Some(&call_id))
+            .filter(|r| r.use_sites.contains(&call_id))
             .filter(|r| r.origin == item("supplier/lib:supplier::OsBackups"))
             .filter(|r| r.end == project_graph::RouteEnd::ReachedUse)
             .collect();
@@ -446,9 +444,34 @@ fn a_factory_closure_without_arguments_is_traced_through_its_result() {
     let reached = graph
         .routes
         .values()
-        .filter(|r| r.use_site.as_ref() == Some(&call_id))
+        .filter(|r| r.use_sites.contains(&call_id))
         .filter(|r| r.origin == item("supplier/lib:supplier::OsBackups"))
         .filter(|r| r.end == project_graph::RouteEnd::ReachedUse)
         .count();
     assert_eq!(reached, 1);
+}
+
+#[test]
+fn routes_that_follow_the_same_path_are_merged() {
+    let graph = graph();
+    let path = |route: &project_graph::Route| {
+        let hops: Vec<_> = route
+            .hops
+            .iter()
+            .map(|hop| format!("{:?} {:?}", hop.to, hop.support))
+            .collect();
+        let end = match &route.end {
+            project_graph::RouteEnd::ReachedUse => None,
+            project_graph::RouteEnd::Stopped { reason, .. } => Some(reason.clone()),
+        };
+        format!("{:?} {hops:?} {end:?}", route.origin)
+    };
+    let mut paths = std::collections::BTreeSet::new();
+    for route in graph.routes.values() {
+        assert!(paths.insert(path(route)), "two routes take {}", path(route));
+    }
+    assert!(
+        graph.routes.values().any(|route| route.use_sites.len() > 1),
+        "some use in the fixture is made at several sites"
+    );
 }

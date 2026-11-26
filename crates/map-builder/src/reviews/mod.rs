@@ -60,11 +60,11 @@ impl Reviews {
         self.combine(|placed| placed.citations.contains(&citation))
     }
 
-    /// The role of the first relationship citing the hop's fact.
-    pub(crate) fn for_hop(&self, fact: &CitationId) -> Option<UseRole> {
+    /// The role of the first relationship citing one of the hop's facts.
+    pub(crate) fn for_hop(&self, facts: &[CitationId]) -> Option<UseRole> {
         self.relationships
             .iter()
-            .find(|placed| placed.citations.contains(fact))
+            .find(|placed| cites_any(&placed.citations, facts))
             .map(|placed| placed.role.clone())
     }
 
@@ -84,7 +84,7 @@ impl Reviews {
     }
 
     /// Relationships that apply to no route, hop or dependency on the map.
-    /// A hop takes only the first relationship citing its fact, so a later
+    /// A hop takes only the first relationship citing one of its facts, so a later
     /// one that reaches nothing else is reported too.
     pub(crate) fn unplaced(
         &self,
@@ -99,7 +99,7 @@ impl Reviews {
                 let first = self
                     .relationships
                     .iter()
-                    .position(|relationship| relationship.citations.contains(&hop.evidence));
+                    .position(|relationship| cites_any(&relationship.citations, &hop.evidence));
                 if let Some(index) = first {
                     placed[index] = true;
                 }
@@ -164,4 +164,9 @@ fn role(kind: &RelationshipKind) -> UseRole {
         RelationshipKind::Incidental => UseRole::Incidental,
         RelationshipKind::Other(name) => UseRole::Other(name.clone()),
     }
+}
+
+/// Whether `citations` include any of `facts`.
+fn cites_any(citations: &[CitationId], facts: &[CitationId]) -> bool {
+    facts.iter().any(|fact| citations.contains(fact))
 }

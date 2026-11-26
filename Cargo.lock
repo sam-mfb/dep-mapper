@@ -457,6 +457,7 @@ dependencies = [
  "project-graph",
  "project-graph-rust-records",
  "route-exclusion",
+ "route-merging",
  "serde_json",
  "thiserror",
  "value-routes",
@@ -476,6 +477,7 @@ version = "0.1.0"
 dependencies = [
  "project-graph",
  "route-exclusion",
+ "route-merging",
  "serde",
  "serde_json",
  "sha2",
@@ -512,6 +514,13 @@ dependencies = [
 
 [[package]]
 name = "route-exclusion"
+version = "0.1.0"
+dependencies = [
+ "project-graph",
+]
+
+[[package]]
+name = "route-merging"
 version = "0.1.0"
 dependencies = [
  "project-graph",

@@ -8,7 +8,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use toml::Spanned;
 
-pub const VERSION: u32 = 1;
+/// The version this program writes.
+pub const VERSION: u32 = 2;
+
+/// Format 1 cites one fact for a route's use site, a hop and a stopped end.
+/// Format 2 cites a list for each. This program still reads format 1.
+pub const FIRST_VERSION: u32 = 1;
 
 /// Read first, to choose how to read the rest.
 #[derive(Deserialize)]
@@ -182,8 +187,12 @@ pub struct DependencyDoc {
 pub struct RouteDoc {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<StatusDoc>,
+    /// Format 1 only.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub use_site: Option<String>,
+    pub use_site: Option<Spanned<String>>,
+    /// Format 2 only. Left out means none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub use_sites: Option<Spanned<Vec<String>>>,
     pub origin: Spanned<PointDoc>,
     #[serde(default)]
     pub hops: Vec<HopDoc>,
@@ -224,13 +233,22 @@ pub enum LinkDoc {
 #[serde(deny_unknown_fields)]
 pub struct HopDoc {
     pub to: Spanned<PointDoc>,
-    pub evidence: String,
+    pub evidence: Spanned<Citations>,
     pub support: Spanned<SupportDoc>,
     /// Possible hops only.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub condition: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<Spanned<String>>,
+}
+
+/// Citation IDs: one in format 1, a list in format 2. Decoding checks the
+/// form against the file's version.
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum Citations {
+    One(String),
+    List(Vec<String>),
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -254,7 +272,7 @@ pub struct EndDoc {
     pub state: EndStateDoc,
     /// Stopped routes only.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub at: Option<String>,
+    pub at: Option<Citations>,
     /// Stopped routes only.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,

@@ -98,14 +98,14 @@ fn evaluation_is_scoped_to_one_snapshot_and_interprets_one_of_two_routes() {
             route.clone(),
             Route {
                 origin,
-                use_site: None,
+                use_sites: Vec::new(),
                 hops: vec![Hop {
                     to: field,
-                    fact: fact.clone(),
+                    facts: vec![fact.clone()],
                     support: Support::Established,
                 }],
                 end: RouteEnd::Stopped {
-                    at: fact,
+                    at: vec![fact],
                     reason: "Partial fixture ends at the supply site.".into(),
                 },
             },

@@ -110,11 +110,11 @@ pub fn graph(workspace: &Workspace, crates: &[Vec<r::Record>], snapshot: Snapsho
         graph.routes.insert(
             RouteId(format!("route:{index}")),
             Route {
-                use_site: Some(id(fact)),
+                use_sites: vec![id(fact)],
                 origin: fact.object.clone(),
                 hops: vec![Hop {
                     to: fact.subject.clone(),
-                    fact: id(fact),
+                    facts: vec![id(fact)],
                     support: Support::Established,
                 }],
                 end: RouteEnd::ReachedUse,
@@ -126,14 +126,14 @@ pub fn graph(workspace: &Workspace, crates: &[Vec<r::Record>], snapshot: Snapsho
         graph.routes.insert(
             RouteId(format!("route:traced:{index}")),
             Route {
-                use_site: Some(use_site.clone()),
+                use_sites: vec![use_site.clone()],
                 origin: route.origin.clone(),
                 hops: route
                     .hops
                     .iter()
                     .map(|(fact, possible)| Hop {
                         to: fact.object.clone(),
-                        fact: id(fact),
+                        facts: vec![id(fact)],
                         support: if *possible {
                             Support::Possible { condition: None }
                         } else {
@@ -144,7 +144,7 @@ pub fn graph(workspace: &Workspace, crates: &[Vec<r::Record>], snapshot: Snapsho
                 end: match &route.stopped {
                     None => RouteEnd::ReachedUse,
                     Some(reason) => RouteEnd::Stopped {
-                        at: use_site,
+                        at: vec![use_site],
                         reason: reason.clone(),
                     },
                 },

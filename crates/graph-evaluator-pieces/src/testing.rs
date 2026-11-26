@@ -58,13 +58,13 @@ pub fn graph() -> ProjectGraph {
     };
     let it = |id: &str| Endpoint::Item(ItemId(id.into()));
     let route = |origin: Endpoint, hops: Vec<(Endpoint, &str)>| Route {
-        use_site: None,
+        use_sites: Vec::new(),
         origin,
         hops: hops
             .into_iter()
             .map(|(to, fact)| Hop {
                 to,
-                fact: FactId(fact.into()),
+                facts: vec![FactId(fact.into())],
                 support: Support::Established,
             })
             .collect(),

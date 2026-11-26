@@ -209,8 +209,8 @@ fn refs(graph: &ProjectGraph, text: &render::Renderer) -> BTreeMap<String, RefIn
         let facts = route
             .hops
             .iter()
-            .map(|hop| &hop.fact)
-            .chain(route.use_site.iter());
+            .flat_map(|hop| &hop.facts)
+            .chain(&route.use_sites);
         for fact in facts.filter_map(|id| graph.facts.get(id)) {
             modules.extend(unit_module(graph, &fact.unit));
             fact_kinds.insert(fact_kind_slug(&fact.kind).to_string());
@@ -244,7 +244,8 @@ fn route_groups(graph: &ProjectGraph) -> BTreeMap<Vec<ModuleId>, Vec<RouteId>> {
             _ => route
                 .hops
                 .iter()
-                .filter_map(|hop| graph.facts.get(&hop.fact))
+                .flat_map(|hop| &hop.facts)
+                .filter_map(|fact| graph.facts.get(fact))
                 .find_map(|fact| unit_module(graph, &fact.unit))
                 .into_iter()
                 .collect(),

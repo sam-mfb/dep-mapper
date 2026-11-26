@@ -97,15 +97,15 @@ pub fn exclude(
 /// The facts a route cites.
 fn cited(route: &Route) -> impl Iterator<Item = FactId> + '_ {
     let stopped_at = match &route.end {
-        RouteEnd::Stopped { at, .. } => Some(at.clone()),
-        RouteEnd::ReachedUse => None,
+        RouteEnd::Stopped { at, .. } => at.as_slice(),
+        RouteEnd::ReachedUse => &[],
     };
     route
-        .use_site
+        .use_sites
         .iter()
-        .cloned()
-        .chain(route.hops.iter().map(|hop| hop.fact.clone()))
+        .chain(route.hops.iter().flat_map(|hop| hop.facts.iter()))
         .chain(stopped_at)
+        .cloned()
 }
 
 fn in_project(endpoint: &Endpoint) -> bool {

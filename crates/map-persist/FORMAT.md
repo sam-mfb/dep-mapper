@@ -1,4 +1,4 @@
-# Map and draft files, format 1
+# Map and draft files, format 2
 
 A file is TOML. It holds either a saved **map** or a **draft**. A map is a complete project map, such as one written after analysis. A draft holds proposed changes: new parts, new reviews for base parts, and base parts to remove. It is laid over a saved base map, or it stands alone as a map made only of proposals.
 
@@ -10,7 +10,7 @@ Every file starts with these two fields:
 
 | Field | Value |
 | --- | --- |
-| `format` | `1`. Loading refuses any other version. |
+| `format` | `2`. Loading also reads format 1, described under [Format 1](#format-1), and refuses any other version. Saving always writes format 2. |
 | `kind` | `"map"` or `"draft"`. |
 
 ## Maps
@@ -117,17 +117,19 @@ review = { state = "judged", role = "direct-use", reason = "Reads through it.", 
 
 ```toml
 [routes.cached-load]
+use_sites = ["note:cache"]
 origin = { module = "map-persist", item = "load" }
 end = { state = "reached" }
 review = { state = "unreviewed" }
 
 [[routes.cached-load.hops]]
 to = { module = "cache", link = "receiver-uses-sender" }
-evidence = "note:cache"
+evidence = ["note:cache"]
 support = "proposed"
 ```
 
-- `origin`, `end` and `review` are required. `use_site` is a citation ID and may be left out. `hops` may be left out to mean none.
+- A route is one path a value takes. Uses at several sites can follow the same path, so a route lists them all.
+- `origin`, `end` and `review` are required. `use_sites` is an array of citation IDs, one for each use the route explains, and may be left out to mean none. `hops` may be left out to mean none.
 - A point has exactly one of these:
   - `module`, with an optional `item`;
   - `external`, naming a dependency outside the project;
@@ -137,8 +139,8 @@ support = "proposed"
   - `sender-uses-receiver`: the module the value came from uses the one it moves into.
   - `same-module`: the value moves between items of one module.
   - `from-outside`: the value comes from outside the project.
-- A hop needs `to`, `evidence` (a citation ID) and `support`. `support` is `established`, `possible` or `proposed`. Only a `possible` hop may have a `condition`. `role` may be left out to mean none.
-- `end` is `{ state = "reached" }`, or `{ state = "stopped", at = <citation ID>, reason = "..." }`.
+- A hop needs `to`, `evidence` and `support`. `evidence` is an array of at least one citation ID: every fact behind the step, one for each use site that takes it, or a proposal note. `support` is `established`, `possible` or `proposed`. Only a `possible` hop may have a `condition`. `role` may be left out to mean none.
+- `end` is `{ state = "reached" }`, or `{ state = "stopped", at = [<citation ID>, ...], reason = "..." }`. `at` has at least one citation ID: for each use that stopped, where it stopped.
 
 ### Review
 
@@ -167,3 +169,13 @@ summary = "Previews are slow to load."
 ## Saving
 
 Saving writes every `status`, even in a draft, and writes empty lists where the value is empty. Loading the saved text gives back the same map or draft.
+
+## Format 1
+
+Format 1 is format 2 with one citation where format 2 has a list. Loading reads it into the same map or draft, each citation becoming a list of one.
+
+- A route has `use_site`, one citation ID that may be left out, in place of `use_sites`.
+- A hop's `evidence` is one citation ID.
+- A stopped end's `at` is one citation ID.
+
+Each version is checked against its own form: a format 1 file with a list, or a format 2 file with a single ID or `use_site`, is refused.

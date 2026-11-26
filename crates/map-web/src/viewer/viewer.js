@@ -1055,6 +1055,16 @@
     return el("li", {}, mark ? el("span", { class: "badge" }, mark) : null, " ", prose(e.summary),
       el("div", { class: "muted mono evidence-where" }, where || (e.kind === "proposal" ? "Proposal note" : "No source location")));
   }
+  // The evidence for one step of a route: a fact for each use site that
+  // takes it. Past the first few, the rest fold away.
+  const SHOWN_EVIDENCE = 3;
+  function evidenceList(ids) {
+    const shown = ids.slice(0, SHOWN_EVIDENCE).map((id) => evidenceEntry(id, null));
+    const rest = ids.slice(SHOWN_EVIDENCE);
+    return el("ul", { class: "evidence" }, shown,
+      rest.length ? el("li", {}, el("details", {}, el("summary", {}, `${plural(rest.length, "more site")}`),
+        el("ul", { class: "evidence" }, rest.map((id) => evidenceEntry(id, null))))) : null);
+  }
   // A review: its decision, its reason, and the evidence it cites.
   function reviewBody(review) {
     if (review.status === "unreviewed") return el("p", { class: "empty" }, "No reviewer has judged this yet.");
@@ -1104,9 +1114,9 @@
         el("strong", {}, h.to.label),
         h.role ? el("span", { class: "muted" }, ` · ${ROLE_NAMES[h.role] || h.role}`) : null,
         h.support === "established" ? null : el("span", { class: `badge ${h.support}` }, h.condition ? `${h.support}: ${h.condition}` : h.support),
-        el("ul", { class: "evidence" }, evidenceEntry(h.evidence, null)))),
+        evidenceList(h.evidence))),
       r.end.reached ? null : el("li", { class: "stopped" }, el("strong", {}, "Stopped. "), r.end.reason,
-        el("ul", { class: "evidence" }, evidenceEntry(r.end.at, null))));
+        evidenceList(r.end.at)));
   }
 
   function moduleLink(n) {
@@ -1120,7 +1130,7 @@
       el("div",{},routeNames(r).map((n,i)=>[i?" → ":"",moduleLink(n)])),
       r.review.status==="judged"?el("p",{},r.review.reason):el("p",{class:"muted"},reviewWords(r.review)),
       changeList(r),
-      el("details",{class:"route-detail",...(r.id===state.route?{open:""}:{}),ontoggle:toggled(r)},el("summary",{},`Hops and evidence (${r.hops.length})`),hopList(r),
+      el("details",{class:"route-detail",...(r.id===state.route?{open:""}:{}),ontoggle:toggled(r)},el("summary",{},`Hops and evidence (${r.hops.length})${r.use_sites.length>1?` · used at ${r.use_sites.length} sites`:""}`),hopList(r),
         codeReview(r).status==="judged"?el("div",{},el("h4",{},"Review evidence"),reviewBody(codeReview(r))):null,
         r.status==="update"?el("div",{},el("h4",{},"Proposed update"),updateBody(r)):null))));
   }

@@ -118,10 +118,11 @@ pub struct MapDependency {
 pub struct MapRoute {
     /// A proposed addition has only proposed hops; a route in code has none.
     pub status: Status<RouteDescription>,
-    /// Identifies the same use across alternate or incomplete routes.
-    pub use_site: Option<CitationId>,
+    /// The uses this path explains, one for each site whose value follows
+    /// it. Identifies the same use across alternate or incomplete routes.
+    pub use_sites: Vec<CitationId>,
     pub origin: RoutePoint,
-    /// In supply order, starting at origin. Parallel routes retain separate IDs.
+    /// In supply order, starting at origin. Routes that follow different paths stay separate.
     pub hops: Vec<MapHop>,
     pub end: MapRouteEnd,
     /// The architectural uses assigned to this particular path.
@@ -189,7 +190,9 @@ pub enum OutsidePoint {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MapHop {
     pub to: HopTarget,
-    pub evidence: CitationId,
+    /// At least one: every fact behind this step, one for each use site
+    /// that takes it, or the proposal note of a proposed hop.
+    pub evidence: Vec<CitationId>,
     pub support: HopSupport,
     pub role: Option<UseRole>,
 }
@@ -230,7 +233,11 @@ pub enum HopSupport {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MapRouteEnd {
     ReachedUse,
-    Stopped { at: CitationId, reason: String },
+    /// `at` cites, for each use that stopped this way, where it stopped.
+    Stopped {
+        at: Vec<CitationId>,
+        reason: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

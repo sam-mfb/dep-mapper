@@ -40,11 +40,11 @@ fn graph() -> ProjectGraph {
         routes: BTreeMap::from([(
             RouteId(shared.into()),
             Route {
-                use_site: Some(FactId(shared.into())),
+                use_sites: vec![FactId(shared.into())],
                 origin: Endpoint::Module(used),
                 hops: vec![Hop {
                     to: Endpoint::Module(user),
-                    fact: FactId(shared.into()),
+                    facts: vec![FactId(shared.into())],
                     support: Support::Established,
                 }],
                 end: RouteEnd::ReachedUse,

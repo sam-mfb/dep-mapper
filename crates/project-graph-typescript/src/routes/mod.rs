@@ -154,7 +154,7 @@ pub fn trace_values(
         for (index, trace) in traces.into_iter().enumerate() {
             let route = match trace {
                 Trace::Reached { origin, path, .. } => Route {
-                    use_site: Some(receiver_use.call.clone()),
+                    use_sites: vec![receiver_use.call.clone()],
                     origin,
                     hops: path
                         .iter()
@@ -171,7 +171,7 @@ pub fn trace_values(
                             };
                             Some(Hop {
                                 to: fact.object.clone(),
-                                fact: ids[i].clone(),
+                                facts: vec![ids[i].clone()],
                                 support,
                             })
                         })
@@ -179,7 +179,7 @@ pub fn trace_values(
                     end: RouteEnd::ReachedUse,
                 },
                 Trace::Stopped { reason } => Route {
-                    use_site: Some(receiver_use.call.clone()),
+                    use_sites: vec![receiver_use.call.clone()],
                     origin: receiver_use
                         .moves
                         .iter()
@@ -190,7 +190,7 @@ pub fn trace_values(
                         }),
                     hops: Vec::new(),
                     end: RouteEnd::Stopped {
-                        at: receiver_use.call.clone(),
+                        at: vec![receiver_use.call.clone()],
                         reason,
                     },
                 },
@@ -233,11 +233,11 @@ pub fn direct_routes(
         })
         .map(|(id, fact)| {
             let route = Route {
-                use_site: Some(id.clone()),
+                use_sites: vec![id.clone()],
                 origin: fact.object.clone(),
                 hops: vec![Hop {
                     to: fact.subject.clone(),
-                    fact: id.clone(),
+                    facts: vec![id.clone()],
                     support: Support::Established,
                 }],
                 end: RouteEnd::ReachedUse,

@@ -146,14 +146,15 @@ impl ProjectMap {
                 problems,
             );
         }
+        let stopped_at = match &route.end {
+            MapRouteEnd::Stopped { at, .. } => at.as_slice(),
+            MapRouteEnd::ReachedUse => &[],
+        };
         let evidence = route
-            .use_site
+            .use_sites
             .iter()
-            .chain(route.hops.iter().map(|hop| &hop.evidence))
-            .chain(match &route.end {
-                MapRouteEnd::Stopped { at, .. } => Some(at),
-                MapRouteEnd::ReachedUse => None,
-            })
+            .chain(route.hops.iter().flat_map(|hop| &hop.evidence))
+            .chain(stopped_at)
             .collect();
         self.check_reviews(&part, &route.status, &route.description, evidence, problems);
     }

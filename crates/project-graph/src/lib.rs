@@ -1,7 +1,9 @@
 //! The source evidence for one project build. Identifiers join records within
-//! this snapshot. The implementation that builds the graph assigns them and
-//! retains separate route IDs for different wiring sites, even when their
-//! supplier and consumer coincide.
+//! this snapshot. The implementation that builds the graph assigns them. It
+//! gives each distinct path its own route: uses at different sites that
+//! follow the same path share one route, which names every site and cites
+//! every fact behind each hop. Paths that differ in any step stay separate,
+//! even when their supplier and consumer coincide.
 //! Route hops follow the capability or value from its origin toward a consumer.
 //! Routes are how the graph groups its facts. A direct use, such as an import
 //! or a call, is a route of one hop.
@@ -186,20 +188,23 @@ pub enum Dispatch {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Route {
-    /// The use being explained, when known. Alternative and stopped traces
-    /// can belong to the same call site; a supply with no known use has none.
-    pub use_site: Option<FactId>,
+    /// The uses being explained, when known: one for each site whose value
+    /// follows this path. Alternative and stopped traces can belong to the
+    /// same call site; a supply with no known use has none.
+    pub use_sites: Vec<FactId>,
     pub origin: Endpoint,
     pub hops: Vec<Hop>,
     pub end: RouteEnd,
 }
 
 /// The previous hop (or the route origin) supplies the starting endpoint.
-/// The cited fact retains the original source orientation and location.
+/// Each cited fact retains its original source orientation and location.
+/// A hop cites several facts when uses at several sites take the same step.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Hop {
     pub to: Endpoint,
-    pub fact: FactId,
+    /// At least one.
+    pub facts: Vec<FactId>,
     pub support: Support,
 }
 
@@ -216,8 +221,9 @@ pub enum Support {
 pub enum RouteEnd {
     ReachedUse,
     /// The last explained endpoint can be the origin if no hop was recovered.
+    /// `at` cites, for each use that stopped this way, where it stopped.
     Stopped {
-        at: FactId,
+        at: Vec<FactId>,
         reason: String,
     },
 }

@@ -13,7 +13,7 @@ fn project(module: &str, link: HopLink) -> HopTarget {
 fn hop(to: HopTarget) -> MapHop {
     MapHop {
         to,
-        evidence: CitationId("fact".into()),
+        evidence: vec![CitationId("fact".into())],
         support: HopSupport::Established,
         role: None,
     }
@@ -30,7 +30,7 @@ fn dependency(from: &str, to: &str) -> Option<DependencyId> {
 fn route() -> MapRoute {
     MapRoute {
         status: Status::Observed,
-        use_site: None,
+        use_sites: Vec::new(),
         origin: RoutePoint::Project(ProjectPoint {
             module: ModuleId("supplier".into()),
             item: Some("Store".into()),

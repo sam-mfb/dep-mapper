@@ -8,6 +8,9 @@ use project_graph::{
 use std::collections::BTreeMap;
 use std::fmt::Write;
 
+/// How many of a route step's facts its detail shows with their briefs.
+const SHOWN_FACTS: usize = 3;
+
 /// Converts a span's byte offsets into line numbers, when the source is available.
 pub trait SourceLines {
     /// The first and last line, counting from 1.
@@ -288,16 +291,23 @@ impl<'a> Renderer<'a> {
     pub(super) fn route_detail(&self, id: &RouteId) -> String {
         let route = &self.graph.routes[id];
         let mut text = format!("route:{}", id.0);
-        match &route.use_site {
-            Some(fact) => {
+        match route.use_sites.as_slice() {
+            [] => text.push_str("\n  no known use"),
+            [_] => {
                 let _ = write!(
                     text,
-                    "\n  explains the use at fact:{} ({})",
-                    fact.0,
-                    self.fact_brief(fact)
+                    "\n  explains the use at {}",
+                    self.fact_list(&route.use_sites)
                 );
             }
-            None => text.push_str("\n  no known use"),
+            sites => {
+                let _ = write!(
+                    text,
+                    "\n  explains the uses at {} sites: {}",
+                    sites.len(),
+                    self.fact_list(sites)
+                );
+            }
         }
         let _ = write!(text, "\n  from {}", self.endpoint(&route.origin));
         for hop in &route.hops {
@@ -308,19 +318,32 @@ impl<'a> Renderer<'a> {
             };
             let _ = write!(
                 text,
-                "\n  -> {} via fact:{} ({}{support})",
+                "\n  -> {}{support} via {}",
                 self.endpoint(&hop.to),
-                hop.fact.0,
-                self.fact_brief(&hop.fact)
+                self.fact_list(&hop.facts)
             );
         }
         match &route.end {
             RouteEnd::ReachedUse => text.push_str("\n  reaches its use"),
             RouteEnd::Stopped { at, reason } => {
-                let _ = write!(text, "\n  stops at fact:{}: {reason}", at.0);
+                let _ = write!(text, "\n  stops at {}: {reason}", self.fact_list(at));
             }
         }
         text
+    }
+
+    /// The facts a route step cites: the first few with their briefs, and
+    /// how many more there are. Each fact's own handle shows it in full.
+    fn fact_list(&self, facts: &[FactId]) -> String {
+        let shown: Vec<String> = facts
+            .iter()
+            .take(SHOWN_FACTS)
+            .map(|fact| format!("fact:{} ({})", fact.0, self.fact_brief(fact)))
+            .collect();
+        match facts.len().saturating_sub(SHOWN_FACTS) {
+            0 => shown.join(", "),
+            more => format!("{} and {more} more", shown.join(", ")),
+        }
     }
 
     fn item_line(&self, id: &ItemId) -> String {

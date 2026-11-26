@@ -47,14 +47,16 @@ impl Dependencies {
     }
 
     /// How a hop from `sender` into `receiver` got there, recording the hop's
-    /// fact as evidence for the dependency it travels along. `kind` is the
-    /// hop fact's kind, when the graph holds the fact.
+    /// facts as evidence for the dependency it travels along. `kinds` are the
+    /// kinds of the hop's facts that the graph holds; when no dependency
+    /// joins the modules yet, a read or a return among them makes the
+    /// receiver use the sender.
     pub(crate) fn link(
         &mut self,
         sender: Option<&ModuleId>,
         receiver: &ModuleId,
-        kind: Option<&FactKind>,
-        citation: CitationId,
+        kinds: &[&FactKind],
+        citations: &[CitationId],
     ) -> HopLink {
         let Some(sender) = sender else {
             return HopLink::FromOutside;
@@ -68,12 +70,17 @@ impl Dependencies {
             (HopLink::ReceiverUsesSender, receiver_uses)
         } else if self.found.contains_key(&sender_uses) {
             (HopLink::SenderUsesReceiver, sender_uses)
-        } else if matches!(kind, Some(FactKind::Read | FactKind::Return)) {
+        } else if kinds
+            .iter()
+            .any(|kind| matches!(kind, FactKind::Read | FactKind::Return))
+        {
             (HopLink::ReceiverUsesSender, receiver_uses)
         } else {
             (HopLink::SenderUsesReceiver, sender_uses)
         };
-        self.add(id, citation);
+        for citation in citations {
+            self.add(id.clone(), citation.clone());
+        }
         link
     }
 

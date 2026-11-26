@@ -29,13 +29,13 @@ fn call(subject: Endpoint, object: Endpoint) -> Fact {
 /// A route from `origin` through the hops, each `(fact, to)`.
 fn route(origin: Endpoint, use_site: &str, hops: &[(&str, Endpoint)]) -> Route {
     Route {
-        use_site: Some(FactId(use_site.into())),
+        use_sites: vec![FactId(use_site.into())],
         origin,
         hops: hops
             .iter()
             .map(|(fact, to)| Hop {
                 to: to.clone(),
-                fact: FactId(fact.to_string()),
+                facts: vec![FactId(fact.to_string())],
                 support: Support::Established,
             })
             .collect(),
@@ -322,11 +322,11 @@ fn a_route_stopped_at_a_fact_cites_it() {
     graph.routes.insert(
         RouteId("route:stopped".into()),
         Route {
-            use_site: None,
+            use_sites: Vec::new(),
             origin: item("supplier::Backups"),
             hops: Vec::new(),
             end: RouteEnd::Stopped {
-                at: FactId("fact:std".into()),
+                at: vec![FactId("fact:std".into())],
                 reason: "no origin".into(),
             },
         },
