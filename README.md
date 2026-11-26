@@ -46,6 +46,8 @@ target/debug/srs map . --language rust --target mapper --configuration "default 
     --out target/srs-self/map.toml --page target/srs-self/map.html
 ```
 
+Routes that start in `std`, `serde`, `tokio` and the other crates that shape the language are left out; the map's coverage gaps say how many. `--exclude` changes the list, and `--exclude ''` keeps everything.
+
 Read and answer the workbook with `srs eval`. Each answer is checked when you record it, and a refused answer says why:
 
 ```sh

@@ -454,6 +454,7 @@ version = "0.1.0"
 dependencies = [
  "project-graph",
  "project-graph-rust-records",
+ "route-exclusion",
  "serde_json",
  "thiserror",
  "value-routes",
@@ -472,6 +473,7 @@ name = "project-graph-typescript"
 version = "0.1.0"
 dependencies = [
  "project-graph",
+ "route-exclusion",
  "serde",
  "serde_json",
  "sha2",
@@ -504,6 +506,13 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "route-exclusion"
+version = "0.1.0"
+dependencies = [
+ "project-graph",
 ]
 
 [[package]]

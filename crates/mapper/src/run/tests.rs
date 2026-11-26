@@ -99,6 +99,7 @@ fn command() -> MapCommand {
         },
         language: Language::Rust {
             cache: "/cache".into(),
+            excluded: vec![],
         },
         evaluator: EvaluatorChoice::Llm,
         out: "map.toml".into(),

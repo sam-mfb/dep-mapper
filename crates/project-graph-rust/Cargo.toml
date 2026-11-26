@@ -11,5 +11,6 @@ publish = false
 project-graph.workspace = true
 project-graph-rust-records = { path = "records" }
 value-routes = { path = "../value-routes" }
+route-exclusion.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

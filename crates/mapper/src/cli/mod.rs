@@ -3,7 +3,9 @@
 
 use crate::draft::DraftCommand;
 use crate::eval::EvalCommand;
-use crate::implementations::{Agent, EvaluatorChoice, Language};
+use crate::implementations::{
+    Agent, DEFAULT_RUST_EXCLUDED, DEFAULT_TYPESCRIPT_EXCLUDED, EvaluatorChoice, Language,
+};
 use crate::run::MapCommand;
 use crate::show::ShowCommand;
 use clap::error::ErrorKind;
@@ -158,6 +160,12 @@ struct MapArgs {
     /// runs. Without it, `<root>/target/srs`.
     #[arg(long)]
     cache: Option<PathBuf>,
+    /// Outside crates or packages whose routes the graph leaves out,
+    /// separated by commas. Replaces the default list: for Rust, std, core,
+    /// alloc, thiserror, futures, serde, serde_json, tokio and tokio-util;
+    /// for TypeScript, none. `--exclude ''` keeps every route.
+    #[arg(long)]
+    exclude: Option<String>,
     /// The build target, in the terms of the language's build tool.
     #[arg(long)]
     target: String,
@@ -235,14 +243,27 @@ impl MapArgs {
                 ));
             }
         };
-        let language = match (self.language, self.cache) {
+        let excluded = |default: &[&str]| match &self.exclude {
+            Some(list) => list
+                .split(',')
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(String::from)
+                .collect(),
+            None => default.iter().map(|name| name.to_string()).collect(),
+        };
+        let language = match (self.language, &self.cache) {
             (LanguageArg::Rust, Some(cache)) => Language::Rust {
                 cache: current_dir.join(cache),
+                excluded: excluded(&DEFAULT_RUST_EXCLUDED),
             },
             (LanguageArg::Rust, None) => Language::Rust {
                 cache: current_dir.join(&self.root).join(DEFAULT_RUST_CACHE),
+                excluded: excluded(&DEFAULT_RUST_EXCLUDED),
             },
-            (LanguageArg::Typescript, None) => Language::TypeScript,
+            (LanguageArg::Typescript, None) => Language::TypeScript {
+                excluded: excluded(&DEFAULT_TYPESCRIPT_EXCLUDED),
+            },
             (LanguageArg::Typescript, Some(_)) => {
                 return Err(Cli::command().error(
                     ErrorKind::ArgumentConflict,

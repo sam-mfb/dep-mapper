@@ -31,7 +31,7 @@ The module boundaries, dependency arrangements and review workflow for sharshere
 | Program | `mapper` |
 | Mapping | `project-map`, `map-builder`, `map-web`, `map-persist`, `map-draft`, `map-preview` |
 | Evaluation | `graph-evaluator`, `graph-evaluator-pieces`, `graph-evaluator-llm`, `graph-evaluator-manual` |
-| Graphing | `project-graph`, `project-graph-rust`, `project-graph-rust-records`, `project-graph-typescript`, `value-routes` |
+| Graphing | `project-graph`, `project-graph-rust`, `project-graph-rust-records`, `project-graph-typescript`, `value-routes`, `route-exclusion` |
 
 ## Three core types
 
@@ -50,6 +50,17 @@ A `ProjectGraph` records receiver bounds separately from witnessed handoffs. A r
 `mapper` owns the composition. It constructs the grapher for the project’s language and calls it through the `ProjectGrapher` contract in `project-graph` with the selected build. Each language crate builds the `ProjectGraph` end to end: it reads the source and traces its own routes. `project-graph-rust` serves the initial investigation, and `project-graph-typescript` implements the same contract for another language.
 
 `project-graph-typescript` reads an npm workspace, one module per package, with the build selected by a tsconfig. It runs the TypeScript checker in a Node child process. The child uses the TypeScript 6 API through a small interface of our own, so the move to TypeScript 7 changes one file. It prints items, facts and receiver links as JSON Lines, and the Rust crate assembles the graph. It traces value routes with `value-routes`, the shared tracer that `project-graph-rust` also uses.
+
+## Excluded crates
+
+Some outside crates are, in effect, part of the language. Every module uses them, so their routes say little about the architecture and crowd out the ones that do. Each grapher takes a list of outside crates or packages at construction and leaves out the routes that start in them. The list is grapher configuration. It is not part of the `ProjectGrapher` contract or the `BuildSelection`.
+
+- A route is left out when its origin is an outside endpoint in a listed crate. The grapher decides which names lie in a crate. For Rust, it is the first segment of the name: the dependency the project declares, or the toolchain crate. So `serde` also covers `serde_core`, reached through `serde`. For TypeScript, it is the package before the `#`.
+- A fact is left out when only those routes cite it. A fact between project modules stays, even when its route passed through a listed crate. So does a fact another remaining fact cites.
+- Nothing is left out silently. The graph gets a coverage gap that names the list and says how many routes and facts were removed, and the map page shows it with the other coverage gaps. The Rust graph's ID ends with the list, and the TypeScript graph's ID hashes its contents, so graphs made with different lists have different IDs.
+- `srs map` passes a default list, written out in `mapper`. For Rust it is `std`, `core` and `alloc`, plus the crates that shape the language in rule 7 of our Rust principles: `thiserror`, `futures`, `serde`, `serde_json`, `tokio` and `tokio-util`. For TypeScript it is empty. `--exclude` replaces it, and an empty `--exclude` keeps every route.
+
+The shared library `route-exclusion` does the leaving out and the recording. Each language crate calls it with its own way of matching names.
 
 Analysis is not split into a language reader and a shared grapher. If some route logic turns out to be the same across languages, it goes in a library the language crates call, not in a separate stage of the pipeline.
 

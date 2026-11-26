@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/project-graph", "crates/graph-evaluator", "crates/graph-evaluator-manual", "crates/project-map", "crates/map-web", "crates/map-persist", "crates/project-graph-typescript", "crates/map-preview", "crates/project-graph-rust", "crates/project-graph-rust/records", "crates/map-builder", "crates/mapper", "crates/graph-evaluator-llm", "crates/map-draft", "crates/graph-evaluator-pieces", "crates/value-routes"]
+members = ["crates/project-graph", "crates/graph-evaluator", "crates/graph-evaluator-manual", "crates/project-map", "crates/map-web", "crates/map-persist", "crates/project-graph-typescript", "crates/map-preview", "crates/project-graph-rust", "crates/project-graph-rust/records", "crates/map-builder", "crates/mapper", "crates/graph-evaluator-llm", "crates/map-draft", "crates/graph-evaluator-pieces", "crates/value-routes", "crates/route-exclusion"]
 exclude = ["crates/project-graph-rust/driver", "crates/project-graph-rust/tests/fixture"]
 resolver = "3"
 
@@ -19,6 +19,7 @@ map-web = { path = "crates/map-web" }
 graph-evaluator-pieces = { path = "crates/graph-evaluator-pieces" }
 project-graph = { path = "crates/project-graph" }
 project-map = { path = "crates/project-map" }
+route-exclusion = { path = "crates/route-exclusion" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.11.2"

@@ -5,7 +5,8 @@
 ## `srs map`
 
 ```sh
-srs map <root> --language <rust|typescript> [--cache <dir>] --target <target> --configuration <settings> \
+srs map <root> --language <rust|typescript> [--cache <dir>] [--exclude <list>] \
+    --target <target> --configuration <settings> \
     --evaluator <manual|llm> [--workbook <dir>] [--agent <none|wait|claude>] \
     --out <map.toml> [--page <map.html>] [--serve <address>]
 ```
@@ -15,6 +16,7 @@ srs map <root> --language <rust|typescript> [--cache <dir>] --target <target> --
 | `<root>` | The directory holding the project's source. |
 | `--language` | Selects the grapher: project-graph-rust or project-graph-typescript. |
 | `--cache` | For Rust: where the grapher keeps its rustc driver and build output between runs. Without it, `<root>/target/srs`. The first run builds the driver, which takes about a minute. |
+| `--exclude` | Outside crates or packages whose routes the graph leaves out, separated by commas. It replaces the default list. For Rust the default is `std`, `core`, `alloc`, `thiserror`, `futures`, `serde`, `serde_json`, `tokio` and `tokio-util`: the toolchain and the crates that shape the language in our Rust principles. For TypeScript it is empty. `--exclude ''` keeps every route. The graph and the map's page record the list and how many routes and facts it removed, as a coverage gap. |
 | `--target`, `--configuration` | The build to analyze, in the grapher's terms. For Rust, the target is a package, optionally with one target as `package/bin:name`, and the configuration is `default features` or Cargo flags such as `--features x`. For TypeScript, the target is the tsconfig file, relative to the root, and the configuration is `tsconfig`. |
 | `--evaluator` | Who judges the graph. `manual` needs `--workbook`. `llm` asks Claude and needs `ANTHROPIC_API_KEY`; without it, `srs map` stops before analysis. |
 | `--agent` | For `manual`: who answers while `srs map` runs. `none` (the default when the option is left out) stops after writing the workbook. `wait` shows the request and checks every 5 seconds for a submission, for up to 4 hours. `claude` runs Claude Code in the project directory; `srs` must be on `PATH` for it to run `srs eval`. |
@@ -61,7 +63,7 @@ target/debug/srs map . --language rust --target mapper --configuration "default 
     --out target/srs-self/map.toml --page target/srs-self/map.html
 ```
 
-The `mapper` package depends on every other crate, so its build covers the whole project. With `--agent claude`, Claude Code answers the workbook. With `--agent none`, answer it yourself with `srs eval` and run the command again. `tests/sharsheret_rust.rs` runs the same steps for the smaller `map-builder` package, with a few answers.
+The `mapper` package depends on every other crate, so its build covers the whole project. The default `--exclude` list applies, so routes from `std`, `serde`, `tokio` and the other crates that shape the language are left out. With `--agent claude`, Claude Code answers the workbook. With `--agent none`, answer it yourself with `srs eval` and run the command again. `tests/sharsheret_rust.rs` runs the same steps for the smaller `map-builder` package, with a few answers.
 
 `docs/architecture/sharsheret-map.toml` is the saved result of this command with `--agent claude` and `target/debug` on `PATH`, run on commit fef5fca; the map records the commit in its `[source]` table. Claude Code judged all 16 modules in five clusters (graph, evaluation, map, presentation, program), recorded the relationships between modules, and set aside the routine routes, such as derived serde code. To look at it without analysis:
 

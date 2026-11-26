@@ -1,5 +1,5 @@
 use super::*;
-use project_graph::FactKind;
+use project_graph::{Endpoint, FactKind};
 use project_graph_rust_records as r;
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -62,14 +62,44 @@ impl Cargo for FakeCargo {
                     hi: 2,
                 },
             }),
+            Record::Call(r::CallRecord {
+                owner: def("app", "::main"),
+                callee: Some(def("std", "::mem::take")),
+                dispatch: r::Dispatch::Direct,
+                span: r::Span {
+                    file: "app/src/main.rs".into(),
+                    lo: 3,
+                    hi: 4,
+                },
+            }),
         ]])
     }
 }
 
 fn grapher() -> RustGrapher<FakeCargo> {
-    RustGrapher::new(FakeCargo {
-        compiled: RefCell::new(Vec::new()),
-    })
+    excluding(&[])
+}
+
+fn excluding(crates: &[&str]) -> RustGrapher<FakeCargo> {
+    RustGrapher::new(
+        FakeCargo {
+            compiled: RefCell::new(Vec::new()),
+        },
+        RustGrapherSettings {
+            excluded: crates.iter().map(|c| c.to_string()).collect(),
+        },
+    )
+}
+
+fn calls_to(graph: &ProjectGraph) -> Vec<&str> {
+    graph
+        .facts
+        .values()
+        .filter_map(|f| match (&f.kind, &f.object) {
+            (FactKind::Call(_), Endpoint::External(name)) => Some(name.as_str()),
+            _ => None,
+        })
+        .collect()
 }
 
 fn selection(target: &str) -> BuildSelection {
@@ -119,4 +149,62 @@ fn the_pinned_toolchain_is_the_repository_toolchain() {
 fn a_build_that_produced_no_records_for_the_package_is_an_error() {
     let error = grapher().build_graph(&selection("consumer")).unwrap_err();
     assert!(error.message.contains("no records for `consumer`"));
+}
+
+#[test]
+fn without_exclusions_a_call_into_the_standard_library_is_a_fact_and_nothing_is_recorded() {
+    let graph = grapher().build_graph(&selection("app/bin:app")).unwrap();
+    assert_eq!(calls_to(&graph), ["clock::now", "std::mem::take"]);
+    assert!(graph.gaps.is_empty(), "{:?}", graph.gaps);
+}
+
+#[test]
+fn an_excluded_crate_loses_its_routes_and_facts_and_the_graph_says_so() {
+    let graph = excluding(&["std", "core"])
+        .build_graph(&selection("app/bin:app"))
+        .unwrap();
+    assert_eq!(calls_to(&graph), ["clock::now"]);
+    assert!(
+        graph
+            .routes
+            .values()
+            .all(|r| !matches!(&r.origin, Endpoint::External(name) if name.starts_with("std::")))
+    );
+    assert_eq!(graph.gaps.len(), 1);
+    assert_eq!(
+        graph.gaps[0].reason,
+        "Routes that start in the excluded packages std, core are left out: \
+         1 route and 1 fact removed."
+    );
+}
+
+#[test]
+fn an_excluded_crate_matches_by_its_first_segment_with_hyphens_and_underscores_alike() {
+    let crates = ["serde".to_string(), "tokio-util".to_string()];
+    assert!(in_crates(&crates, "serde::de::Deserialize"));
+    assert!(in_crates(&crates, "serde::serde_core::de::Deserialize"));
+    assert!(in_crates(&crates, "serde"));
+    assert!(in_crates(&crates, "tokio_util::sync::CancellationToken"));
+    assert!(in_crates(&crates, "tokio-util"));
+    assert!(!in_crates(&crates, "serde_json::Value"));
+    assert!(!in_crates(&crates, "clap::serde::Thing"));
+}
+
+#[test]
+fn the_graph_id_names_the_excluded_crates() {
+    let id = |crates: &[&str]| {
+        excluding(crates)
+            .build_graph(&selection("app/bin:app"))
+            .unwrap()
+            .id
+            .0
+    };
+    assert_eq!(
+        id(&[]),
+        "app@abc+local-changes app/bin:app [default features]"
+    );
+    assert_eq!(
+        id(&["std", "core"]),
+        "app@abc+local-changes app/bin:app [default features] excluding std,core"
+    );
 }

@@ -207,7 +207,7 @@ fn packages_are_modules_and_compiled_crates_are_units() {
 }
 
 #[test]
-fn calls_into_other_modules_and_third_party_crates_are_kept_and_std_is_left_out() {
+fn calls_into_other_modules_third_party_crates_and_the_toolchain_are_kept() {
     let graph = built();
     let calls = facts_of(&graph, |k| matches!(k, FactKind::Call(_)));
     let described: Vec<_> = calls
@@ -227,8 +227,13 @@ fn calls_into_other_modules_and_third_party_crates_are_kept_and_std_is_left_out(
                 &FactKind::Call(Dispatch::Direct),
                 &Endpoint::External("clock::now".into())
             ),
+            (
+                &item_id("consumer/lib:consumer::consume"),
+                &FactKind::Call(Dispatch::Direct),
+                &Endpoint::External("std::io::_print".into())
+            ),
         ],
-        "the duplicate, the call within consumer and the std call are not facts"
+        "the duplicate and the call within consumer are not facts"
     );
     assert_eq!(calls[0].site.as_ref().unwrap().file, "consumer/src/lib.rs");
 }

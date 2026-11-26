@@ -4,8 +4,9 @@
 //! - Each workspace package is a module. Each compiled crate is a unit.
 //! - A definition in a compiled crate becomes an item, or the nearest
 //!   enclosing item for closures, fields and the like. A definition in a
-//!   third-party crate becomes an external endpoint. Definitions from the
-//!   toolchain's own crates, such as `std`, are left out.
+//!   third-party crate becomes an external endpoint. So does a definition
+//!   from the toolchain's own crates, such as `std`, when a fact names it;
+//!   whether those facts stay is up to the grapher's exclusion list.
 //! - A fact is kept when its object lies in another module or outside the
 //!   project. Identical facts are kept once.
 //! - Each such fact is a route of one hop: from the thing used (the fact's
@@ -277,6 +278,20 @@ impl<'a> Resolver<'a> {
         }
     }
 
+    /// Like `endpoint`, but a definition from the toolchain's own crates,
+    /// such as `std`, is an outside endpoint named from its crate, as
+    /// `core::fmt::Display`. Facts name the toolchain this way, so a
+    /// grapher's exclusion list decides whether they stay; traced routes do
+    /// not follow values through the toolchain's traits.
+    fn fact_endpoint(&self, def: &r::Def) -> Option<(Endpoint, Option<ModuleId>)> {
+        self.endpoint(def).or_else(|| {
+            Some((
+                Endpoint::External(external_name(None, &def.crate_name, def)),
+                None,
+            ))
+        })
+    }
+
     /// The endpoint naming `def`, and the module it belongs to when it is in
     /// the project. `None` for definitions from the toolchain's crates.
     fn endpoint(&self, def: &r::Def) -> Option<(Endpoint, Option<ModuleId>)> {
@@ -389,7 +404,7 @@ fn fact(resolve: &Resolver, unit: &Unit, record: &r::Record) -> Option<Ordered> 
     let root = &resolve.workspace.root;
     let (subject, kind, object, span) = match record {
         r::Record::Use(u) => (
-            resolve.endpoint(&u.module)?,
+            resolve.fact_endpoint(&u.module)?,
             if u.public {
                 FactKind::Reexport {
                     exported_name: u.local_name.clone(),
@@ -400,29 +415,29 @@ fn fact(resolve: &Resolver, unit: &Unit, record: &r::Record) -> Option<Ordered> 
                     usage: ImportUse::Undetermined,
                 }
             },
-            resolve.endpoint(&u.target)?,
+            resolve.fact_endpoint(&u.target)?,
             &u.span,
         ),
         r::Record::Reference(reference) => (
-            resolve.endpoint(&reference.owner)?,
+            resolve.fact_endpoint(&reference.owner)?,
             match reference.kind {
                 r::ReferenceKind::Type => FactKind::TypeReference,
                 r::ReferenceKind::Value => FactKind::ValueReference,
             },
-            resolve.endpoint(&reference.target)?,
+            resolve.fact_endpoint(&reference.target)?,
             &reference.span,
         ),
         r::Record::Impl(implementation) => (
             match &implementation.self_type {
-                Some(def) => resolve.endpoint(def)?,
+                Some(def) => resolve.fact_endpoint(def)?,
                 None => (Endpoint::Module(unit.module()), Some(unit.module())),
             },
             FactKind::Implements,
-            resolve.endpoint(&implementation.contract)?,
+            resolve.fact_endpoint(&implementation.contract)?,
             &implementation.span,
         ),
         r::Record::Call(call) => (
-            resolve.endpoint(&call.owner)?,
+            resolve.fact_endpoint(&call.owner)?,
             FactKind::Call(match call.dispatch {
                 r::Dispatch::Direct => Dispatch::Direct,
                 r::Dispatch::SelectedImplementation => Dispatch::SelectedImplementation,
@@ -431,7 +446,7 @@ fn fact(resolve: &Resolver, unit: &Unit, record: &r::Record) -> Option<Ordered> 
                 r::Dispatch::Foreign => Dispatch::Foreign,
             }),
             match &call.callee {
-                Some(callee) => resolve.endpoint(callee)?,
+                Some(callee) => resolve.fact_endpoint(callee)?,
                 None => (Endpoint::Unresolved("function pointer".into()), None),
             },
             &call.span,

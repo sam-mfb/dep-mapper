@@ -40,7 +40,7 @@ fn map_arguments_become_a_map_command() {
                 target: "tsconfig.json".into(),
                 configuration: "tsconfig".into(),
             },
-            language: Language::TypeScript,
+            language: Language::TypeScript { excluded: vec![] },
             evaluator: EvaluatorChoice::Llm,
             out: "map.toml".into(),
             page: Some("map.html".into()),
@@ -163,13 +163,15 @@ fn the_rust_cache_defaults_to_the_projects_target_directory() {
     assert_eq!(
         language(&[]),
         Language::Rust {
-            cache: "/home/someone/work/./target/srs".into()
+            cache: "/home/someone/work/./target/srs".into(),
+            excluded: rust_default(),
         }
     );
     assert_eq!(
         language(&["--cache", "cache"]),
         Language::Rust {
-            cache: "/home/someone/work/cache".into()
+            cache: "/home/someone/work/cache".into(),
+            excluded: rust_default(),
         }
     );
 }
@@ -195,4 +197,82 @@ fn a_cache_for_typescript_is_a_mistake() {
     ])
     .unwrap_err();
     assert!(outcome.text.contains("--cache applies only"));
+}
+
+fn rust_default() -> Vec<String> {
+    [
+        "std",
+        "core",
+        "alloc",
+        "thiserror",
+        "futures",
+        "serde",
+        "serde_json",
+        "tokio",
+        "tokio-util",
+    ]
+    .iter()
+    .map(|c| c.to_string())
+    .collect()
+}
+
+fn excluded(extra: &[&str]) -> Vec<String> {
+    let args = [&["--evaluator", "llm"], extra].concat();
+    let Command::Map(command) = parse(map_args(&args)).unwrap() else {
+        panic!("a map command")
+    };
+    match command.language {
+        Language::Rust { excluded, .. } | Language::TypeScript { excluded } => excluded,
+    }
+}
+
+#[test]
+fn rust_leaves_out_the_toolchain_and_the_crates_that_shape_the_language_by_default() {
+    assert_eq!(excluded(&[]), rust_default());
+}
+
+#[test]
+fn the_exclude_flag_replaces_the_default_list() {
+    assert_eq!(
+        excluded(&["--exclude", "std, clap,,anyhow"]),
+        ["std", "clap", "anyhow"]
+    );
+}
+
+#[test]
+fn an_empty_exclude_flag_keeps_everything() {
+    assert!(excluded(&["--exclude", ""]).is_empty());
+}
+
+#[test]
+fn typescript_excludes_nothing_by_default_and_takes_the_flag() {
+    let typescript = |extra: &[&str]| {
+        let mut args = vec![
+            "srs",
+            "map",
+            ".",
+            "--language",
+            "typescript",
+            "--target",
+            "tsconfig.json",
+            "--configuration",
+            "tsconfig",
+            "--evaluator",
+            "llm",
+            "--out",
+            "map.toml",
+        ];
+        args.extend(extra);
+        let Command::Map(command) = parse(args).unwrap() else {
+            panic!("a map command")
+        };
+        command.language
+    };
+    assert_eq!(typescript(&[]), Language::TypeScript { excluded: vec![] });
+    assert_eq!(
+        typescript(&["--exclude", "@types/node"]),
+        Language::TypeScript {
+            excluded: vec!["@types/node".into()]
+        }
+    );
 }

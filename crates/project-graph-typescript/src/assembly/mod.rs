@@ -37,10 +37,15 @@ pub enum AssemblyError {
     UnknownModule(String),
 }
 
+/// Assembles the graph, then leaves out the routes that start in the
+/// `excluded` packages as `route-exclusion` describes. An outside name lies in
+/// a package when the package is the part before its `#`, as `clock` in
+/// `clock#now`. The graph's ID covers what is left.
 pub fn assemble(
     selected: &Selected,
     records: Vec<Record>,
     limits: TraceLimits,
+    excluded: &[String],
 ) -> Result<ProjectGraph, AssemblyError> {
     if records.last() != Some(&Record::End) {
         return Err(AssemblyError::Incomplete);
@@ -216,6 +221,7 @@ pub fn assemble(
         routes,
         gaps,
     };
+    route_exclusion::exclude(&mut graph, excluded, |name| in_packages(excluded, name));
     graph.id = GraphId(format!(
         "typescript:{}@{}:{}:{}:{}",
         graph.build.project,
@@ -225,6 +231,13 @@ pub fn assemble(
         fingerprint(&graph)
     ));
     Ok(graph)
+}
+
+/// Whether the outside name `name` lies in one of `packages`: the part
+/// before its `#` names the package.
+fn in_packages(packages: &[String], name: &str) -> bool {
+    let package = name.split('#').next().unwrap_or(name);
+    packages.iter().any(|p| p == package)
 }
 
 /// The first 16 hex digits of the SHA-256 of the graph's contents. The
