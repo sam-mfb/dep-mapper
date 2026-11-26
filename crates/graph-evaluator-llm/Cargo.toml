@@ -18,3 +18,4 @@ ureq = "3.5.2"
 
 [dev-dependencies]
 graph-evaluator-pieces = { workspace = true, features = ["testing"] }
+route-exclusion.workspace = true

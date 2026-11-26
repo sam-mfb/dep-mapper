@@ -4,8 +4,8 @@
 //! `driver/`) that records items, `use` items, paths into other crates, trait
 //! impls and calls. This crate turns those records into the graph. Modules
 //! are the workspace's packages. Facts are kept when they cross from one
-//! module to another or into a third-party crate. The standard library is
-//! left out.
+//! module to another or into a crate outside the workspace, including the
+//! toolchain's own crates such as `std`.
 //!
 //! Every such fact is also a route of one hop, from the thing used to its
 //! user. A call through a trait object or generic receiver also gets traced
@@ -13,6 +13,19 @@
 //! conversions to trait objects, stores and reads of struct fields,
 //! arguments and returned values), and the `value-routes` tracer follows the
 //! receiver back to the types supplied for it.
+//!
+//! ## Excluding crates
+//!
+//! [`RustGrapherSettings::excluded`] names outside crates whose routes the
+//! graph leaves out, such as `std`. A route is left out when its origin's name starts
+//! with one of them: the dependency the project declares, or the toolchain
+//! crate. So `serde` also covers `serde::serde_core::de::Deserialize`, which
+//! the project reaches through `serde`. Names match with `-` and `_` taken
+//! as the same, as Cargo takes them. The facts only those routes cite go
+//! too, except facts between the project's own modules. The graph records
+//! the list and how much it removed as a coverage gap, and its ID ends with
+//! `excluding` and the list. An empty list keeps everything and records
+//! nothing. See the `route-exclusion` crate.
 //!
 //! The driver links the compiler, so it only works with the toolchain named
 //! by [`PINNED_TOOLCHAIN`], and the analyzed project must build with it.
@@ -60,14 +73,24 @@ pub trait Cargo {
     ) -> Result<Vec<Vec<Record>>, GraphingError>;
 }
 
+/// How the grapher shapes the graph, given at construction.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RustGrapherSettings {
+    /// Outside crates whose routes the graph leaves out, by package or crate
+    /// name, as described under "Excluding crates" above. Empty keeps every
+    /// route.
+    pub excluded: Vec<String>,
+}
+
 /// The Rust implementation of `ProjectGrapher`.
 pub struct RustGrapher<C> {
     cargo: C,
+    settings: RustGrapherSettings,
 }
 
 impl<C: Cargo> RustGrapher<C> {
-    pub fn new(cargo: C) -> Self {
-        RustGrapher { cargo }
+    pub fn new(cargo: C, settings: RustGrapherSettings) -> Self {
+        RustGrapher { cargo, settings }
     }
 }
 
@@ -94,7 +117,7 @@ impl<C: Cargo> ProjectGrapher for RustGrapher<C> {
                 message: format!("the build produced no records for `{package}`"),
             });
         }
-        Ok(assemble::graph(
+        let mut graph = assemble::graph(
             &workspace,
             &crates,
             assemble::Snapshot {
@@ -103,8 +126,22 @@ impl<C: Cargo> ProjectGrapher for RustGrapher<C> {
                 target: selection.target.clone(),
                 configuration: selection.configuration.clone(),
             },
-        ))
+        );
+        let excluded = &self.settings.excluded;
+        route_exclusion::exclude(&mut graph, excluded, |name| in_crates(excluded, name));
+        // Graphs of one build with different lists hold different evidence.
+        if !excluded.is_empty() {
+            graph.id.0 = format!("{} excluding {}", graph.id.0, excluded.join(","));
+        }
+        Ok(graph)
     }
+}
+
+/// Whether the outside endpoint `name` starts with one of `crates`, with
+/// `-` and `_` taken as the same.
+fn in_crates(crates: &[String], name: &str) -> bool {
+    let first = name.split("::").next().unwrap_or(name).replace('-', "_");
+    crates.iter().any(|c| c.replace('-', "_") == first)
 }
 
 #[cfg(test)]

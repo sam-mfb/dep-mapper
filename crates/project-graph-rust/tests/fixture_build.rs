@@ -5,9 +5,14 @@ use project_graph::{
     BuildSelection, Dispatch, Endpoint, Fact, FactKind, ItemId, ModuleId, ProjectGraph,
     ProjectGrapher,
 };
-use project_graph_rust::{PINNED_TOOLCHAIN, RustGrapher, ToolchainCargo, build_driver};
+use project_graph_rust::{
+    PINNED_TOOLCHAIN, RustGrapher, RustGrapherSettings, ToolchainCargo, build_driver,
+};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+
+/// The toolchain's crates, left out as `srs map` leaves them out by default.
+const EXCLUDED: [&str; 3] = ["std", "core", "alloc"];
 
 fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixture")
@@ -22,11 +27,16 @@ fn graph() -> &'static ProjectGraph {
     static GRAPH: OnceLock<ProjectGraph> = OnceLock::new();
     GRAPH.get_or_init(|| {
         let driver = build_driver(PINNED_TOOLCHAIN, &work().join("driver")).expect("driver builds");
-        let grapher = RustGrapher::new(ToolchainCargo {
-            toolchain: PINNED_TOOLCHAIN.into(),
-            driver,
-            work_dir: work().join("app"),
-        });
+        let grapher = RustGrapher::new(
+            ToolchainCargo {
+                toolchain: PINNED_TOOLCHAIN.into(),
+                driver,
+                work_dir: work().join("app"),
+            },
+            RustGrapherSettings {
+                excluded: EXCLUDED.iter().map(|c| c.to_string()).collect(),
+            },
+        );
         grapher
             .build_graph(&BuildSelection {
                 root: fixture(),
@@ -74,7 +84,14 @@ fn every_package_in_the_build_is_a_module_with_its_unit() {
             "supplier/lib:supplier"
         ]
     );
-    assert!(graph.gaps.is_empty(), "{:?}", graph.gaps);
+    let gaps: Vec<_> = graph.gaps.iter().map(|g| g.reason.as_str()).collect();
+    assert_eq!(gaps.len(), 1, "only the exclusion: {gaps:?}");
+    assert!(
+        gaps[0].starts_with(
+            "Routes that start in the excluded packages std, core, alloc are left out: "
+        ),
+        "{gaps:?}"
+    );
 }
 
 #[test]
@@ -107,7 +124,7 @@ fn a_call_inside_a_closure_belongs_to_the_enclosing_function() {
 }
 
 #[test]
-fn a_third_party_crate_is_external_and_the_standard_library_is_left_out() {
+fn a_third_party_crate_is_external_and_an_excluded_toolchain_crate_is_left_out() {
     let graph = graph();
     let clock = find(
         &item("consumer/lib:consumer::consume"),
@@ -121,6 +138,7 @@ fn a_third_party_crate_is_external_and_the_standard_library_is_left_out() {
             .any(|e| matches!(e, Endpoint::External(name) if name.starts_with("std::") || name.starts_with("core::") || name.starts_with("alloc::")))
     });
     assert!(!mentions_std);
+    assert!(graph.routes.values().all(|r| !matches!(&r.origin, Endpoint::External(name) if name.starts_with("std::") || name.starts_with("core::") || name.starts_with("alloc::"))));
 }
 
 #[test]

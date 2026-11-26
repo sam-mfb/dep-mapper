@@ -14,7 +14,9 @@ use graph_evaluator_manual::runners::{
 };
 use graph_evaluator_manual::store::DirStore;
 use project_graph::{BuildSelection, ProjectGrapher};
-use project_graph_rust::{PINNED_TOOLCHAIN, RustGrapher, ToolchainCargo, build_driver};
+use project_graph_rust::{
+    PINNED_TOOLCHAIN, RustGrapher, RustGrapherSettings, ToolchainCargo, build_driver,
+};
 use project_graph_typescript::{GitRevision, NodeCollector, TraceLimits, TypeScriptGrapher};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -27,9 +29,35 @@ pub enum Language {
         /// Where the grapher builds its rustc driver and compiles the
         /// project, kept between runs.
         cache: PathBuf,
+        /// Outside crates whose routes the graph leaves out.
+        excluded: Vec<String>,
     },
-    TypeScript,
+    TypeScript {
+        /// Outside packages whose routes the graph leaves out.
+        excluded: Vec<String>,
+    },
 }
+
+/// The crates `srs map` leaves out of a Rust graph unless told otherwise:
+/// the toolchain's `std`, `core` and `alloc`, and the third-party crates
+/// that shape the language in this project's principles (rule 7 of
+/// `principles/RUST.md`). Their routes say a crate uses the language, which
+/// every crate does.
+pub const DEFAULT_RUST_EXCLUDED: [&str; 9] = [
+    "std",
+    "core",
+    "alloc",
+    "thiserror",
+    "futures",
+    "serde",
+    "serde_json",
+    "tokio",
+    "tokio-util",
+];
+
+/// The packages `srs map` leaves out of a TypeScript graph unless told
+/// otherwise: none.
+pub const DEFAULT_TYPESCRIPT_EXCLUDED: [&str; 0] = [];
 
 /// Who judges the graph, and what they need.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -129,20 +157,26 @@ pub struct Installed {
 impl Implementations for Installed {
     fn grapher(&self, language: &Language) -> Result<Box<dyn ProjectGrapher>, Unavailable> {
         match language {
-            Language::Rust { cache } => {
+            Language::Rust { cache, excluded } => {
                 // Builds the driver the first time; later runs reuse it.
                 let driver = build_driver(PINNED_TOOLCHAIN, &cache.join("driver"))
                     .map_err(|e| Unavailable(format!("building the Rust grapher's driver: {e}")))?;
-                Ok(Box::new(RustGrapher::new(ToolchainCargo {
-                    toolchain: PINNED_TOOLCHAIN.into(),
-                    driver,
-                    work_dir: cache.join("work"),
-                })))
+                Ok(Box::new(RustGrapher::new(
+                    ToolchainCargo {
+                        toolchain: PINNED_TOOLCHAIN.into(),
+                        driver,
+                        work_dir: cache.join("work"),
+                    },
+                    RustGrapherSettings {
+                        excluded: excluded.clone(),
+                    },
+                )))
             }
-            Language::TypeScript => Ok(Box::new(TypeScriptGrapher::new(
+            Language::TypeScript { excluded } => Ok(Box::new(TypeScriptGrapher::new(
                 Box::new(NodeCollector::bundled("node".into())),
                 Box::new(GitRevision { git: "git".into() }),
                 TraceLimits::STANDARD,
+                excluded.clone(),
             ))),
         }
     }

@@ -22,18 +22,24 @@ pub struct TypeScriptGrapher {
     collector: Box<dyn Collector>,
     revision: Box<dyn SourceRevision>,
     limits: TraceLimits,
+    excluded: Vec<String>,
 }
 
 impl TypeScriptGrapher {
+    /// `excluded` names outside packages, such as `lodash` or `@types/node`,
+    /// whose routes the graph leaves out; the graph records the list and how
+    /// much it removed. Empty keeps every route.
     pub fn new(
         collector: Box<dyn Collector>,
         revision: Box<dyn SourceRevision>,
         limits: TraceLimits,
+        excluded: Vec<String>,
     ) -> Self {
         TypeScriptGrapher {
             collector,
             revision,
             limits,
+            excluded,
         }
     }
 }
@@ -69,7 +75,7 @@ impl ProjectGrapher for TypeScriptGrapher {
             target: selection.target.clone(),
             configuration: selection.configuration.clone(),
         };
-        assemble(&selected, records, self.limits).map_err(|e| failed(&e))
+        assemble(&selected, records, self.limits, &self.excluded).map_err(|e| failed(&e))
     }
 }
 

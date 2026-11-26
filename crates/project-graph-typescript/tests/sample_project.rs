@@ -41,6 +41,7 @@ fn grapher() -> TypeScriptGrapher {
         Box::new(NodeCollector::bundled(PathBuf::from("node"))),
         Box::new(FixedRevision),
         TraceLimits::STANDARD,
+        Vec::new(),
     )
 }
 
@@ -504,6 +505,7 @@ fn a_collector_without_its_dependencies_says_how_to_install_them() {
         Box::new(collector),
         Box::new(FixedRevision),
         TraceLimits::STANDARD,
+        Vec::new(),
     );
     let error = grapher.build_graph(&selection(AS_WRITTEN)).unwrap_err();
     assert!(error.message.contains("run `npm ci`"), "{}", error.message);
@@ -749,6 +751,7 @@ fn source_outside_git_is_named_by_its_contents() {
         Box::new(NodeCollector::bundled(PathBuf::from("node"))),
         Box::new(GitRevision { git: "git".into() }),
         TraceLimits::STANDARD,
+        Vec::new(),
     );
     let build = || {
         let mut selection = selection(AS_WRITTEN);
@@ -779,6 +782,7 @@ fn an_inherited_tsconfig_is_part_of_the_content_revision() {
         Box::new(NodeCollector::bundled(PathBuf::from("node"))),
         Box::new(GitRevision { git: "git".into() }),
         TraceLimits::STANDARD,
+        Vec::new(),
     );
     let build = || {
         let mut selection = selection(AS_WRITTEN);
