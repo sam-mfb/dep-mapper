@@ -10,10 +10,14 @@ struct Session {
 
 impl Session {
     fn new() -> Session {
+        Session::of(&fixture::graph())
+    }
+
+    fn of(graph: &project_graph::ProjectGraph) -> Session {
         let scratch = Scratch::new();
         let store = DirStore::new(&scratch.0);
         let workbook = present(
-            &fixture::graph(),
+            graph,
             &Presentation {
                 page_size: 1,
                 source: &ByteOffsets,
@@ -246,4 +250,57 @@ fn skip_rest_sets_aside_the_uncovered_routes_of_a_piece_and_says_how_many() {
             .lines()
             .any(|l| l.contains("done") && l.contains("routes/app "))
     );
+}
+
+#[test]
+fn show_pages_through_every_site_of_a_route_used_at_many() {
+    use project_graph::{FactId, RouteId};
+    let mut graph = fixture::graph();
+    let write = graph.facts[&FactId("f-write".into())].clone();
+    let sites: Vec<FactId> = (1..=100).map(|n| FactId(format!("f-write-{n}"))).collect();
+    for (n, id) in sites.iter().enumerate() {
+        let mut fact = write.clone();
+        fact.site.as_mut().unwrap().bytes = n * 10..n * 10 + 5;
+        graph.facts.insert(id.clone(), fact);
+    }
+    let route = graph.routes.get_mut(&RouteId("r-write".into())).unwrap();
+    route.use_sites = sites.clone();
+    route.hops[0].facts = sites;
+    let session = Session::of(&graph);
+
+    // The routes piece names the first sites and says where the rest are.
+    let piece = session.run(&["show", "routes/app"]).1;
+    assert!(piece.contains("fact:f-write-3 ("), "{piece}");
+    assert!(!piece.contains("fact:f-write-4 ("), "{piece}");
+    assert!(
+        piece.contains("and 97 more, which `srs eval show route:r-write` lists"),
+        "{piece}"
+    );
+
+    // The route's handle lists every site, a page at a time.
+    let first = session.run(&["show", "route:r-write"]).1;
+    assert!(first.contains("explains the uses at 100 sites:"), "{first}");
+    assert!(first.contains("\n    fact:f-write-4 ("), "{first}");
+    assert!(
+        first.contains("(page 1 of 3; `show route:r-write --page N` shows another)"),
+        "{first}"
+    );
+    let all: String = (1..=3)
+        .map(|page| {
+            session
+                .run(&["show", "route:r-write", "--page", &page.to_string()])
+                .1
+        })
+        .collect();
+    for n in 1..=100 {
+        assert_eq!(
+            all.matches(&format!("fact:f-write-{n} (")).count(),
+            2,
+            "site {n} is listed as a use and as the hop's fact"
+        );
+    }
+    assert!(matches!(
+        session.fail(&["show", "route:r-write", "--page", "4"]),
+        CommandError::Usage(_)
+    ));
 }

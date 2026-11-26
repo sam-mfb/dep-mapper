@@ -68,6 +68,17 @@ pub struct RefInfo {
     pub fact_kinds: BTreeSet<String>,
     /// A full description for `show`.
     pub detail: String,
+    /// A shorter description, for a route whose full one names more facts
+    /// than a piece lists. Pieces show it in place of `detail`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+}
+
+impl RefInfo {
+    /// The description to show among others: the summary when there is one.
+    pub fn brief_detail(&self) -> &str {
+        self.summary.as_deref().unwrap_or(&self.detail)
+    }
 }
 
 /// How to present a graph.
@@ -186,6 +197,7 @@ fn refs(graph: &ProjectGraph, text: &render::Renderer) -> BTreeMap<String, RefIn
                 modules: BTreeSet::from([item.module.0.clone()]),
                 fact_kinds: BTreeSet::new(),
                 detail: text.item_detail(id),
+                summary: None,
             },
         );
     }
@@ -200,6 +212,7 @@ fn refs(graph: &ProjectGraph, text: &render::Renderer) -> BTreeMap<String, RefIn
                 modules: modules.into_iter().map(|m| m.0).collect(),
                 fact_kinds: BTreeSet::from([fact_kind_slug(&fact.kind).to_string()]),
                 detail: text.fact_detail(id),
+                summary: None,
             },
         );
     }
@@ -215,12 +228,15 @@ fn refs(graph: &ProjectGraph, text: &render::Renderer) -> BTreeMap<String, RefIn
             modules.extend(unit_module(graph, &fact.unit));
             fact_kinds.insert(fact_kind_slug(&fact.kind).to_string());
         }
+        let detail = text.route_detail(id, render::Length::Full);
         refs.insert(
             route_handle(id),
             RefInfo {
                 modules: modules.into_iter().map(|m| m.0).collect(),
                 fact_kinds,
-                detail: text.route_detail(id),
+                summary: Some(text.route_detail(id, render::Length::Summary))
+                    .filter(|summary| *summary != detail),
+                detail,
             },
         );
     }
