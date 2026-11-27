@@ -234,7 +234,7 @@ pub(super) fn dependencies() -> Vec<DependencyRow> {
             from: "graph-evaluator-manual",
             to: "graph-evaluation-assembly",
             role: UseRole::DirectUse,
-            detail: "Presents the workbook and checks each recorded answer with the shared pieces.",
+            detail: "Presents the workbook and checks each recorded answer with the shared rules.",
         },
         DependencyRow {
             from: "graph-evaluator-llm",
