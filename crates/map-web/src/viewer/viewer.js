@@ -1167,10 +1167,10 @@
     }
     const c=crates.get(n), routes=graph.routes.filter(r=>statusShown(r.status)&&routeNames(r).includes(n));
     const includes=graph.edges.filter(e=>statusShown(e.status)&&e.from===n), users=graph.edges.filter(e=>statusShown(e.status)&&e.to===n);
-    // A one-hop route is a direct use: it is listed under the arrow it
-    // travels along. Longer routes, and one-hop routes along no arrow
-    // shown here (within the module or out of the project), keep their
-    // own sections.
+    // A one-hop route is listed under the arrow it travels along. Longer
+    // routes keep their own section. Routes of one hop or none along no
+    // arrow shown here (within the module, into it from outside the
+    // project, or on an arrow this view hides) are listed as other uses.
     const byId=new Map(routes.map(r=>[r.id,r]));
     const usesOf=(e)=>(e.routes||[]).map(id=>byId.get(id)).filter(Boolean);
     const alongArrows=new Set([...includes,...users].flatMap(usesOf).map(r=>r.id));
@@ -1185,7 +1185,7 @@
           uses.length?el("span",{class:"muted"},plural(useCount(uses),"use")):null,statusBadge(e),reviewBadge(e.review)),
         el("div",{},e.detail),changeList(e),reviewDetails(e),
         uses.length?el("details",{class:"route-detail arrow-uses",...(holdsRoute(uses)?{open:""}:{})},
-          el("summary",{},`Direct-use routes (${uses.length})`),routeList(uses)):null);
+          el("summary",{},`One-hop routes (${uses.length})`),routeList(uses)):null);
     }));
     const surface=()=>el("ul",{class:"items"},c.surface.map(item=>el("li",{},
       el("div",{class:"item-head"},el("span",{class:"kind"},item.kind),el("code",{},item.name)),
@@ -1199,7 +1199,7 @@
       section("wiring","Routes",longer.length,()=>routeList(longer),"Routes of more than one hop",holdsRoute(longer)),
       section("includes","Depends on",includes.length,()=>neighbors(includes,"to"),null,holdsRoute(includes.flatMap(usesOf))),
       section("included-in","Used by",users.length,()=>neighbors(users,"from"),null,holdsRoute(users.flatMap(usesOf))),
-      section("other-uses","Other uses",otherUses.length,()=>routeList(otherUses),"One-hop routes within the module or out of the project",holdsRoute(otherUses))].filter(Boolean));
+      section("other-uses","Other uses",otherUses.length,()=>routeList(otherUses),"Routes of one hop or none along no arrow shown here",holdsRoute(otherUses))].filter(Boolean));
     panel.scrollTop=0;
     const current=panel.querySelector(".current-route");
     if (current) current.scrollIntoView({block:"nearest"});

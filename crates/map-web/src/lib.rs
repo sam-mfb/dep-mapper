@@ -9,10 +9,10 @@
 //! by role. Selecting a module shows its concern, surface, review, routes and
 //! arrows. Each arrow it depends on or is used by shows how many uses it
 //! summarizes and opens to the one-hop routes behind them. Its routes section
-//! lists only routes of more than one hop; one-hop routes along no arrow,
-//! within the module or out of the project, are listed as other uses. Each
-//! route lists its hops with their evidence, whether each hop is established
-//! or only possible, and where an incomplete trace stopped.
+//! lists only routes of more than one hop; routes of one hop or none along
+//! no arrow shown are listed as other uses. Each route lists its hops with
+//! their evidence, whether each hop is established or only possible, and
+//! where an incomplete trace stopped.
 //! Unreviewed and deferred subjects stay on the map, marked as such.
 
 mod view;
