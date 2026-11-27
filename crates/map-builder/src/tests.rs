@@ -396,6 +396,52 @@ fn the_surface_lists_only_exported_items() {
 }
 
 #[test]
+fn the_surface_leaves_out_methods_and_submodules_which_the_graph_keeps() {
+    let mut graph = graph();
+    for (key, name, kind) in [
+        (
+            "store::FileSaver::save",
+            "FileSaver::save",
+            ItemKind::Method,
+        ),
+        (
+            "store::<FileSaver as Clone>::clone",
+            "<FileSaver as Clone>::clone",
+            ItemKind::Method,
+        ),
+        ("store::files", "files", ItemKind::Module),
+        ("store::LIMIT", "LIMIT", ItemKind::Value),
+        ("store::open", "open", ItemKind::Function),
+    ] {
+        graph.items.insert(
+            ItemId(key.into()),
+            Item {
+                module: module_id("store"),
+                name: name.into(),
+                kind,
+                visibility: Visibility::Exported,
+                signature: None,
+                declaration: None,
+            },
+        );
+    }
+    let built = build_map(&graph, &evaluation()).unwrap();
+    let surface: Vec<_> = built.map.modules[&map_module("store")]
+        .surface
+        .iter()
+        .map(|item| (item.name.as_str(), item.kind.clone()))
+        .collect();
+    assert_eq!(
+        surface,
+        [
+            ("FileSaver", project_map::ItemKind::Type),
+            ("LIMIT", project_map::ItemKind::Value),
+            ("open", project_map::ItemKind::Function),
+        ]
+    );
+}
+
+#[test]
 fn a_judgment_citing_nothing_in_the_graph_rests_on_its_module() {
     let mut evaluation = evaluation();
     evaluation.modules.insert(

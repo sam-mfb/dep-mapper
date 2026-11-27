@@ -1,5 +1,5 @@
-//! The map's modules: each graph module with its exported surface and the
-//! evaluation's judgment of it.
+//! The map's modules: each graph module with the surface it offers other
+//! modules and the evaluation's judgment of it.
 
 use crate::BuildProblem;
 use crate::citations::{Citations, location};
@@ -101,23 +101,28 @@ fn description(
     }
 }
 
-/// The module's exported items, in the graph's item order.
+/// The module's consumer-facing declarations, in the graph's item order:
+/// its exported types (traits and interfaces among them), values and
+/// functions. Methods, trait implementations and submodules are left out;
+/// the graph keeps them, and routes still cite them.
 fn surface(graph: &ProjectGraph, module: &ModuleId) -> Vec<SurfaceItem> {
     graph
         .items
         .values()
         .filter(|item| &item.module == module && item.visibility == Visibility::Exported)
-        .map(|item| SurfaceItem {
-            name: item.name.clone(),
-            kind: match item.kind {
+        .filter_map(|item| {
+            let kind = match item.kind {
                 ItemKind::Type => project_map::ItemKind::Type,
                 ItemKind::Value => project_map::ItemKind::Value,
                 ItemKind::Function => project_map::ItemKind::Function,
-                ItemKind::Method => project_map::ItemKind::Method,
-                ItemKind::Module => project_map::ItemKind::Module,
-            },
-            signature: item.signature.clone(),
-            declaration: item.declaration.as_ref().map(location),
+                ItemKind::Method | ItemKind::Module => return None,
+            };
+            Some(SurfaceItem {
+                name: item.name.clone(),
+                kind,
+                signature: item.signature.clone(),
+                declaration: item.declaration.as_ref().map(location),
+            })
         })
         .collect()
 }
