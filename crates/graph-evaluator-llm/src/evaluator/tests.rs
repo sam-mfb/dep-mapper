@@ -515,7 +515,7 @@ fn a_module_piece_with_several_pages_is_asked_whole() {
 #[test]
 fn the_model_is_told_which_routes_were_left_out_of_the_graph() {
     let mut graph = testing::graph();
-    route_exclusion::exclude(&mut graph, &["std".to_string()], |name| {
+    route_cleanup::exclude(&mut graph, &["std".to_string()], |name| {
         name.starts_with("std::")
     });
     let model = FakeModel::new(sensible);

@@ -25,7 +25,7 @@ pub struct Removed {
 }
 
 /// Leaves out of `graph` the routes that start in `packages`, and the facts
-/// only they cite, as the crate documentation describes. `in_packages`
+/// only they cite, as the module documentation describes. `in_packages`
 /// says whether the outside endpoint with the given name lies in one of
 /// `packages`.
 pub fn exclude(

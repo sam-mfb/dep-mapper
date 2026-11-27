@@ -1,6 +1,6 @@
 [package]
-name = "route-exclusion"
-description = "Leaves out of a ProjectGraph the routes that start in named outside packages, and records what it left out"
+name = "route-cleanup"
+description = "Cleans up a ProjectGraph's routes: merges routes that follow the same path and leaves out routes that start in named outside packages"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

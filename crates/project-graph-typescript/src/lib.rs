@@ -5,7 +5,7 @@
 //! collector in `collector/` (TypeScript 6, pinned by its lockfile) in a Node
 //! child process; it prints items, facts and receiver links as JSON Lines.
 //! This crate assembles those records into the graph and traces its value
-//! routes with the shared `value-routes` tracer.
+//! routes with the shared `route-grapher` tracer.
 //!
 //! `TypeScriptGrapher` takes its collector, revision source and trace limits
 //! at construction. Mapper builds it with `NodeCollector::bundled` and
