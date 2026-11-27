@@ -3,9 +3,9 @@
 //! JSON strings here.
 
 use project_map::{
-    CitationId, EvidenceKind, HopSupport, ItemKind, Location, MapEvidence, MapRouteEnd,
-    ModuleDescription, ModuleId, ModuleKind, OutsidePoint, ProjectMap, ProjectPoint, Review,
-    RouteDescription, RouteId, RoutePoint, Status, UseRole,
+    CitationId, DependencyId, EvidenceKind, HopSupport, ItemKind, Location, MapEvidence,
+    MapRouteEnd, ModuleDescription, ModuleId, ModuleKind, OutsidePoint, ProjectMap, ProjectPoint,
+    Review, RouteDescription, RouteId, RoutePoint, Status, UseRole,
 };
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -120,6 +120,10 @@ pub struct Edge {
     pub other_roles: Vec<String>,
     pub detail: String,
     pub evidence: Vec<String>,
+    /// The one-hop routes whose hop travels along this arrow: the direct
+    /// uses it summarizes. The panel lists them under the arrow rather than
+    /// among the routes.
+    pub routes: Vec<String>,
     pub review: ReviewView,
     pub update: Option<ConnectionUpdate>,
 }
@@ -212,6 +216,15 @@ pub fn view(map: &ProjectMap) -> View {
     if crates.iter().any(|c| c.layer == UNASSIGNED_LAYER) {
         layers.push(UNASSIGNED_LAYER.into());
     }
+    let mut direct: BTreeMap<&DependencyId, Vec<String>> = BTreeMap::new();
+    for (id, route) in &map.routes {
+        if route.hops.len() == 1
+            && let Some(dependency) = route.hop_dependency(0)
+            && let Some((key, _)) = map.dependencies.get_key_value(&dependency)
+        {
+            direct.entry(key).or_default().push(id.0.clone());
+        }
+    }
     let edges: Vec<Edge> = map
         .dependencies
         .iter()
@@ -224,6 +237,7 @@ pub fn view(map: &ProjectMap) -> View {
             other_roles: other_roles(&dependency.description),
             detail: review_reason(&dependency.description),
             evidence: dependency.evidence.iter().map(citation).collect(),
+            routes: direct.remove(id).unwrap_or_default(),
             review: review_view(&dependency.description),
             update: match &dependency.status {
                 Status::ProposedUpdate { proposed } => {
