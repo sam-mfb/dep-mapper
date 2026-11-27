@@ -190,6 +190,12 @@ fn modules(modules: &BTreeMap<ModuleId, MapModule>) -> BTreeMap<String, Spanned<
                         kind: item_kind(&item.kind),
                         signature: item.signature.clone(),
                         declaration: item.declaration.as_ref().map(location),
+                        used_by: Some(unplaced(
+                            item.used_by
+                                .iter()
+                                .map(|user| unplaced(user.0.clone()))
+                                .collect(),
+                        )),
                     })
                     .collect(),
                 review: module_review(&module.description),

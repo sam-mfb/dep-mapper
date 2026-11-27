@@ -76,6 +76,7 @@ fn draft(base: DraftBase, update: Updates, remove: Removals) -> Draft {
                     kind: ItemKind::Type,
                     signature: None,
                     declaration: None,
+                    used_by: vec![ModuleId("map-preview".into()), ModuleId("map-web".into())],
                 }],
                 description: Review::Judged {
                     judgment: ModuleDescription {
@@ -265,9 +266,9 @@ review = { state = "unreviewed" }
 
 #[test]
 fn an_unknown_version_is_refused_at_its_line() {
-    let error = refused("kind = \"map\"\nformat = 3\n");
+    let error = refused("kind = \"map\"\nformat = 4\n");
     assert_eq!(error.position, position(2, 10));
-    assert!(error.message.contains("version 3"), "{}", error.message);
+    assert!(error.message.contains("version 4"), "{}", error.message);
 }
 
 #[test]
@@ -410,7 +411,7 @@ fn format_1_still_loads_each_citation_as_a_list_of_one() {
     assert_eq!(route.use_sites, [CitationId("s".into())]);
     assert_eq!(route.hops[0].evidence, [CitationId("n".into())]);
     let saved = save(&MapDocument::Draft(draft.clone()));
-    assert!(saved.starts_with("format = 2"), "{saved}");
+    assert!(saved.starts_with("format = 3"), "{saved}");
     assert!(saved.contains("use_sites = [\"s\"]"), "{saved}");
     assert!(saved.contains("evidence = [\"n\"]"), "{saved}");
     assert_eq!(load(&saved).unwrap(), MapDocument::Draft(draft));
@@ -538,7 +539,7 @@ fn the_examples_in_the_format_document_load_as_one_draft() {
         .collect();
     assert_eq!(blocks.len(), 5);
     let text = format!(
-        "format = 2\nkind = \"draft\"\nbase = \"m.toml\"\n\n{}",
+        "format = 3\nkind = \"draft\"\nbase = \"m.toml\"\n\n{}",
         blocks.join("\n")
     );
     let Ok(MapDocument::Draft(draft)) = load(&text) else {
@@ -687,4 +688,60 @@ fn a_role_the_reviewer_named_reads_back_exactly() {
         &draft.routes[&RouteId("r".into())].description,
         Review::Judged { judgment, .. } if judgment.role == UseRole::Other("logs".into())
     ));
+}
+
+/// A draft with one surface item, in format `format`, with `extra` lines
+/// added to the item.
+fn surface_draft(format: u32, extra: &str) -> String {
+    format!(
+        "format = {format}\nkind = \"draft\"\nproject = \"p\"\n\n[modules.cache]\nname = \"cache\"\nreview = {{ state = \"unreviewed\" }}\n\n[[modules.cache.surface]]\nname = \"Cache\"\nkind = \"type\"\n{extra}"
+    )
+}
+
+fn used_by(text: &str) -> Vec<ModuleId> {
+    let Ok(MapDocument::Draft(draft)) = load(text) else {
+        panic!("not a draft")
+    };
+    draft.modules[&ModuleId("cache".into())].surface[0]
+        .used_by
+        .clone()
+}
+
+#[test]
+fn surface_items_of_older_formats_and_without_used_by_load_with_no_users() {
+    for format in [1, 2, 3] {
+        assert_eq!(used_by(&surface_draft(format, "")), []);
+    }
+}
+
+#[test]
+fn used_by_loads_sorted_and_is_always_saved() {
+    let text = surface_draft(3, "used_by = [\"map-web\", \"map-draft\"]\n");
+    assert_eq!(
+        used_by(&text),
+        [ModuleId("map-draft".into()), ModuleId("map-web".into())]
+    );
+    let saved = save(&load(&text).unwrap());
+    assert!(
+        saved.contains("used_by = [\"map-draft\", \"map-web\"]"),
+        "{saved}"
+    );
+    let saved = save(&load(&surface_draft(2, "")).unwrap());
+    assert!(saved.contains("used_by = []"), "{saved}");
+}
+
+#[test]
+fn used_by_is_refused_before_format_3_and_when_a_module_repeats() {
+    let error = refused(&surface_draft(2, "used_by = [\"map-web\"]\n"));
+    assert_eq!(
+        error.message,
+        "`used_by` is written in format 3 and later, not format 2"
+    );
+    assert_eq!(error.position, position(12, 11));
+    let error = refused(&surface_draft(3, "used_by = [\"map-web\", \"map-web\"]\n"));
+    assert_eq!(
+        error.message,
+        "module \"map-web\" is listed twice in `used_by`"
+    );
+    assert_eq!(error.position, position(12, 23));
 }

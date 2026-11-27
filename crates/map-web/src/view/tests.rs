@@ -159,6 +159,39 @@ fn the_example_keeps_every_module_dependency_and_route() {
     assert_eq!(programs, ["mapper"]);
 }
 
+#[test]
+fn surface_items_carry_the_modules_that_use_them() {
+    let mut map = mixed_map();
+    let core = map.modules.get_mut(&ModuleId("core".into())).unwrap();
+    core.surface = ["Used", "Unused"]
+        .into_iter()
+        .map(|name| project_map::SurfaceItem {
+            name: name.into(),
+            kind: ItemKind::Type,
+            signature: None,
+            declaration: None,
+            used_by: if name == "Used" {
+                vec![ModuleId("new".into()), ModuleId("stray".into())]
+            } else {
+                vec![]
+            },
+        })
+        .collect();
+    let view = view(&map);
+    let users: Vec<(&str, &[String])> = crate_named(&view, "core")
+        .surface
+        .iter()
+        .map(|item| (item.name.as_str(), item.used_by.as_slice()))
+        .collect();
+    assert_eq!(
+        users,
+        [
+            ("Used", &["new".to_string(), "stray".to_string()][..]),
+            ("Unused", &[][..]),
+        ]
+    );
+}
+
 /// A route that carries `Thing` from `a` through the listed modules.
 fn route_through(modules: &[&str], description: Review<RouteDescription>) -> MapRoute {
     let fact = CitationId("fact".into());

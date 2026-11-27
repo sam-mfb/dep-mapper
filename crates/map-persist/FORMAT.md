@@ -1,4 +1,4 @@
-# Map and draft files, format 2
+# Map and draft files, format 3
 
 A file is TOML. It holds either a saved **map** or a **draft**. A map is a complete project map, such as one written after analysis. A draft holds proposed changes: new parts, new reviews for base parts, and base parts to remove. It is laid over a saved base map, or it stands alone as a map made only of proposals.
 
@@ -10,7 +10,7 @@ Every file starts with these two fields:
 
 | Field | Value |
 | --- | --- |
-| `format` | `2`. Loading also reads format 1, described under [Format 1](#format-1), and refuses any other version. Saving always writes format 2. |
+| `format` | `3`. Loading also reads formats 1 and 2, described under [Older formats](#older-formats), and refuses any other version. Saving always writes format 3. |
 | `kind` | `"map"` or `"draft"`. |
 
 ## Maps
@@ -95,10 +95,12 @@ primary = "note:cache"
 [[modules.cache.surface]]
 name = "Cache"
 kind = "type"
+used_by = ["map-preview", "map-web"]
 ```
 
 - `name` and `review` are required. `surface` may be left out to mean none.
 - A surface item needs `name` and `kind`, which is `type`, `value`, `function`, `method` or `module`. `signature` and `declaration` may be left out. A `declaration` is a location.
+- A surface item's `used_by` lists the IDs of the other modules that use it, each once. It may be left out to mean none, as a draft's items usually do. Loading sorts it. `map-builder` fills it from the graph's use facts, the same facts that draw dependency arrows.
 
 ### Dependency
 
@@ -170,7 +172,15 @@ summary = "Previews are slow to load."
 
 Saving writes every `status`, even in a draft, and writes empty lists where the value is empty. Loading the saved text gives back the same map or draft.
 
-## Format 1
+## Older formats
+
+Each version is checked against its own form. A file that uses a field or form from another version is refused.
+
+### Format 2
+
+Format 2 is format 3 without `used_by` on surface items. Format 3 added the field, and older srs builds refuse fields they do not know, so the version changed. Loading reads a format 2 file's surface items with no users. Such a map does not record its users, so the page says every item is unused by other modules until the map is built again. A format 2 file with `used_by` is refused.
+
+### Format 1
 
 Format 1 is format 2 with one citation where format 2 has a list. Loading reads it into the same map or draft, each citation becoming a list of one.
 
@@ -178,4 +188,4 @@ Format 1 is format 2 with one citation where format 2 has a list. Loading reads 
 - A hop's `evidence` is one citation ID.
 - A stopped end's `at` is one citation ID.
 
-Each version is checked against its own form: a format 1 file with a list, or a format 2 file with a single ID or `use_site`, is refused.
+A format 1 file with a list, or a later file with a single ID or `use_site`, is refused.

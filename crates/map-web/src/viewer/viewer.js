@@ -1187,13 +1187,19 @@
         uses.length?el("details",{class:"route-detail arrow-uses",...(holdsRoute(uses)?{open:""}:{})},
           el("summary",{},`One-hop routes (${uses.length})`),routeList(uses)):null);
     }));
+    // Each item names the other modules that use it, by the use facts
+    // that draw the arrows.
     const surface=()=>el("ul",{class:"items"},c.surface.map(item=>el("li",{},
       el("div",{class:"item-head"},el("span",{class:"kind"},item.kind),el("code",{},item.name)),
       item.signature?el("div",{class:"item-doc"},el("code",{},item.signature)):null,
-      item.location?el("div",{class:"item-doc mono"},locationText(item.location)):null)));
+      item.location?el("div",{class:"item-doc mono"},locationText(item.location)):null,
+      el("div",{class:"item-doc muted used-by"},item.used_by.length
+        ?["Used by: ",item.used_by.map((n,i)=>[i?", ":"",moduleLink(n)])]
+        :"Not used by other modules."))));
+    const surfaceUsed=c.surface.filter(item=>item.used_by.length).length;
     panel.replaceChildren(...[el("h2",{},c.name),highlighted,
       el("div",{class:"badges"},el("span",{class:"badge kind-badge kind-"+kindSlug(c.kind)},"kind: "+c.kind),el("span",{class:"badge"},layerTitle(c.layer)),statusBadge(c),reviewBadge(c.review)),
-      c.concern?el("p",{},c.concern):null, section("surface","Surface",c.surface.length,surface),
+      c.concern?el("p",{},c.concern):null, section("surface","Surface",c.surface.length,surface,null,false,`${surfaceUsed} used by other modules`),
       section("review",c.status==="addition"?"Proposed review":"Review",1,()=>reviewBody(codeReview(c))),
       c.status==="update"?section("update","Proposed update",1,()=>updateBody(c),null,true):null,
       section("wiring","Routes",longer.length,()=>routeList(longer),"Routes of more than one hop",holdsRoute(longer)),
@@ -1206,8 +1212,9 @@
   }
 
   // A panel section the viewer opens and closes, with a count beside its
-  // heading. An empty section is not shown. It starts open when it is
-  // short (SECTION_OPEN_MAX entries or fewer) and closed when long; each
+  // heading and an optional `note` after the count. An empty section is not
+  // shown. It starts open when it is short (SECTION_OPEN_MAX entries or
+  // fewer) and closed when long; each
   // viewer's choice is kept per section, in this browser only, and the
   // page works the same without it. `body` is built only when shown.
   const SECTION_OPEN_MAX = 5;
@@ -1218,12 +1225,12 @@
   function keepSectionChoice(id, open) {
     try { localStorage.setItem(SECTION_KEY + id, open ? "open" : "closed"); } catch (_) { /* no storage: not kept */ }
   }
-  function section(id, title, count, body, about, forceOpen) {
+  function section(id, title, count, body, about, forceOpen, note) {
     if (!count) return null;
     const choice = sectionChoice(id);
     const open = forceOpen || (choice ? choice === "open" : count <= SECTION_OPEN_MAX);
     const details = el("details", { class: "section", "data-section": id, ...(open ? { open: "" } : {}) },
-      el("summary", {}, el("h3", about ? { title: about } : {}, title, " ", el("span", { class: "count" }, `(${count})`))));
+      el("summary", {}, el("h3", about ? { title: about } : {}, title, " ", el("span", { class: "count" }, note ? `(${count}; ${note})` : `(${count})`))));
     if (open) details.append(body());
     // A section drawn open fires `toggle` too, so only a toggle that
     // follows the viewer's click on the heading is kept as their choice.

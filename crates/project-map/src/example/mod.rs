@@ -113,6 +113,7 @@ pub fn sharsheret() -> ProjectMap {
                 kind,
                 signature: signature.map(Into::into),
                 declaration: None,
+                used_by: vec![],
             })
             .collect();
         let description = ModuleDescription {
