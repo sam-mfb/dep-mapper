@@ -93,6 +93,9 @@ pub struct SurfaceItem {
     pub kind: ItemKind,
     pub signature: Option<String>,
     pub declaration: Option<Location>,
+    /// The other project modules that use the item, sorted, each listed
+    /// once. Empty when no other module uses it.
+    pub used_by: Vec<ModuleId>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

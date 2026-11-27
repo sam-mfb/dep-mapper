@@ -16,7 +16,7 @@ pub fn document(text: &str) -> Result<MapDocument> {
     let header: Header = Decoder { text, version: 0 }.parse()?;
     let version = *header.format.get_ref();
     let decoder = Decoder { text, version };
-    if version != VERSION && version != FIRST_VERSION {
+    if !(FIRST_VERSION..=VERSION).contains(&version) {
         return Err(decoder.error(
             header.format.span(),
             format!(
@@ -241,6 +241,7 @@ impl Decoder<'_> {
                                 .as_ref()
                                 .map(|location| self.location(location))
                                 .transpose()?,
+                            used_by: self.used_by(key, item)?,
                         })
                     })
                     .collect::<Result<_>>()?;
@@ -336,18 +337,18 @@ impl Decoder<'_> {
     }
 
     /// A route's use sites: `use_site`, a citation ID, in format 1, and
-    /// `use_sites`, a list, in format 2.
+    /// `use_sites`, a list, in format 2 and later.
     fn use_sites(&self, doc: &RouteDoc) -> Result<Vec<CitationId>> {
         match (self.version, &doc.use_site, &doc.use_sites) {
             (FIRST_VERSION, Some(site), None) => Ok(vec![CitationId(site.get_ref().clone())]),
             (FIRST_VERSION, None, None) => Ok(Vec::new()),
             (FIRST_VERSION, _, Some(sites)) => Err(self.error(
                 sites.span(),
-                format!("`use_sites` is written in format {VERSION}; format {FIRST_VERSION} has `use_site`"),
+                format!("`use_sites` is written in format 2 and later; format {FIRST_VERSION} has `use_site`"),
             )),
             (_, Some(site), _) => Err(self.error(
                 site.span(),
-                format!("`use_site` is written in format {FIRST_VERSION}; format {VERSION} has `use_sites`, a list"),
+                format!("`use_site` is written in format {FIRST_VERSION}; format {} has `use_sites`, a list", self.version),
             )),
             (_, None, sites) => Ok(sites
                 .iter()
@@ -358,8 +359,46 @@ impl Decoder<'_> {
         }
     }
 
-    /// Citations that format 1 writes as one ID and format 2 as a list of at
-    /// least one. `what` names them in an error.
+    /// A surface item's users, sorted. `used_by` is written in format 3 and
+    /// later; left out, it means no other module uses the item. A module
+    /// may be listed only once, and `owner`, the item's own module, not at
+    /// all. Whether the others are on the map is checked with the rest of
+    /// the map's parts.
+    fn used_by(&self, owner: &str, item: &SurfaceDoc) -> Result<Vec<ModuleId>> {
+        let Some(users) = &item.used_by else {
+            return Ok(Vec::new());
+        };
+        if self.version < USED_BY_VERSION {
+            return Err(self.error(
+                users.span(),
+                format!(
+                    "`used_by` is written in format {USED_BY_VERSION} and later, not format {}",
+                    self.version
+                ),
+            ));
+        }
+        let mut seen = BTreeSet::new();
+        for user in users.get_ref() {
+            if user.get_ref() == owner {
+                return Err(self.error(
+                    user.span(),
+                    format!(
+                        "`used_by` lists only other modules, not the item's own module {owner:?}"
+                    ),
+                ));
+            }
+            if !seen.insert(user.get_ref().clone()) {
+                return Err(self.error(
+                    user.span(),
+                    format!("module {:?} is listed twice in `used_by`", user.get_ref()),
+                ));
+            }
+        }
+        Ok(seen.into_iter().map(ModuleId).collect())
+    }
+
+    /// Citations that format 1 writes as one ID and later formats as a list
+    /// of at least one. `what` names them in an error.
     fn citations(
         &self,
         citations: &Citations,
@@ -377,7 +416,10 @@ impl Decoder<'_> {
             }
             (_, Citations::List(_) | Citations::One(_)) => Err(self.error(
                 span,
-                format!("in format {VERSION}, {what} is a list of at least one citation ID"),
+                format!(
+                    "in format {}, {what} is a list of at least one citation ID",
+                    self.version
+                ),
             )),
         }
     }

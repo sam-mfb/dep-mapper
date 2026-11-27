@@ -353,6 +353,27 @@ fn the_combined_map_is_checked_as_a_whole() {
 }
 
 #[test]
+fn a_draft_surface_item_may_be_used_by_base_modules_but_not_missing_ones() {
+    let mut draft = draft();
+    let mut module = cache();
+    module.surface = vec![SurfaceItem {
+        name: "MapCache".into(),
+        kind: ItemKind::Type,
+        signature: None,
+        declaration: None,
+        used_by: vec![module_id("ghost"), module_id("mapper")],
+    }];
+    draft.modules.insert(module_id("map-cache"), module);
+    assert_eq!(
+        combined(&draft).problems,
+        [DraftProblem::Map(MapProblem::MissingModule {
+            part: MapPart::Module(module_id("map-cache")),
+            module: module_id("ghost"),
+        })]
+    );
+}
+
+#[test]
 fn a_draft_standing_alone_is_a_map_of_its_proposals() {
     let mut draft = draft();
     draft.base = DraftBase::None {

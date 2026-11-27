@@ -8,12 +8,16 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use toml::Spanned;
 
-/// The version this program writes.
-pub const VERSION: u32 = 2;
+/// The version this program writes. Format 3 adds `used_by` to surface
+/// items. This program still reads formats 1 and 2.
+pub const VERSION: u32 = 3;
 
 /// Format 1 cites one fact for a route's use site, a hop and a stopped end.
-/// Format 2 cites a list for each. This program still reads format 1.
+/// Format 2 cites a list for each.
 pub const FIRST_VERSION: u32 = 1;
+
+/// The first version whose surface items may have `used_by`.
+pub const USED_BY_VERSION: u32 = 3;
 
 /// Read first, to choose how to read the rest.
 #[derive(Deserialize)]
@@ -109,6 +113,9 @@ pub struct SurfaceDoc {
     pub signature: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub declaration: Option<Spanned<LocationDoc>>,
+    /// The other modules that use the item. Format 3 and later.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub used_by: Option<Spanned<Vec<Spanned<String>>>>,
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
@@ -242,7 +249,7 @@ pub struct HopDoc {
     pub role: Option<Spanned<String>>,
 }
 
-/// Citation IDs: one in format 1, a list in format 2. Decoding checks the
+/// Citation IDs: one in format 1, a list in format 2 and later. Decoding checks the
 /// form against the file's version.
 #[derive(Deserialize, Serialize)]
 #[serde(untagged)]

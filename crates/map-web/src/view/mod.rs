@@ -106,6 +106,8 @@ pub struct SurfaceItem {
     pub kind: &'static str,
     pub signature: Option<String>,
     pub location: Option<LocationView>,
+    /// The other modules that use the item, sorted. Empty when none does.
+    pub used_by: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -339,6 +341,7 @@ fn crate_view(map: &ProjectMap, key: &ModuleId, module: &project_map::MapModule)
                 kind: item_kind_slug(&item.kind),
                 signature: item.signature.clone(),
                 location: item.declaration.as_ref().map(location_view),
+                used_by: item.used_by.iter().map(|user| user.0.clone()).collect(),
             })
             .collect(),
         review: review_view(&module.description),

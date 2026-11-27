@@ -128,7 +128,7 @@ impl Dependencies {
 
 /// Whether the fact records its subject using its object, rather than a
 /// value moving from one to the other.
-fn subject_uses_object(kind: &FactKind) -> bool {
+pub(crate) fn subject_uses_object(kind: &FactKind) -> bool {
     match kind {
         FactKind::DeclaredDependency
         | FactKind::Import { .. }

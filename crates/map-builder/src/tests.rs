@@ -448,6 +448,71 @@ fn the_surface_leaves_out_methods_and_submodules_which_the_graph_keeps() {
 }
 
 #[test]
+fn surface_items_list_the_other_modules_whose_use_facts_name_them() {
+    let mut graph = graph();
+    let site = |at: usize| {
+        Some(SourceSpan {
+            file: "crates/port/src/lib.rs".into(),
+            bytes: at..at + 5,
+        })
+    };
+    let unit = UnitId("app/bin".into());
+    for (key, subject, kind, object) in [
+        // Read first, from a module that sorts after `app`.
+        (
+            "a-port-mentions-saver",
+            item("port::Saver"),
+            FactKind::TypeReference,
+            item("store::FileSaver"),
+        ),
+        // A second use from `app` lists it once.
+        (
+            "app-mentions-saver",
+            item("app::main"),
+            FactKind::TypeReference,
+            item("store::FileSaver"),
+        ),
+        // A use from within `store` names no other module.
+        (
+            "helper-calls-saver",
+            item("store::helper"),
+            FactKind::Call(Dispatch::Direct),
+            item("store::FileSaver"),
+        ),
+    ] {
+        graph.facts.insert(
+            FactId(key.into()),
+            Fact {
+                unit: unit.clone(),
+                subject,
+                kind,
+                object,
+                site: site(60),
+            },
+        );
+    }
+    let map = build_map(&graph, &evaluation()).unwrap().map;
+    let used_by = |module: &str, name: &str| {
+        map.modules[&map_module(module)]
+            .surface
+            .iter()
+            .find(|item| item.name == name)
+            .unwrap()
+            .used_by
+            .clone()
+    };
+    assert_eq!(
+        used_by("store", "FileSaver"),
+        [map_module("app"), map_module("port")]
+    );
+    // `store` implements it. The value `app` passes into it is a move, not
+    // a use, and the route hop carrying it adds nothing.
+    assert_eq!(used_by("port", "Saver"), [map_module("store")]);
+    // Only `app`'s own items use `main`.
+    assert_eq!(used_by("app", "main"), []);
+}
+
+#[test]
 fn a_judgment_citing_nothing_in_the_graph_rests_on_its_module() {
     let mut evaluation = evaluation();
     evaluation.modules.insert(

@@ -30,6 +30,12 @@
 //! receiver uses the sender; after any other move, the sender uses the
 //! receiver. When both directions exist, the receiver using the sender wins.
 //!
+//! A module's surface lists its exported types, values and functions. Each
+//! item names the other project modules that use it: the modules of the
+//! subjects of use facts whose object is the item or a place in it. Route
+//! hops add nothing, matching the arrows, and a use from within the item's
+//! own module does not count.
+//!
 //! All map citations name graph things: `fact:<id>` for each fact, and
 //! `route:<id>`, `item:<id>` and `module:<id>` entries for routes, items and
 //! modules that judgments cite. A module judgment that cites nothing in the
