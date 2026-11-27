@@ -4,8 +4,8 @@
 //! the model reads the code itself, not only a description of it.
 
 use crate::source::SourceText;
-use graph_evaluator_pieces::handles::Handle;
-use graph_evaluator_pieces::workbook::{Piece, PieceSubject, Workbook};
+use graph_evaluation_assembly::handles::Handle;
+use graph_evaluation_assembly::workbook::{Piece, PieceSubject, Workbook};
 use project_graph::{ProjectGraph, SourceSpan};
 use std::collections::BTreeSet;
 use std::fmt::Write;

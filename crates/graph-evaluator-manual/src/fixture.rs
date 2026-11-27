@@ -1,6 +1,6 @@
 //! Test helpers: the shared fixture graph and scratch directories.
 
-pub use graph_evaluator_pieces::testing::graph;
+pub use graph_evaluation_assembly::testing::graph;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// A fresh directory under the system's temporary directory, removed on drop.

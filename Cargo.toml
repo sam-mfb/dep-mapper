@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/project-graph", "crates/graph-evaluator", "crates/graph-evaluator-manual", "crates/project-map", "crates/map-web", "crates/map-persist", "crates/project-graph-typescript", "crates/map-preview", "crates/project-graph-rust", "crates/project-graph-rust/records", "crates/map-builder", "crates/mapper", "crates/graph-evaluator-llm", "crates/map-draft", "crates/graph-evaluator-pieces", "crates/route-grapher", "crates/route-cleanup"]
+members = ["crates/project-graph", "crates/graph-evaluator", "crates/graph-evaluator-manual", "crates/project-map", "crates/map-web", "crates/map-persist", "crates/project-graph-typescript", "crates/map-preview", "crates/project-graph-rust", "crates/project-graph-rust/records", "crates/map-builder", "crates/mapper", "crates/graph-evaluator-llm", "crates/map-draft", "crates/graph-evaluation-assembly", "crates/route-grapher", "crates/route-cleanup"]
 exclude = ["crates/project-graph-rust/driver", "crates/project-graph-rust/tests/fixture"]
 resolver = "3"
 
@@ -16,7 +16,7 @@ map-draft = { path = "crates/map-draft" }
 map-preview = { path = "crates/map-preview" }
 map-persist = { path = "crates/map-persist" }
 map-web = { path = "crates/map-web" }
-graph-evaluator-pieces = { path = "crates/graph-evaluator-pieces" }
+graph-evaluation-assembly = { path = "crates/graph-evaluation-assembly" }
 project-graph = { path = "crates/project-graph" }
 project-map = { path = "crates/project-map" }
 route-cleanup = { path = "crates/route-cleanup" }

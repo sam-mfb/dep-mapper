@@ -1,8 +1,8 @@
 use super::*;
 use crate::model::{AssistantTurn, ModelError};
 use crate::source::{Excerpt, SourceError, locate};
+use graph_evaluation_assembly::testing;
 use graph_evaluator::{ClusterName, Decision, ModuleKind, RelationshipKind};
-use graph_evaluator_pieces::testing;
 use project_graph::{ModuleId, RouteId, SourceSpan};
 use serde_json::json;
 use std::cell::RefCell;

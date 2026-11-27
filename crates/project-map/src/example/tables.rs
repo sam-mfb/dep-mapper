@@ -129,7 +129,7 @@ pub(super) fn modules() -> Vec<ModuleRow> {
             surface: vec![("LlmEvaluator", ItemKind::Type, None)],
         },
         ModuleRow {
-            key: "graph-evaluator-pieces",
+            key: "graph-evaluation-assembly",
             layer: "Evaluation",
             kind: ModuleKind::Logic,
             concern: "Presents a project graph as pieces with citable handles, and checks answers and assembles them into a GraphEvaluation.",
@@ -225,20 +225,20 @@ pub(super) fn dependencies() -> Vec<DependencyRow> {
             detail: "Constructs this reviewer when the LLM workflow is selected.",
         },
         DependencyRow {
-            from: "graph-evaluator-pieces",
+            from: "graph-evaluation-assembly",
             to: "graph-evaluator",
             role: UseRole::DirectUse,
             detail: "Builds the GraphEvaluation from checked answers.",
         },
         DependencyRow {
             from: "graph-evaluator-manual",
-            to: "graph-evaluator-pieces",
+            to: "graph-evaluation-assembly",
             role: UseRole::DirectUse,
             detail: "Presents the workbook and checks each recorded answer with the shared pieces.",
         },
         DependencyRow {
             from: "graph-evaluator-llm",
-            to: "graph-evaluator-pieces",
+            to: "graph-evaluation-assembly",
             role: UseRole::DirectUse,
             detail: "Asks the model about one piece at a time and checks its answers with the shared rules.",
         },

@@ -9,7 +9,7 @@ publish = false
 
 [dependencies]
 graph-evaluator.workspace = true
-graph-evaluator-pieces.workspace = true
+graph-evaluation-assembly.workspace = true
 project-graph.workspace = true
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
@@ -17,5 +17,5 @@ thiserror.workspace = true
 ureq = "3.5.2"
 
 [dev-dependencies]
-graph-evaluator-pieces = { workspace = true, features = ["testing"] }
+graph-evaluation-assembly = { workspace = true, features = ["testing"] }
 route-cleanup.workspace = true

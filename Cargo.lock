@@ -220,6 +220,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "graph-evaluation-assembly"
+version = "0.1.0"
+dependencies = [
+ "graph-evaluator",
+ "project-graph",
+ "route-cleanup",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "graph-evaluator"
 version = "0.1.0"
 dependencies = [
@@ -231,8 +243,8 @@ dependencies = [
 name = "graph-evaluator-llm"
 version = "0.1.0"
 dependencies = [
+ "graph-evaluation-assembly",
  "graph-evaluator",
- "graph-evaluator-pieces",
  "project-graph",
  "route-cleanup",
  "serde",
@@ -245,21 +257,9 @@ dependencies = [
 name = "graph-evaluator-manual"
 version = "0.1.0"
 dependencies = [
- "graph-evaluator",
- "graph-evaluator-pieces",
- "project-graph",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "graph-evaluator-pieces"
-version = "0.1.0"
-dependencies = [
+ "graph-evaluation-assembly",
  "graph-evaluator",
  "project-graph",
- "route-cleanup",
  "serde",
  "serde_json",
  "thiserror",

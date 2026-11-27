@@ -2,7 +2,7 @@
 //! short excerpt for the model to read. `ProjectFiles` reads the project's
 //! files from disk; `locate` does the arithmetic on text already read.
 
-use graph_evaluator_pieces::workbook::SourceLines;
+use graph_evaluation_assembly::workbook::SourceLines;
 use project_graph::SourceSpan;
 use std::collections::HashMap;
 use std::path::PathBuf;
