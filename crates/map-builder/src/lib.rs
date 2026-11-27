@@ -83,7 +83,7 @@ pub enum BuildProblem {
     /// A relationship applies to no route, hop or dependency on the map.
     UnplacedRelationship { relationship: usize },
     /// The evaluation lists a cluster more than once. The map keeps its
-    /// first place in the reading order.
+    /// first place in the order.
     DuplicateCluster(ClusterName),
     /// The graph refers to something it does not hold: `cited_by` names the
     /// route or fact holding the reference.
@@ -155,7 +155,7 @@ pub fn build_map(
     Ok(MapBuild { map, problems })
 }
 
-/// The map's layers: the clusters in reading order, each once.
+/// The map's layers: the clusters from top to bottom, each once.
 fn layers<'a>(
     clusters: impl Iterator<Item = &'a ClusterName>,
     problems: &mut Vec<BuildProblem>,

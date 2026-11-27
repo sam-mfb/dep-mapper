@@ -56,7 +56,7 @@ $eval index                          # the pieces and how far each has got
 $eval show module/map-web            # one module: its routes, grouped by where they lead, and its items
 $eval judge module:map-web --concern "Presents a map in the browser." --kind logic \
     --cluster mapping --reason "It turns a ProjectMap into a page." --cite <a handle from the piece>
-$eval clusters mapping               # name every cluster you used, in reading order
+$eval clusters mapping               # name every cluster you used, top to bottom
 $eval submit
 ```
 

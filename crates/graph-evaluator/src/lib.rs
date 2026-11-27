@@ -31,7 +31,7 @@ pub struct EvaluationError {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GraphEvaluation {
     pub graph: GraphId,
-    /// Cluster names in the intended reading order.
+    /// Cluster names from top to bottom; see [`Clusters`].
     pub clusters: Clusters,
     pub modules: BTreeMap<ModuleId, Decision<ModuleJudgment>>,
     /// Relationships found in the graph's evidence. A route can carry several

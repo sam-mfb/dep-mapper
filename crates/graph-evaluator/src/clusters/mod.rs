@@ -2,7 +2,11 @@
 
 use crate::ClusterName;
 
-/// The evaluation's clusters in reading order, each listed once.
+/// The evaluation's clusters from top to bottom, each listed once.
+///
+/// The first cluster holds the program, which uses the others; the last
+/// holds the foundations, which use none of them. A module's cluster
+/// normally sits at or above every cluster it uses.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Clusters(Vec<ClusterName>);
 
@@ -22,7 +26,7 @@ impl Clusters {
         Ok(Clusters(clusters))
     }
 
-    /// The clusters in reading order.
+    /// The clusters from top to bottom.
     pub fn iter(&self) -> std::slice::Iter<'_, ClusterName> {
         self.0.iter()
     }

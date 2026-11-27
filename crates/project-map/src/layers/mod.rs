@@ -3,6 +3,10 @@
 use crate::LayerName;
 
 /// The map's layers from top to bottom, each listed once.
+///
+/// The first layer holds the program, which uses the others; the last holds
+/// the foundations, which use none of them. A module's layer normally sits
+/// at or above every layer it uses.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Layers(Vec<LayerName>);
 
