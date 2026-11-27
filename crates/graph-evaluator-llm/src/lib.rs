@@ -29,6 +29,8 @@ mod source;
 
 pub use anthropic::{AnthropicClient, AnthropicConfig};
 pub use evaluator::{EvaluationLog, EvaluatorSettings, LlmEvaluator, LogEvent, StderrLog};
+/// Whether the clusters are fixed in advance; part of [`EvaluatorSettings`].
+pub use graph_evaluation_assembly::workbook::ClusterPlan;
 pub use http::{HttpRequest, HttpResponse, HttpTransport, TransportError, UreqTransport};
 pub use model::{
     AssistantTurn, ModelClient, ModelError, ModelReply, ModelRequest, ProviderRecord, Turn,

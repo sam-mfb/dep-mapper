@@ -1,6 +1,6 @@
 //! The text of pieces and handle details.
 
-use super::span_text;
+use super::{ClusterPlan, span_text};
 use project_graph::{
     Dispatch, Endpoint, FactId, FactKind, ImportUse, ItemId, ItemKind, ModuleId, ProjectGraph,
     ReceiverBasis, RouteEnd, RouteId, SourceSpan, Support, Visibility,
@@ -39,6 +39,7 @@ pub(super) struct Renderer<'a> {
     graph: &'a ProjectGraph,
     source: &'a dyn SourceLines,
     command: Option<&'a str>,
+    clusters: &'a ClusterPlan,
 }
 
 impl<'a> Renderer<'a> {
@@ -46,11 +47,13 @@ impl<'a> Renderer<'a> {
         graph: &'a ProjectGraph,
         source: &'a dyn SourceLines,
         command: Option<&'a str>,
+        clusters: &'a ClusterPlan,
     ) -> Self {
         Renderer {
             graph,
             source,
             command,
+            clusters,
         }
     }
 
@@ -76,6 +79,7 @@ impl<'a> Renderer<'a> {
         let mut head = String::new();
         let _ = writeln!(head, "Module {} (module:{})", module.name, id.0);
         let _ = writeln!(head, "Root: {}", module.root);
+        let _ = write!(head, "{}", self.module_clusters(id));
         let units: Vec<_> = graph
             .units
             .iter()
@@ -251,8 +255,34 @@ impl<'a> Renderer<'a> {
         paged(&head, "Routes", &details, page_size, &record)
     }
 
+    /// What a module piece says about clusters: the fixed list, if there is
+    /// one, and the module's earlier cluster, if known.
+    fn module_clusters(&self, id: &ModuleId) -> String {
+        let mut text = String::new();
+        if let Some(fixed) = &self.clusters.fixed {
+            let _ = writeln!(
+                text,
+                "\nThe clusters are fixed, from top to bottom: {}. Name one of them. If none fits, defer the module and say why.",
+                quoted(fixed)
+            );
+        }
+        if let Some(previous) = self.clusters.previous.get(&id.0) {
+            let _ = writeln!(
+                text,
+                "\nAn earlier evaluation put this module in cluster {previous:?}. That is a hint, not evidence."
+            );
+        }
+        text
+    }
+
     pub(super) fn clusters_page(&self) -> String {
-        let ask = "Clusters\n\nName the clusters the modules belong to, in the order a reader should meet them. Every cluster a module judgment names must be listed.\n";
+        if let Some(fixed) = &self.clusters.fixed {
+            return format!(
+                "Clusters\n\nThe clusters are fixed, from top to bottom: {}. Every module judgment names one of them; a module that fits none is deferred with a reason. There is nothing to record here.\n",
+                quoted(fixed)
+            );
+        }
+        let ask = "Clusters\n\nName the clusters the modules belong to, from top to bottom: first the cluster of the program, which uses the others, and last the foundations, which use none of them. A module's cluster should sit at or above every cluster it uses. Every cluster a module judgment names must be listed.\n";
         match self.command {
             Some(c) => format!(
                 "{ask}`{c} show clusters` lists the module decisions recorded so far.\n\nTo record the list:\n  {c} clusters <name> [<name>...]\nRecording it again replaces it.\n"
@@ -518,4 +548,13 @@ fn fact_kind(kind: &FactKind) -> String {
         ),
         other => super::fact_kind_slug(other).replace('-', " "),
     }
+}
+
+/// Names in quotes, separated by commas.
+fn quoted(names: &[String]) -> String {
+    names
+        .iter()
+        .map(|name| format!("{name:?}"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }

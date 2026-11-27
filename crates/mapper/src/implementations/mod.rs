@@ -2,6 +2,7 @@
 //! supplying them. The program supplies the implementations that exist;
 //! tests supply stand-ins.
 
+use graph_evaluation_assembly::workbook::ClusterPlan;
 use graph_evaluator::GraphEvaluator;
 use graph_evaluator_llm::{
     AnthropicClient, AnthropicConfig, EvaluatorSettings, LlmEvaluator, ProjectFiles,
@@ -97,11 +98,13 @@ pub const WAIT_LIMIT: Duration = Duration::from_secs(4 * 60 * 60);
 pub trait Implementations {
     fn grapher(&self, language: &Language) -> Result<Box<dyn ProjectGrapher>, Unavailable>;
     /// `selection` is the build being mapped, for evaluators that read the
-    /// project's source.
+    /// project's source. `clusters` says whether the layers are fixed in
+    /// advance, and gives each module's earlier layer.
     fn evaluator(
         &self,
         choice: &EvaluatorChoice,
         selection: &BuildSelection,
+        clusters: &ClusterPlan,
     ) -> Result<Box<dyn GraphEvaluator>, Unavailable>;
 }
 
@@ -185,6 +188,7 @@ impl Implementations for Installed {
         &self,
         choice: &EvaluatorChoice,
         selection: &BuildSelection,
+        clusters: &ClusterPlan,
     ) -> Result<Box<dyn GraphEvaluator>, Unavailable> {
         match choice {
             EvaluatorChoice::Manual { workbook, agent } => {
@@ -214,6 +218,7 @@ impl Implementations for Installed {
                     Settings {
                         page_size: WORKBOOK_PAGE_SIZE,
                         command: eval_command(workbook),
+                        clusters: clusters.clone(),
                     },
                 )))
             }
@@ -235,7 +240,7 @@ impl Implementations for Installed {
                     model,
                     ProjectFiles::new(selection.root.clone(), EXCERPT_LINES),
                     StderrLog,
-                    EvaluatorSettings::recommended(),
+                    EvaluatorSettings::recommended(clusters.clone()),
                 )))
             }
         }

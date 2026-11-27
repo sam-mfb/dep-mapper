@@ -1,7 +1,7 @@
 use super::*;
 use crate::fixture::{self, Scratch};
 use crate::store::DirStore;
-use crate::workbook::{ByteOffsets, Presentation, present};
+use crate::workbook::{ByteOffsets, ClusterPlan, Presentation, present};
 
 struct Session {
     _scratch: Scratch,
@@ -22,6 +22,7 @@ impl Session {
                 page_size: 1,
                 source: &ByteOffsets,
                 command: Some("srs eval"),
+                clusters: &ClusterPlan::proposed(),
             },
         );
         store
@@ -224,6 +225,7 @@ fn the_instructions_name_the_project_and_the_command() {
             page_size: 10,
             source: &ByteOffsets,
             command: Some("srs eval"),
+            clusters: &ClusterPlan::proposed(),
         },
     );
     let text = instructions("srs eval", &workbook);

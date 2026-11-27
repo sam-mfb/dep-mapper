@@ -2,7 +2,7 @@ use super::*;
 use crate::commands::{self, Outcome};
 use crate::fixture::{self, Scratch};
 use crate::store::DirStore;
-use crate::workbook::ByteOffsets;
+use crate::workbook::{ByteOffsets, ClusterPlan};
 use graph_evaluator::{Decision, ModuleKind, RelationshipKind};
 use project_graph::{GraphId, ModuleId};
 use std::cell::RefCell;
@@ -56,6 +56,7 @@ fn evaluator(root: &PathBuf, runner: Box<dyn AgentRunner>) -> ManualEvaluator {
         Settings {
             page_size: 20,
             command: "srs eval".into(),
+            clusters: ClusterPlan::proposed(),
         },
     )
 }
@@ -252,5 +253,62 @@ fn submitted_answers_that_were_changed_by_hand_are_checked_again() {
         .unwrap_err();
     assert!(
         error.message.contains("have problems") && error.message.contains("cluster \"Storage\"")
+    );
+}
+
+#[test]
+fn with_fixed_clusters_the_agent_records_no_list_and_the_evaluation_keeps_the_fixed_order() {
+    let scratch = Scratch::new();
+    let lines: Vec<Vec<&'static str>> = full_session()
+        .into_iter()
+        .filter(|line| line[0] != "clusters")
+        .collect();
+    let agent = ScriptedAgent {
+        root: scratch.0.clone(),
+        lines,
+        tasks: Rc::default(),
+    };
+    let fixed = vec![
+        "Program".to_string(),
+        "Storage".to_string(),
+        "Base".to_string(),
+    ];
+    let evaluator = ManualEvaluator::new(
+        Box::new(DirStore::new(&scratch.0)),
+        Box::new(agent),
+        Box::new(ByteOffsets),
+        Settings {
+            page_size: 20,
+            command: "srs eval".into(),
+            clusters: ClusterPlan {
+                fixed: Some(fixed.clone()),
+                previous: Default::default(),
+            },
+        },
+    );
+    let evaluation = evaluator.evaluate(&fixture::graph()).unwrap();
+    let order: Vec<&str> = evaluation.clusters.iter().map(|c| c.0.as_str()).collect();
+    assert_eq!(order, ["Program", "Storage", "Base"]);
+
+    let store = DirStore::new(&scratch.0);
+    assert_eq!(
+        store.load_workbook().unwrap().unwrap().fixed_clusters,
+        Some(fixed)
+    );
+    let instructions = std::fs::read_to_string(scratch.0.join("INSTRUCTIONS.md")).unwrap();
+    assert!(
+        instructions
+            .contains("The clusters are fixed, from top to bottom: Program, Storage, Base.")
+    );
+    let args = vec!["clusters".to_string(), "Other".to_string()];
+    let mut out = Vec::new();
+    assert_eq!(
+        commands::run("srs eval", &args, &store, &mut out).unwrap(),
+        Outcome::Refused
+    );
+    assert!(
+        String::from_utf8(out)
+            .unwrap()
+            .contains("the cluster list is fixed")
     );
 }

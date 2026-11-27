@@ -127,7 +127,7 @@ pub fn help(command: &str) -> String {
                              record a module's decision; recording again replaces it
   defer <module> --reason <text>
                              record that a module was considered and left undecided
-  clusters <name>...         record the cluster list, in reading order; replaces it
+  clusters <name>...         record the cluster list, top to bottom; replaces it
   relate <routes piece> --kind <kind> --reason <text> --cite <handle>...
                              record a relationship; prints its identifier
         kinds: direct-use, implements, wires, supplies-input, full-injection,
@@ -145,6 +145,23 @@ Each answer is checked when it is recorded. A problem refuses it; a warning keep
     )
 }
 
+/// The instructions' step for the cluster list.
+fn clusters_step(workbook: &Workbook) -> String {
+    match &workbook.fixed_clusters {
+        Some(fixed) => format!(
+            "2. The clusters are fixed, from top to bottom: {}. Every module
+   judgment names one of them. Defer a module that fits none, and say why.
+   The `clusters` piece only states the list; there is nothing to record.",
+            fixed.join(", ")
+        ),
+        None => "2. The `clusters` piece. List every cluster name you used, from top to
+   bottom: first the program's cluster, which uses the others, and last the
+   foundations. A module's cluster should sit at or above every cluster it
+   uses; `check` warns when a module uses one listed above its own."
+            .to_string(),
+    }
+}
+
 /// How to work through a workbook, written beside it.
 pub fn instructions(command: &str, workbook: &Workbook) -> String {
     format!(
@@ -159,8 +176,7 @@ Work in this order:
 1. Module pieces (`module/...`). For each module, record its concern (what it
    is responsible for, without naming who uses it), its kind, and the cluster
    it belongs to. Defer it, with a reason, if the evidence does not settle it.
-2. The `clusters` piece. List every cluster name you used, in the order a
-   reader should meet them.
+{clusters}
 3. Routes pieces (`routes/...`). For the routes in each piece, record the
    relationships they show, or set a route aside with a reason. One
    relationship can cite routes from several pieces. A relationship needs
@@ -190,7 +206,8 @@ run `{c} submit`.
         project = workbook.project,
         graph = workbook.graph,
         c = command,
-        help = help(command)
+        help = help(command),
+        clusters = clusters_step(workbook)
     )
 }
 
@@ -288,9 +305,13 @@ fn show(
             for (module, answer) in answers.values().flat_map(|a| &a.modules) {
                 writeln!(out, "  module:{module}: {}", decision_text(answer))?;
             }
-            match recorded.and_then(|a| a.clusters.as_ref()) {
-                Some(list) => writeln!(out, "Recorded cluster list: {}", list.join(", "))?,
-                None => writeln!(out, "No cluster list recorded yet.")?,
+            match (
+                &workbook.fixed_clusters,
+                recorded.and_then(|a| a.clusters.as_ref()),
+            ) {
+                (Some(fixed), _) => writeln!(out, "Fixed cluster list: {}", fixed.join(", "))?,
+                (None, Some(list)) => writeln!(out, "Recorded cluster list: {}", list.join(", "))?,
+                (None, None) => writeln!(out, "No cluster list recorded yet.")?,
             }
         }
         PieceSubject::Routes { modules, .. } => {

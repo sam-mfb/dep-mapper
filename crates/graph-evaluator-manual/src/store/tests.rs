@@ -2,7 +2,7 @@ use super::*;
 use crate::answers::ModuleAnswer;
 use crate::fixture;
 use crate::fixture::Scratch;
-use crate::workbook::{ByteOffsets, Presentation, present};
+use crate::workbook::{ByteOffsets, ClusterPlan, Presentation, present};
 
 fn workbook() -> Workbook {
     present(
@@ -11,6 +11,7 @@ fn workbook() -> Workbook {
             page_size: 10,
             source: &ByteOffsets,
             command: Some("srs eval"),
+            clusters: &ClusterPlan::proposed(),
         },
     )
 }

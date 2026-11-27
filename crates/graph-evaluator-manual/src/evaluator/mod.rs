@@ -12,7 +12,7 @@
 use crate::checking::{self, Finding};
 use crate::commands;
 use crate::store::{StoreError, WorkbookStore};
-use crate::workbook::{self, Presentation, SourceLines};
+use crate::workbook::{self, ClusterPlan, Presentation, SourceLines};
 use graph_evaluator::{EvaluationError, GraphEvaluation, GraphEvaluator};
 use project_graph::ProjectGraph;
 
@@ -57,6 +57,9 @@ pub struct Settings {
     pub page_size: usize,
     /// How the worker invokes the answer commands, such as `srs eval`.
     pub command: String,
+    /// Whether the clusters are fixed in advance, and each module's earlier
+    /// cluster. The workbook records the fixed list for the answer commands.
+    pub clusters: ClusterPlan,
 }
 
 pub struct ManualEvaluator {
@@ -96,6 +99,7 @@ impl GraphEvaluator for ManualEvaluator {
             page_size: self.settings.page_size,
             source: self.source.as_ref(),
             command: Some(&self.settings.command),
+            clusters: &self.settings.clusters,
         };
         let workbook = workbook::present(graph, &presentation);
         let location = self.store.location();

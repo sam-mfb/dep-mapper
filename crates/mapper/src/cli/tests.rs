@@ -42,6 +42,7 @@ fn map_arguments_become_a_map_command() {
             },
             language: Language::TypeScript { excluded: vec![] },
             evaluator: EvaluatorChoice::Llm,
+            layers: LayerSource::Proposed,
             out: "map.toml".into(),
             page: Some("map.html".into()),
             serve: Some("127.0.0.1:8080".parse().unwrap()),
@@ -275,4 +276,43 @@ fn typescript_excludes_nothing_by_default_and_takes_the_flag() {
             excluded: vec!["@types/node".into()]
         }
     );
+}
+
+fn layers(extra: &[&str]) -> Result<LayerSource, ParseOutcome> {
+    let args = [&["--evaluator", "llm"], extra].concat();
+    match parse(map_args(&args))? {
+        Command::Map(command) => Ok(command.layers),
+        _ => panic!("a map command"),
+    }
+}
+
+#[test]
+fn layers_are_proposed_unless_listed_or_taken_from_a_draft() {
+    assert_eq!(layers(&[]).unwrap(), LayerSource::Proposed);
+    assert_eq!(
+        layers(&["--layers", "program, map ,base"]).unwrap(),
+        LayerSource::Listed(vec!["program".into(), "map".into(), "base".into()])
+    );
+    assert_eq!(
+        layers(&["--draft", "docs/plan.toml"]).unwrap(),
+        LayerSource::Draft("/home/someone/work/docs/plan.toml".into())
+    );
+}
+
+#[test]
+fn an_empty_or_repeated_layer_is_a_mistake() {
+    for list in ["", "program,,base", "program,"] {
+        let outcome = layers(&["--layers", list]).unwrap_err();
+        assert!(!outcome.requested);
+        assert!(outcome.text.contains("none of them empty"), "{list:?}");
+    }
+    let outcome = layers(&["--layers", "program,base,program"]).unwrap_err();
+    assert!(outcome.text.contains("\"program\" more than once"));
+}
+
+#[test]
+fn layers_and_a_draft_together_are_a_mistake() {
+    let outcome = layers(&["--layers", "program", "--draft", "plan.toml"]).unwrap_err();
+    assert!(!outcome.requested);
+    assert!(outcome.text.contains("--draft"));
 }

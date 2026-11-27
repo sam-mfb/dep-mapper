@@ -14,7 +14,12 @@ fn every_schema_is_a_closed_object_at_the_root() {
             _ => true,
         }
     }
-    for schema in [module_schema(), clusters_schema(), routes_schema()] {
+    for schema in [
+        module_schema(None),
+        module_schema(Some(&["Top".to_string()])),
+        clusters_schema(),
+        routes_schema(),
+    ] {
         assert_eq!(schema["type"], "object", "{schema}");
         for combinator in ["anyOf", "oneOf", "allOf"] {
             assert!(schema.get(combinator).is_none(), "{schema}");

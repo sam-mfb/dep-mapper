@@ -8,6 +8,7 @@
 srs map <root> --language <rust|typescript> [--cache <dir>] [--exclude <list>] \
     --target <target> --configuration <settings> \
     --evaluator <manual|llm> [--workbook <dir>] [--agent <none|wait|claude>] \
+    [--layers <list> | --draft <draft.toml>] \
     --out <map.toml> [--page <map.html>] [--serve <address>]
 ```
 
@@ -20,6 +21,8 @@ srs map <root> --language <rust|typescript> [--cache <dir>] [--exclude <list>] \
 | `--target`, `--configuration` | The build to analyze, in the grapher's terms. For Rust, the target is a package, optionally with one target as `package/bin:name`, and the configuration is `default features` or Cargo flags such as `--features x`. For TypeScript, the target is the tsconfig file, relative to the root, and the configuration is `tsconfig`. |
 | `--evaluator` | Who judges the graph. `manual` needs `--workbook`. `llm` asks Claude and needs `ANTHROPIC_API_KEY`; without it, `srs map` stops before analysis. |
 | `--agent` | For `manual`: who answers while `srs map` runs. `none` (the default when the option is left out) stops after writing the workbook. `wait` shows the request and checks every 5 seconds for a submission, for up to 4 hours. `claude` runs Claude Code in the project directory; `srs` must be on `PATH` for it to run `srs eval`. |
+| `--layers` | Fixes the map's layers in advance, from top to bottom, separated by commas. The first layer holds the program, which uses the others, and the last the foundations. The evaluator then names one of these layers for each module it judges, and defers, with a reason, a module that fits none. Without `--layers` or `--draft`, the evaluator proposes the layers. |
+| `--draft` | Fixes the layers from a draft laid over its base map: the combined map's layers, top to bottom. Each module's layer in the combined map is shown to the evaluator as a hint, not a rule. A draft with problems stops `srs map` before analysis. Cannot be given with `--layers`. |
 | `--out` | Where to save the map. map-persist writes it, and it can be reopened without analysis. |
 | `--page` | Also write the map-web page to this file. |
 | `--serve` | Also serve the page at this address, such as `127.0.0.1:8080`, until stopped. |

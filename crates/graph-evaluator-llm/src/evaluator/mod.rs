@@ -1,6 +1,7 @@
 //! `LlmEvaluator` implements `GraphEvaluator` by asking a model about one
 //! piece of the shared workbook at a time: each module, then the clusters,
-//! then each page of routes. Each answer becomes edits to the shared answers,
+//! then each page of routes. When the settings fix the clusters in advance,
+//! the model is not asked for them, and each module answer must name one. Each answer becomes edits to the shared answers,
 //! whose checks accept or refuse them. A refused answer goes back to the
 //! model with its problems, up to a set number of times; if it is still
 //! refused, `evaluate` fails and lists them. Warnings and progress go to an
@@ -14,7 +15,7 @@ use crate::source::{LinesFrom, SourceText};
 use graph_evaluation_assembly::answers::{Answers, Edit, ModuleAnswer, record};
 use graph_evaluation_assembly::checking::assemble;
 use graph_evaluation_assembly::workbook::{
-    Piece, PieceId, PieceSubject, Presentation, Workbook, present,
+    ClusterPlan, Piece, PieceId, PieceSubject, Presentation, Workbook, present,
 };
 use graph_evaluator::{EvaluationError, GraphEvaluation, GraphEvaluator};
 use project_graph::ProjectGraph;
@@ -31,15 +32,20 @@ pub struct EvaluatorSettings {
     pub routes_per_page: usize,
     /// The most source excerpts added to one page.
     pub excerpts_per_page: usize,
+    /// Whether the clusters are fixed in advance, and each module's earlier
+    /// cluster.
+    pub clusters: ClusterPlan,
 }
 
 impl EvaluatorSettings {
-    /// Every value is stated here so no default applies silently.
-    pub fn recommended() -> Self {
+    /// The recommended values, with the given cluster plan. Every value is
+    /// stated here so no default applies silently.
+    pub fn recommended(clusters: ClusterPlan) -> Self {
         EvaluatorSettings {
             max_repairs: 2,
             routes_per_page: 40,
             excerpts_per_page: 60,
+            clusters,
         }
     }
 }
@@ -128,11 +134,12 @@ fn apply(workbook: &Workbook, answers: &Answers, edits: Vec<Edit>) -> Result<Kep
 }
 
 /// One module's decision so far. Before the clusters piece, its cluster is
-/// only proposed.
-fn module_line(answers: &Answers, module: &str) -> String {
-    let settled = answers
-        .get(&PieceId::clusters())
-        .is_some_and(|piece| piece.clusters.is_some());
+/// only proposed, unless the clusters are fixed.
+fn module_line(workbook: &Workbook, answers: &Answers, module: &str) -> String {
+    let settled = workbook.fixed_clusters.is_some()
+        || answers
+            .get(&PieceId::clusters())
+            .is_some_and(|piece| piece.clusters.is_some());
     let cluster_label = if settled {
         "cluster"
     } else {
@@ -345,8 +352,10 @@ impl<M: ModelClient, S: SourceText, L: EvaluationLog> GraphEvaluator for LlmEval
                 page_size: self.settings.routes_per_page.max(1),
                 source: &lines,
                 command: None,
+                clusters: &self.settings.clusters,
             },
         );
+        let module_schema = wire::module_schema(workbook.fixed_clusters.as_deref());
         let system = format!("{INSTRUCTIONS}\n{}", overview(graph));
         let mut answers = Answers::new();
 
@@ -367,11 +376,13 @@ impl<M: ModelClient, S: SourceText, L: EvaluationLog> GraphEvaluator for LlmEval
                         "Module piece. Judge or defer this module.\n\n{}",
                         self.page_text(graph, &workbook, piece, &page, &name)
                     );
-                    answers = self.ask(&name, &system, text, wire::module_schema(), |reply| {
+                    answers = self.ask(&name, &system, text, module_schema.clone(), |reply| {
                         let reply: wire::ModuleReply = wire::parse(reply)?;
                         apply(&workbook, &answers, vec![reply.answer.into_edit(module)])
                     })?;
                 }
+                // A fixed list is not asked for.
+                PieceSubject::Clusters if workbook.fixed_clusters.is_some() => {}
                 PieceSubject::Clusters => {
                     let judged: Vec<String> = answers
                         .values()
@@ -382,8 +393,10 @@ impl<M: ModelClient, S: SourceText, L: EvaluationLog> GraphEvaluator for LlmEval
                     if judged.is_empty() {
                         continue;
                     }
-                    let listing: Vec<String> =
-                        judged.iter().map(|m| module_line(&answers, m)).collect();
+                    let listing: Vec<String> = judged
+                        .iter()
+                        .map(|m| module_line(&workbook, &answers, m))
+                        .collect();
                     let text = format!(
                         "Clusters piece. {}\nThe judged modules:\n{}\n",
                         piece.pages.join("\n"),
@@ -405,8 +418,10 @@ impl<M: ModelClient, S: SourceText, L: EvaluationLog> GraphEvaluator for LlmEval
                     )?;
                 }
                 PieceSubject::Routes { modules, .. } => {
-                    let context: Vec<String> =
-                        modules.iter().map(|m| module_line(&answers, m)).collect();
+                    let context: Vec<String> = modules
+                        .iter()
+                        .map(|m| module_line(&workbook, &answers, m))
+                        .collect();
                     for (index, page) in piece.pages.iter().enumerate() {
                         let name = if piece.pages.len() == 1 {
                             piece.id.0.clone()

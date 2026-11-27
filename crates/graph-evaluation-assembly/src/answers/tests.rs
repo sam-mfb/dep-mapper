@@ -1,6 +1,6 @@
 use super::*;
 use crate::testing;
-use crate::workbook::{ByteOffsets, Presentation, present};
+use crate::workbook::{ByteOffsets, ClusterPlan, Presentation, present};
 
 fn workbook() -> Workbook {
     present(
@@ -9,6 +9,7 @@ fn workbook() -> Workbook {
             page_size: 10,
             source: &ByteOffsets,
             command: Some("srs eval"),
+            clusters: &ClusterPlan::proposed(),
         },
     )
 }
@@ -263,6 +264,7 @@ fn the_rest_of_a_routes_piece_can_be_set_aside_at_once_keeping_cited_and_earlier
             page_size: 10,
             source: &ByteOffsets,
             command: Some("srs eval"),
+            clusters: &ClusterPlan::proposed(),
         },
     );
     let piece = PieceId("routes/app+disk".into());
@@ -296,4 +298,119 @@ fn the_rest_of_a_routes_piece_can_be_set_aside_at_once_keeping_cited_and_earlier
         reason: "x".into(),
     };
     assert!(record(&workbook, &rest.answers, wrong).is_err());
+}
+
+fn fixed_workbook() -> Workbook {
+    present(
+        &testing::graph(),
+        &Presentation {
+            page_size: 10,
+            source: &ByteOffsets,
+            command: Some("srs eval"),
+            clusters: &ClusterPlan {
+                fixed: Some(vec!["Program".into(), "Storage".into()]),
+                previous: Default::default(),
+            },
+        },
+    )
+}
+
+#[test]
+fn with_a_fixed_list_recording_a_cluster_list_is_refused() {
+    let refused = record(
+        &fixed_workbook(),
+        &Answers::new(),
+        Edit::Clusters(vec!["Other".into()]),
+    )
+    .unwrap_err();
+    assert_eq!(refused.problems.len(), 1);
+    assert_eq!(refused.problems[0].rule, Rule::FixedClusterList);
+}
+
+#[test]
+fn with_a_fixed_list_a_judgment_must_name_a_listed_cluster() {
+    let refused = record(
+        &fixed_workbook(),
+        &Answers::new(),
+        judge("disk", "Files", &["route:r-impl"]),
+    )
+    .unwrap_err();
+    assert_eq!(refused.problems[0].rule, Rule::UnlistedCluster);
+    record(
+        &fixed_workbook(),
+        &Answers::new(),
+        judge("disk", "Storage", &["route:r-impl"]),
+    )
+    .unwrap();
+}
+
+#[test]
+fn an_upward_use_is_shown_when_either_module_is_judged() {
+    // disk uses store. With store in Program, above disk's Storage, the use
+    // points up.
+    let workbook = fixed_workbook();
+    let disk_first = record(
+        &workbook,
+        &Answers::new(),
+        judge("disk", "Storage", &["route:r-impl"]),
+    )
+    .unwrap();
+    assert!(disk_first.warnings.is_empty());
+    let then_store = record(
+        &workbook,
+        &disk_first.answers,
+        judge("store", "Program", &["item:store::Store"]),
+    )
+    .unwrap();
+    assert_eq!(rules(&then_store.warnings), [Rule::UpwardDependency]);
+    assert_eq!(
+        then_store.warnings[0].subject,
+        Subject::Module("disk".into())
+    );
+
+    let store_first = record(
+        &workbook,
+        &Answers::new(),
+        judge("store", "Program", &["item:store::Store"]),
+    )
+    .unwrap();
+    let then_disk = record(
+        &workbook,
+        &store_first.answers,
+        judge("disk", "Storage", &["route:r-impl"]),
+    )
+    .unwrap();
+    assert_eq!(rules(&then_disk.warnings), [Rule::UpwardDependency]);
+}
+
+#[test]
+fn recording_a_cluster_list_shows_the_upward_uses_it_creates() {
+    let workbook = workbook();
+    let mut answers = Answers::new();
+    for (module, cluster, cite) in [
+        ("disk", "Storage", "route:r-impl"),
+        ("store", "Contracts", "item:store::Store"),
+    ] {
+        answers = record(&workbook, &answers, judge(module, cluster, &[cite]))
+            .unwrap()
+            .answers;
+    }
+    let up = record(
+        &workbook,
+        &answers,
+        Edit::Clusters(vec!["Contracts".into(), "Storage".into()]),
+    )
+    .unwrap();
+    assert_eq!(rules(&up.warnings), [Rule::UpwardDependency]);
+    let down = record(
+        &workbook,
+        &answers,
+        Edit::Clusters(vec!["Storage".into(), "Contracts".into()]),
+    )
+    .unwrap();
+    assert!(down.warnings.is_empty());
+}
+
+fn rules(findings: &[Finding]) -> Vec<Rule> {
+    findings.iter().map(|f| f.rule).collect()
 }

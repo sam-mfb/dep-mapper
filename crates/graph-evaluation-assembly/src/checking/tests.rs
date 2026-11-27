@@ -1,7 +1,8 @@
 use super::*;
 use crate::answers::PieceAnswers;
 use crate::testing;
-use crate::workbook::{ByteOffsets, Presentation, present};
+use crate::workbook::{ByteOffsets, ClusterPlan, Presentation, present};
+use std::collections::BTreeMap;
 
 fn workbook() -> Workbook {
     present(
@@ -10,6 +11,7 @@ fn workbook() -> Workbook {
             page_size: 10,
             source: &ByteOffsets,
             command: Some("srs eval"),
+            clusters: &ClusterPlan::proposed(),
         },
     )
 }
@@ -275,4 +277,121 @@ fn kinds_read_from_their_written_names() {
         Some(RelationshipKind::Other("logging".into()))
     );
     assert_eq!(relationship_kind("other: "), None);
+}
+
+fn fixed_workbook(clusters: &[&str]) -> Workbook {
+    present(
+        &testing::graph(),
+        &Presentation {
+            page_size: 10,
+            source: &ByteOffsets,
+            command: Some("srs eval"),
+            clusters: &ClusterPlan {
+                fixed: Some(strings(clusters)),
+                previous: BTreeMap::new(),
+            },
+        },
+    )
+}
+
+/// `complete`, with `store` judged in a cluster instead of deferred.
+fn store_judged(cluster: &str) -> Answers {
+    let mut answers = complete();
+    piece(&mut answers, "module/store").modules.insert(
+        "store".into(),
+        judged("contract", cluster, &["item:store::Store"]),
+    );
+    answers
+}
+
+#[test]
+fn a_module_that_uses_a_module_in_a_higher_cluster_is_warned_about() {
+    // disk implements store's contract, so disk uses store.
+    let mut answers = store_judged("Contracts");
+    piece(&mut answers, "clusters").clusters = Some(strings(&["Program", "Contracts", "Storage"]));
+    let assembled = assemble(&workbook(), &answers).unwrap();
+    assert_eq!(rules(&assembled.warnings), [Rule::UpwardDependency]);
+    let warning = &assembled.warnings[0];
+    assert_eq!(warning.subject, Subject::Module("disk".into()));
+    assert!(warning.message.contains("module:store"));
+    assert!(warning.message.contains("fact:f-impl"));
+}
+
+#[test]
+fn a_module_that_uses_its_own_or_a_lower_cluster_is_not_warned_about() {
+    for list in [
+        &["Program", "Storage", "Contracts"][..],
+        &["Program", "Storage"][..],
+    ] {
+        let cluster = list.last().unwrap();
+        let mut answers = store_judged(cluster);
+        piece(&mut answers, "clusters").clusters = Some(strings(list));
+        let assembled = assemble(&workbook(), &answers).unwrap();
+        assert!(assembled.warnings.is_empty(), "{list:?}");
+    }
+}
+
+#[test]
+fn the_workbook_records_which_module_uses_which_from_use_facts_only() {
+    let workbook = workbook();
+    // f-impl makes disk use store. f-construct, where app builds a
+    // DiskStore, is not a use fact, and f-write leaves the project.
+    assert_eq!(
+        workbook.uses,
+        BTreeMap::from([(
+            "disk".to_string(),
+            BTreeMap::from([("store".to_string(), "fact:f-impl".to_string())])
+        )])
+    );
+}
+
+#[test]
+fn a_fixed_list_is_the_cluster_list_and_needs_no_answer() {
+    let workbook = fixed_workbook(&["Program", "Storage", "Unused"]);
+    let mut answers = complete();
+    answers.remove(&PieceId::clusters());
+    let assembled = assemble(&workbook, &answers).unwrap();
+    assert!(assembled.warnings.is_empty());
+    assert_eq!(
+        assembled
+            .evaluation
+            .clusters
+            .iter()
+            .map(|c| c.0.as_str())
+            .collect::<Vec<_>>(),
+        ["Program", "Storage", "Unused"]
+    );
+    let clusters = progress(&workbook, &answers)
+        .into_iter()
+        .find(|(id, _)| *id == PieceId::clusters());
+    assert_eq!(clusters, Some((PieceId::clusters(), Progress::Done)));
+}
+
+#[test]
+fn with_a_fixed_list_a_judgment_naming_another_cluster_is_a_problem() {
+    let workbook = fixed_workbook(&["Program", "Files"]);
+    let mut answers = complete();
+    answers.remove(&PieceId::clusters());
+    assert_eq!(
+        rules(&review(&workbook, &answers).problems),
+        [Rule::UnlistedCluster]
+    );
+}
+
+#[test]
+fn with_a_fixed_list_a_recorded_list_is_ignored_with_a_warning() {
+    let workbook = fixed_workbook(&["Program", "Storage"]);
+    let mut answers = complete();
+    piece(&mut answers, "clusters").clusters = Some(strings(&["Storage", "Program", "Other"]));
+    let assembled = assemble(&workbook, &answers).unwrap();
+    assert_eq!(rules(&assembled.warnings), [Rule::RecordedListIgnored]);
+    assert_eq!(
+        assembled
+            .evaluation
+            .clusters
+            .iter()
+            .map(|c| c.0.as_str())
+            .collect::<Vec<_>>(),
+        ["Program", "Storage"]
+    );
 }

@@ -5,8 +5,8 @@
 
 use graph_evaluator::GraphEvaluator;
 use graph_evaluator_llm::{
-    AnthropicClient, AnthropicConfig, EvaluatorSettings, LlmEvaluator, NoSource, RetryingClient,
-    StderrLog, ThreadPause, UreqTransport,
+    AnthropicClient, AnthropicConfig, ClusterPlan, EvaluatorSettings, LlmEvaluator, NoSource,
+    RetryingClient, StderrLog, ThreadPause, UreqTransport,
 };
 use std::process::ExitCode;
 use std::time::Duration;
@@ -31,7 +31,12 @@ fn main() -> ExitCode {
             Duration::from_secs(30),
         ],
     );
-    let evaluator = LlmEvaluator::new(model, NoSource, StderrLog, EvaluatorSettings::recommended());
+    let evaluator = LlmEvaluator::new(
+        model,
+        NoSource,
+        StderrLog,
+        EvaluatorSettings::recommended(ClusterPlan::proposed()),
+    );
     match evaluator.evaluate(&graph_evaluation_assembly::testing::graph()) {
         Ok(evaluation) => {
             println!("{evaluation:#?}");

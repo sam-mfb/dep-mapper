@@ -141,7 +141,7 @@ fn evaluate<F: Fn(&ModelRequest) -> Reply>(
     evaluate_with(
         model,
         log,
-        EvaluatorSettings::recommended(),
+        EvaluatorSettings::recommended(ClusterPlan::proposed()),
         &testing::graph(),
     )
 }
@@ -453,7 +453,7 @@ fn long_routes_pieces_are_asked_page_by_page() {
     let log = RecordedLog::default();
     let settings = EvaluatorSettings {
         routes_per_page: 1,
-        ..EvaluatorSettings::recommended()
+        ..EvaluatorSettings::recommended(ClusterPlan::proposed())
     };
     evaluate_with(&model, &log, settings, &graph).unwrap();
     let asked: Vec<String> = log
@@ -485,7 +485,7 @@ fn a_module_piece_with_several_pages_is_asked_whole() {
     let log = RecordedLog::default();
     let settings = EvaluatorSettings {
         routes_per_page: 1,
-        ..EvaluatorSettings::recommended()
+        ..EvaluatorSettings::recommended(ClusterPlan::proposed())
     };
     evaluate_with(&model, &log, settings, &graph).unwrap();
     let turns = model.first_turns();
@@ -520,7 +520,13 @@ fn the_model_is_told_which_routes_were_left_out_of_the_graph() {
     });
     let model = FakeModel::new(sensible);
     let log = RecordedLog::default();
-    evaluate_with(&model, &log, EvaluatorSettings::recommended(), &graph).unwrap();
+    evaluate_with(
+        &model,
+        &log,
+        EvaluatorSettings::recommended(ClusterPlan::proposed()),
+        &graph,
+    )
+    .unwrap();
     let modules: Vec<String> = model
         .first_turns()
         .into_iter()
@@ -533,4 +539,51 @@ fn the_model_is_told_which_routes_were_left_out_of_the_graph() {
             "{turn}"
         );
     }
+}
+
+#[test]
+fn with_fixed_clusters_the_model_is_not_asked_for_them_and_must_name_one() {
+    let model = FakeModel::new(sensible);
+    let log = RecordedLog::default();
+    let fixed = vec![
+        "Program".to_string(),
+        "Storage".to_string(),
+        "Contracts".to_string(),
+    ];
+    let settings = EvaluatorSettings::recommended(ClusterPlan {
+        fixed: Some(fixed.clone()),
+        previous: Default::default(),
+    });
+    let evaluation = evaluate_with(&model, &log, settings, &testing::graph()).unwrap();
+
+    let names: Vec<_> = evaluation.clusters.iter().map(|c| c.0.clone()).collect();
+    assert_eq!(names, fixed);
+    let turns = model.first_turns();
+    assert!(!turns.iter().any(|t| t.starts_with("Clusters piece")));
+    assert!(
+        turns[0].contains("The clusters are fixed, from top to bottom"),
+        "the module piece states the list"
+    );
+    let requests = model.requests.borrow();
+    let module_schema = &requests[0].answer_schema;
+    let cluster = &module_schema["properties"]["answer"]["anyOf"][0]["properties"]["cluster"];
+    assert_eq!(cluster["enum"], json!(fixed));
+}
+
+#[test]
+fn a_module_naming_a_cluster_outside_the_fixed_list_goes_back_for_repair() {
+    let model = FakeModel::new(sensible);
+    let log = RecordedLog::default();
+    // `sensible` puts store in Contracts, which this list lacks.
+    let settings = EvaluatorSettings::recommended(ClusterPlan {
+        fixed: Some(vec!["Program".to_string(), "Storage".to_string()]),
+        previous: Default::default(),
+    });
+    let error = evaluate_with(&model, &log, settings, &testing::graph()).unwrap_err();
+    assert!(error.message.contains("module:store"), "{}", error.message);
+    assert!(
+        error.message.contains("not in the cluster list"),
+        "{}",
+        error.message
+    );
 }

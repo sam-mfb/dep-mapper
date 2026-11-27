@@ -13,6 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.6.0", features = ["derive"] }
+graph-evaluation-assembly.workspace = true
 graph-evaluator.workspace = true
 graph-evaluator-llm = { path = "../graph-evaluator-llm" }
 graph-evaluator-manual = { path = "../graph-evaluator-manual" }

@@ -33,7 +33,11 @@ fn the_llm_evaluator_needs_an_api_key() {
     let installed = Installed {
         anthropic_api_key: None,
     };
-    let Err(error) = installed.evaluator(&EvaluatorChoice::Llm, &selection()) else {
+    let Err(error) = installed.evaluator(
+        &EvaluatorChoice::Llm,
+        &selection(),
+        &ClusterPlan::proposed(),
+    ) else {
         panic!("no evaluator without a key")
     };
     assert!(error.0.contains("ANTHROPIC_API_KEY"));
@@ -46,7 +50,11 @@ fn with_a_key_the_llm_evaluator_is_supplied_without_contacting_the_api() {
     };
     assert!(
         installed
-            .evaluator(&EvaluatorChoice::Llm, &selection())
+            .evaluator(
+                &EvaluatorChoice::Llm,
+                &selection(),
+                &ClusterPlan::proposed(),
+            )
             .is_ok()
     );
 }
