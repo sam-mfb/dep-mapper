@@ -179,7 +179,7 @@ fn without_a_command_pieces_hold_the_evidence_and_no_command_lines() {
 #[test]
 fn every_module_piece_shows_the_routes_left_out_of_the_whole_graph() {
     let mut graph = testing::graph();
-    route_exclusion::exclude(&mut graph, &["std".to_string()], |name| {
+    route_cleanup::exclude(&mut graph, &["std".to_string()], |name| {
         name.starts_with("std::")
     });
     let workbook = present(

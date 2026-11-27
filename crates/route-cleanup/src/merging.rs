@@ -25,7 +25,7 @@ use project_graph::{Endpoint, FactId, Item, ItemId, ModuleId, Route, RouteEnd, R
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The routes of `routes`, with those that stay in one module ending at the
-/// module and those that follow the same path merged, as the crate
+/// module and those that follow the same path merged, as the module
 /// documentation describes. `items` are the graph's items, which say the
 /// module each item endpoint lies in.
 pub fn merge(

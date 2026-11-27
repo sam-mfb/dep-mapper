@@ -11,13 +11,13 @@
 //! user. A call through a trait object or generic receiver also gets traced
 //! routes: the driver records value moves in each body (constructions,
 //! conversions to trait objects, stores and reads of struct fields,
-//! arguments and returned values), and the `value-routes` tracer follows the
+//! arguments and returned values), and the `route-grapher` tracer follows the
 //! receiver back to the types supplied for it.
 //!
 //! A route that never leaves one module then ends at the module, and routes
 //! that follow the same path are merged, so the graph has one route per
 //! distinct path; the merged route names every use site and cites
-//! every fact behind each hop. See the `route-merging` crate.
+//! every fact behind each hop. See the `route-cleanup` crate.
 //!
 //! ## Excluding crates
 //!
@@ -30,7 +30,7 @@
 //! too, except facts between the project's own modules. The graph records
 //! the list and how much it removed as a coverage gap, and its ID ends with
 //! `excluding` and the list. An empty list keeps everything and records
-//! nothing. See the `route-exclusion` crate.
+//! nothing. See the `route-cleanup` crate.
 //!
 //! The driver links the compiler, so it only works with the toolchain named
 //! by [`PINNED_TOOLCHAIN`], and the analyzed project must build with it.
@@ -132,9 +132,9 @@ impl<C: Cargo> ProjectGrapher for RustGrapher<C> {
                 configuration: selection.configuration.clone(),
             },
         );
-        graph.routes = route_merging::merge(std::mem::take(&mut graph.routes), &graph.items);
+        graph.routes = route_cleanup::merge(std::mem::take(&mut graph.routes), &graph.items);
         let excluded = &self.settings.excluded;
-        route_exclusion::exclude(&mut graph, excluded, |name| in_crates(excluded, name));
+        route_cleanup::exclude(&mut graph, excluded, |name| in_crates(excluded, name));
         // Graphs of one build with different lists hold different evidence.
         if !excluded.is_empty() {
             graph.id.0 = format!("{} excluding {}", graph.id.0, excluded.join(","));

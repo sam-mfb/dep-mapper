@@ -31,7 +31,7 @@ The module boundaries, dependency arrangements and review workflow for sharshere
 | Program | `mapper` |
 | Mapping | `project-map`, `map-builder`, `map-web`, `map-persist`, `map-draft`, `map-preview` |
 | Evaluation | `graph-evaluator`, `graph-evaluator-pieces`, `graph-evaluator-llm`, `graph-evaluator-manual` |
-| Graphing | `project-graph`, `project-graph-rust`, `project-graph-rust-records`, `project-graph-typescript`, `value-routes`, `route-exclusion`, `route-merging` |
+| Graphing | `project-graph`, `project-graph-rust`, `project-graph-rust-records`, `project-graph-typescript`, `route-grapher`, `route-cleanup` |
 
 ## Three core types
 
@@ -49,7 +49,7 @@ A `ProjectGraph` records receiver bounds separately from witnessed handoffs. A r
 
 `mapper` owns the composition. It constructs the grapher for the project’s language and calls it through the `ProjectGrapher` contract in `project-graph` with the selected build. Each language crate builds the `ProjectGraph` end to end: it reads the source and traces its own routes. `project-graph-rust` serves the initial investigation, and `project-graph-typescript` implements the same contract for another language.
 
-`project-graph-typescript` reads an npm workspace, one module per package, with the build selected by a tsconfig. It runs the TypeScript checker in a Node child process. The child uses the TypeScript 6 API through a small interface of our own, so the move to TypeScript 7 changes one file. It prints items, facts and receiver links as JSON Lines, and the Rust crate assembles the graph. It traces value routes with `value-routes`, the shared tracer that `project-graph-rust` also uses.
+`project-graph-typescript` reads an npm workspace, one module per package, with the build selected by a tsconfig. It runs the TypeScript checker in a Node child process. The child uses the TypeScript 6 API through a small interface of our own, so the move to TypeScript 7 changes one file. It prints items, facts and receiver links as JSON Lines, and the Rust crate assembles the graph. It traces value routes with `route-grapher`, the shared tracer that `project-graph-rust` also uses.
 
 ## Excluded crates
 
@@ -60,11 +60,11 @@ Some outside crates are, in effect, part of the language. Every module uses them
 - Nothing is left out silently. The graph gets a coverage gap that names the list and says how many routes and facts were removed, every module piece of the evaluator's workbook shows it, so human and LLM evaluators judge knowing what is missing, and the map page shows it with the other coverage gaps. The Rust graph's ID ends with the list, and the TypeScript graph's ID hashes its contents, so graphs made with different lists have different IDs.
 - `srs map` passes a default list, written out in `mapper`. For Rust it is `std`, `core` and `alloc`, plus the crates that shape the language in rule 7 of our Rust principles: `thiserror`, `futures`, `serde`, `serde_json`, `tokio` and `tokio-util`. For TypeScript it is empty. `--exclude` replaces it, and an empty `--exclude` keeps every route.
 
-The shared library `route-exclusion` does the leaving out and the recording. Each language crate calls it with its own way of matching names.
+The shared library `route-cleanup` does the leaving out and the recording. Each language crate calls it with its own way of matching names.
 
 ## Merged routes
 
-Without merging, each use site yields its own route, so one call made from many places becomes many near-identical routes. Each grapher therefore merges routes that follow the same path before it leaves out excluded ones. Two routes follow the same path when they have the same origin, the same hops in order, each to the same endpoint with the same support, and the same end: both reach their use, or both stop for the same reason. The merged route names every use site, each hop cites every fact behind it, and a stopped end cites every place its uses stopped. Facts stay one per site; nothing is dropped. A path that differs in any step stays a separate route. As a refinement, a route that never leaves one module (every hop lands in that module, its origin lies outside the project or in that module, and it reaches its use) ends at the module rather than at items inside it, so uses of one outside item anywhere in a module become one route; routes that cross modules or stop keep their detail. The shared library `route-merging` does the merging for both graphers. The exclusion counts that follow are of merged routes.
+Without merging, each use site yields its own route, so one call made from many places becomes many near-identical routes. Each grapher therefore merges routes that follow the same path before it leaves out excluded ones. Two routes follow the same path when they have the same origin, the same hops in order, each to the same endpoint with the same support, and the same end: both reach their use, or both stop for the same reason. The merged route names every use site, each hop cites every fact behind it, and a stopped end cites every place its uses stopped. Facts stay one per site; nothing is dropped. A path that differs in any step stays a separate route. As a refinement, a route that never leaves one module (every hop lands in that module, its origin lies outside the project or in that module, and it reaches its use) ends at the module rather than at items inside it, so uses of one outside item anywhere in a module become one route; routes that cross modules or stop keep their detail. The same library, `route-cleanup`, does the merging for both graphers. The exclusion counts that follow are of merged routes.
 
 Analysis is not split into a language reader and a shared grapher. If some route logic turns out to be the same across languages, it goes in a library the language crates call, not in a separate stage of the pipeline.
 

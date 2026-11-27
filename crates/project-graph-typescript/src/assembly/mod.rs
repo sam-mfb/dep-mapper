@@ -38,9 +38,9 @@ pub enum AssemblyError {
 }
 
 /// Assembles the graph, ends routes that stay in one module at the module
-/// and merges routes that follow the same path, as `route-merging`
+/// and merges routes that follow the same path, as `route-cleanup`
 /// describes, then leaves out the routes that start in the
-/// `excluded` packages as `route-exclusion` describes. An outside name lies in
+/// `excluded` packages as `route-cleanup` describes. An outside name lies in
 /// a package when the package is the part before its `#`, as `clock` in
 /// `clock#now`. The graph's ID covers what is left.
 pub fn assemble(
@@ -208,7 +208,7 @@ pub fn assemble(
             (unit_of(&module.0), unit)
         })
         .collect();
-    let routes = route_merging::merge(routes, &items);
+    let routes = route_cleanup::merge(routes, &items);
     let mut graph = ProjectGraph {
         id: GraphId(String::new()),
         build: Build {
@@ -224,7 +224,7 @@ pub fn assemble(
         routes,
         gaps,
     };
-    route_exclusion::exclude(&mut graph, excluded, |name| in_packages(excluded, name));
+    route_cleanup::exclude(&mut graph, excluded, |name| in_packages(excluded, name));
     graph.id = GraphId(format!(
         "typescript:{}@{}:{}:{}:{}",
         graph.build.project,

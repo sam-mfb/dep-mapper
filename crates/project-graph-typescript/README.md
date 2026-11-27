@@ -21,7 +21,7 @@ npm ci
 - **Identity.** The revision is the Git commit. When there are local changes, it is `<commit>-dirty-<hash of the changes>`. A project outside any Git repository gets `unversioned-<hash>`. The hash covers every file the collector and the compiler read: the sources, declaration files, package manifests, the tsconfig and every config it extends. The TypeScript package's own files are left out. The graph ID ends with a hash of the graph's whole contents, so two graphs with one ID hold the same evidence.
 - **Namespaces.** A `namespace` is an item of kind module, and its members are items named through it, such as `Paths.folder` or `Paths.Folder.path`; `namespace A.B {}` nests `B` in `A`. A member is exported when its namespace is and it says `export`. Ambient module declarations (`declare module "x"`) are not items.
 - **Package entry.** Each package's entry is its source entry file. That is the `source` field, else `types` or `main` when it names a TypeScript source file, else the first of `src/index.ts`, `src/index.tsx` and `index.ts` that exists. Without one, visibility is unknown. An item is exported when the entry exports it.
-- **Excluded packages.** `TypeScriptGrapher::new` takes a list of outside packages whose routes the graph leaves out, as `route-exclusion` describes. A name lies in a package when the package is the part before its `#`, as `clock` in `clock#now`. The graph records the list and how many routes and facts it removed as a coverage gap. `srs map` passes an empty list unless `--exclude` gives one.
+- **Excluded packages.** `TypeScriptGrapher::new` takes a list of outside packages whose routes the graph leaves out, as `route-cleanup` describes. A name lies in a package when the package is the part before its `#`, as `clock` in `clock#now`. The graph records the list and how many routes and facts it removed as a coverage gap. `srs map` passes an empty list unless `--exclude` gives one.
 - **Unbuilt packages.** A package's `exports` and `main` usually name built output, which a fresh checkout doesn't have. When the compiler can't resolve an import of a workspace package by its name, the collector resolves it to that package's source entry. So a project maps without being built, and with or without its dependencies installed.
 
 ## How it works
@@ -34,7 +34,7 @@ npm ci
 | `collector/src/records.ts` | The JSON Lines records the collector prints. `src/collection/records.rs` mirrors it. |
 | `src/collection` | The `Collector` contract and `NodeCollector`, which runs the collector. |
 | `src/assembly` | Turns the records into the graph. This is pure. |
-| `src/routes` | Builds the routes from `project_graph` facts only. Value routes come from the shared `value-routes` tracer. |
+| `src/routes` | Builds the routes from `project_graph` facts only. Value routes come from the shared `route-grapher` tracer. |
 | `src/revision` | The source revision, from Git. |
 
 Imports, re-exports and references are facts only when they reach another package or something outside the project. Calls, implementations and value moves are facts everywhere, because routes pass through code inside one package.
@@ -50,10 +50,10 @@ When a move happens on one branch of a conditional, its hop is `Possible`, with 
 There are three kinds of route:
 
 - **Direct use.** One hop from the supplier to the user, for an import, re-export, reference, implementation, call or declared dependency between packages.
-- **Value route.** The shared `value-routes` tracer searches back from a method call's receiver to each `new` expression that can supply it, keeping one path per origin. A value returned from a call is matched to that call's own arguments. A move into or out of a field, or out of a closure's captured variable, stands for every instance of that place, so its hop is possible. If no origin is reached, the route stops at the call and says why.
+- **Value route.** The shared `route-grapher` tracer searches back from a method call's receiver to each `new` expression that can supply it, keeping one path per origin. A value returned from a call is matched to that call's own arguments. A move into or out of a field, or out of a closure's captured variable, stands for every instance of that place, so its hop is possible. If no origin is reached, the route stops at the call and says why.
 - **Receiver bound.** For a call through an interface, one bound for each class with an `Implements` fact for that interface.
 
-Routes that follow the same path are then merged by the shared `route-merging` library, so the graph has one route per distinct path. Before that, a route that never leaves one package ends at the package rather than at the items inside it. A direct use made at ten call sites is one route that names all ten sites, and its hop cites all ten facts.
+Routes that follow the same path are then merged by the shared `route-cleanup` library, so the graph has one route per distinct path. Before that, a route that never leaves one package ends at the package rather than at the items inside it. A direct use made at ten call sites is one route that names all ten sites, and its hop cites all ten facts.
 
 Not yet covered: arrays kept per variable rather than per element type, other containers such as `Map` and `Set`, and calls through function-typed values beyond recording them as indirect. A closure is followed when it is given as an argument for a parameter; one stored in a variable or a field and called later is not. A value that comes from outside the project is not an origin, so its trace stops.
 

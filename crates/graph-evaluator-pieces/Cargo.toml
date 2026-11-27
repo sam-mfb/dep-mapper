@@ -15,7 +15,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 serde_json = "1.0.145"
-route-exclusion.workspace = true
+route-cleanup.workspace = true
 
 [features]
 testing = []

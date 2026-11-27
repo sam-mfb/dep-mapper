@@ -1,7 +1,7 @@
 //! Routes for calls left at a trait: which implementations reach the
 //! receiver, and through which value moves.
 //!
-//! The driver's flow records become value moves for the `value-routes`
+//! The driver's flow records become value moves for the `route-grapher`
 //! tracer, with endpoints named as in the rest of the graph:
 //!
 //! - a local, argument or returned value is a place in the function's item,
@@ -25,8 +25,8 @@
 use super::{Ordered, Resolver, Unit, Units, site};
 use project_graph::{Dispatch, Endpoint, Fact, FactKind, ModuleId};
 use project_graph_rust_records as r;
+use route_grapher::{CallLink, Flow, Limits, Trace, Use};
 use std::collections::{HashMap, HashSet, VecDeque};
-use value_routes::{CallLink, Flow, Limits, Trace, Use};
 
 const LIMITS: Limits = Limits {
     max_states: 20_000,
@@ -114,7 +114,7 @@ pub(super) fn traced(
         })
         .collect();
     let implementors = implementors(resolve, units, crates);
-    let traces = value_routes::trace(&flows, &uses, LIMITS);
+    let traces = route_grapher::trace(&flows, &uses, LIMITS);
     let into = moves_into(&flows);
     let mut routes = Vec::new();
     for (receiver, traces) in receivers.iter().zip(traces) {
@@ -160,7 +160,7 @@ pub(super) fn traced(
                     if crosses_modules {
                         // Only a search that saw every move can say where the
                         // value enters; one stopped at a bound keeps saying so.
-                        let entries = if reason == value_routes::NO_ORIGIN {
+                        let entries = if reason == route_grapher::NO_ORIGIN {
                             unsupplied_parameters(resolve, &into, &receiver.receiver)
                         } else {
                             Vec::new()

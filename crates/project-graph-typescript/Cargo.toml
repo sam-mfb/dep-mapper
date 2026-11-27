@@ -13,6 +13,5 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
-value-routes = { path = "../value-routes" }
-route-exclusion.workspace = true
-route-merging.workspace = true
+route-grapher = { path = "../route-grapher" }
+route-cleanup.workspace = true

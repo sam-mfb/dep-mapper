@@ -4,7 +4,7 @@
 //! - A direct use between two modules, such as an import or a call, is a
 //!   route of one hop from the supplier to the user.
 //! - A value route explains a method call's receiver. The shared
-//!   `value-routes` tracer searches back from the receiver over the value
+//!   `route-grapher` tracer searches back from the receiver over the value
 //!   moves to each origin it reaches, matching a value returned from a call
 //!   to that call's own arguments. A trace that reaches no origin is a
 //!   route that stops at the call.
@@ -15,8 +15,8 @@ use project_graph::{
     Endpoint, Fact, FactId, FactKind, Hop, ItemId, ModuleId, ReceiverBasis, Route, RouteEnd,
     RouteId, Support,
 };
+use route_grapher::{CallLink, Flow, Trace, Use};
 use std::collections::{BTreeMap, BTreeSet};
-use value_routes::{CallLink, Flow, Trace, Use};
 
 /// A method call and the value moves that deliver its receiver.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -135,7 +135,7 @@ pub fn trace_values(
             }
         }
     }
-    let traces = value_routes::trace(
+    let traces = route_grapher::trace(
         &flows,
         &receivers
             .iter()
@@ -143,7 +143,7 @@ pub fn trace_values(
                 receiver: receiver.clone(),
             })
             .collect::<Vec<_>>(),
-        value_routes::Limits {
+        route_grapher::Limits {
             max_states: limits.max_states,
             max_call_depth: limits.max_call_depth,
         },
