@@ -128,7 +128,7 @@ pub fn clusters_schema() -> Value {
         "properties": {
             "clusters": {
                 "type": "array",
-                "description": "Clusters in the order a reader should meet them.",
+                "description": "Clusters from top to bottom: first the program's cluster, which uses the others, and last the foundations. A module's cluster should sit at or above every cluster it uses.",
                 "items": {
                     "type": "object",
                     "properties": {

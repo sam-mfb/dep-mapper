@@ -385,7 +385,6 @@ name = "mapper"
 version = "0.1.0"
 dependencies = [
  "clap",
- "graph-evaluation-assembly",
  "graph-evaluator",
  "graph-evaluator-llm",
  "graph-evaluator-manual",

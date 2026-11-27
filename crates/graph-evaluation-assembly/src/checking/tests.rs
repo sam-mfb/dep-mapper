@@ -286,10 +286,7 @@ fn fixed_workbook(clusters: &[&str]) -> Workbook {
             page_size: 10,
             source: &ByteOffsets,
             command: Some("srs eval"),
-            clusters: &ClusterPlan {
-                fixed: Some(strings(clusters)),
-                previous: BTreeMap::new(),
-            },
+            clusters: &ClusterPlan::fixed(strings(clusters), BTreeMap::new()).unwrap(),
         },
     )
 }

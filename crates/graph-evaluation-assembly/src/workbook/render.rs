@@ -1,6 +1,7 @@
 //! The text of pieces and handle details.
 
 use super::{ClusterPlan, span_text};
+use graph_evaluator::Clusters;
 use project_graph::{
     Dispatch, Endpoint, FactId, FactKind, ImportUse, ItemId, ItemKind, ModuleId, ProjectGraph,
     ReceiverBasis, RouteEnd, RouteId, SourceSpan, Support, Visibility,
@@ -259,14 +260,14 @@ impl<'a> Renderer<'a> {
     /// one, and the module's earlier cluster, if known.
     fn module_clusters(&self, id: &ModuleId) -> String {
         let mut text = String::new();
-        if let Some(fixed) = &self.clusters.fixed {
+        if let Some(fixed) = self.clusters.fixed_clusters() {
             let _ = writeln!(
                 text,
                 "\nThe clusters are fixed, from top to bottom: {}. Name one of them. If none fits, defer the module and say why.",
                 quoted(fixed)
             );
         }
-        if let Some(previous) = self.clusters.previous.get(&id.0) {
+        if let Some(previous) = self.clusters.previous().get(&id.0) {
             let _ = writeln!(
                 text,
                 "\nAn earlier evaluation put this module in cluster {previous:?}. That is a hint, not evidence."
@@ -276,7 +277,7 @@ impl<'a> Renderer<'a> {
     }
 
     pub(super) fn clusters_page(&self) -> String {
-        if let Some(fixed) = &self.clusters.fixed {
+        if let Some(fixed) = self.clusters.fixed_clusters() {
             return format!(
                 "Clusters\n\nThe clusters are fixed, from top to bottom: {}. Every module judgment names one of them; a module that fits none is deferred with a reason. There is nothing to record here.\n",
                 quoted(fixed)
@@ -551,10 +552,10 @@ fn fact_kind(kind: &FactKind) -> String {
 }
 
 /// Names in quotes, separated by commas.
-fn quoted(names: &[String]) -> String {
-    names
+fn quoted(clusters: &Clusters) -> String {
+    clusters
         .iter()
-        .map(|name| format!("{name:?}"))
+        .map(|cluster| format!("{:?}", cluster.0))
         .collect::<Vec<_>>()
         .join(", ")
 }

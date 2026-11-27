@@ -33,11 +33,8 @@ fn the_llm_evaluator_needs_an_api_key() {
     let installed = Installed {
         anthropic_api_key: None,
     };
-    let Err(error) = installed.evaluator(
-        &EvaluatorChoice::Llm,
-        &selection(),
-        &ClusterPlan::proposed(),
-    ) else {
+    let Err(error) = installed.evaluator(&EvaluatorChoice::Llm, &selection(), &LayerPlan::Proposed)
+    else {
         panic!("no evaluator without a key")
     };
     assert!(error.0.contains("ANTHROPIC_API_KEY"));
@@ -50,11 +47,28 @@ fn with_a_key_the_llm_evaluator_is_supplied_without_contacting_the_api() {
     };
     assert!(
         installed
-            .evaluator(
-                &EvaluatorChoice::Llm,
-                &selection(),
-                &ClusterPlan::proposed(),
-            )
+            .evaluator(&EvaluatorChoice::Llm, &selection(), &LayerPlan::Proposed)
             .is_ok()
     );
+}
+
+#[test]
+fn an_invalid_fixed_layer_list_is_refused_before_any_evaluator_is_built() {
+    let installed = Installed {
+        anthropic_api_key: Some("test-key".into()),
+    };
+    for layers in [vec![], vec!["top".to_string(), " ".to_string()]] {
+        let plan = LayerPlan::Fixed {
+            layers,
+            previous: BTreeMap::new(),
+        };
+        let Err(error) = installed.evaluator(&EvaluatorChoice::Llm, &selection(), &plan) else {
+            panic!("an invalid list is refused")
+        };
+        assert!(
+            error.0.starts_with("the layers cannot be fixed"),
+            "{}",
+            error.0
+        );
+    }
 }

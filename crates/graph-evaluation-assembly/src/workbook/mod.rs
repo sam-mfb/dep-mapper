@@ -12,6 +12,7 @@
 
 mod render;
 
+use graph_evaluator::{ClusterName, Clusters};
 use project_graph::{Endpoint, FactKind, ModuleId, ProjectGraph, RouteId, SourceSpan, UnitId};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -105,13 +106,19 @@ pub struct Presentation<'a> {
 /// What the evaluator is told about clusters before it starts.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClusterPlan {
-    /// The clusters from top to bottom, when they are fixed in advance. Every
-    /// module judgment must then name one of them. With `None`, the answers
-    /// propose the list.
-    pub fixed: Option<Vec<String>>,
-    /// Each module's cluster in an earlier evaluation, by module identifier.
-    /// Module pieces show it as a hint.
-    pub previous: BTreeMap<String, String>,
+    fixed: Option<Clusters>,
+    previous: BTreeMap<String, String>,
+}
+
+/// Why a list cannot be fixed as the clusters.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum InvalidClusterList {
+    #[error("the cluster list is empty")]
+    Empty,
+    #[error("a cluster name is blank")]
+    Blank,
+    #[error("cluster {0:?} is listed more than once")]
+    Repeated(String),
 }
 
 impl ClusterPlan {
@@ -121,6 +128,46 @@ impl ClusterPlan {
             fixed: None,
             previous: BTreeMap::new(),
         }
+    }
+
+    /// The clusters fixed in advance, from top to bottom, so every module
+    /// judgment must name one of them. `previous` gives each module's
+    /// cluster in an earlier evaluation, by module identifier, which module
+    /// pieces show as a hint. Fails on an empty list, a blank name or a
+    /// name listed twice.
+    pub fn fixed(
+        names: Vec<String>,
+        previous: BTreeMap<String, String>,
+    ) -> Result<Self, InvalidClusterList> {
+        if names.is_empty() {
+            return Err(InvalidClusterList::Empty);
+        }
+        if names.iter().any(|name| name.trim().is_empty()) {
+            return Err(InvalidClusterList::Blank);
+        }
+        let clusters = Clusters::new(names.into_iter().map(ClusterName).collect())
+            .map_err(|repeated| InvalidClusterList::Repeated(repeated.0.0))?;
+        Ok(ClusterPlan {
+            fixed: Some(clusters),
+            previous,
+        })
+    }
+
+    /// The fixed clusters, from top to bottom, if there are any.
+    pub fn fixed_clusters(&self) -> Option<&Clusters> {
+        self.fixed.as_ref()
+    }
+
+    /// Each module's cluster in an earlier evaluation, by module identifier.
+    pub fn previous(&self) -> &BTreeMap<String, String> {
+        &self.previous
+    }
+
+    /// The fixed names as text, as the workbook stores them.
+    fn fixed_names(&self) -> Option<Vec<String>> {
+        self.fixed
+            .as_ref()
+            .map(|clusters| clusters.iter().map(|c| c.0.clone()).collect())
     }
 }
 
@@ -214,7 +261,7 @@ pub fn present(graph: &ProjectGraph, presentation: &Presentation) -> Workbook {
             .map(|(id, module)| (id.0.clone(), module.name.clone()))
             .collect(),
         refs,
-        fixed_clusters: presentation.clusters.fixed.clone(),
+        fixed_clusters: presentation.clusters.fixed_names(),
         uses: uses(graph),
     }
 }

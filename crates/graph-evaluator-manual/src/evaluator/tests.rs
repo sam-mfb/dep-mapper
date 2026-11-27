@@ -280,10 +280,7 @@ fn with_fixed_clusters_the_agent_records_no_list_and_the_evaluation_keeps_the_fi
         Settings {
             page_size: 20,
             command: "srs eval".into(),
-            clusters: ClusterPlan {
-                fixed: Some(fixed.clone()),
-                previous: Default::default(),
-            },
+            clusters: ClusterPlan::fixed(fixed.clone(), Default::default()).unwrap(),
         },
     );
     let evaluation = evaluator.evaluate(&fixture::graph()).unwrap();
@@ -310,5 +307,70 @@ fn with_fixed_clusters_the_agent_records_no_list_and_the_evaluation_keeps_the_fi
         String::from_utf8(out)
             .unwrap()
             .contains("the cluster list is fixed")
+    );
+}
+
+fn evaluator_with(root: &PathBuf, clusters: ClusterPlan) -> ManualEvaluator {
+    ManualEvaluator::new(
+        Box::new(DirStore::new(root)),
+        Box::new(ReturnAtOnce),
+        Box::new(ByteOffsets),
+        Settings {
+            page_size: 20,
+            command: "srs eval".into(),
+            clusters,
+        },
+    )
+}
+
+fn fixed(names: &[&str]) -> ClusterPlan {
+    ClusterPlan::fixed(
+        names.iter().map(|n| n.to_string()).collect(),
+        Default::default(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_workbook_made_with_another_layer_plan_is_refused_and_kept() {
+    for (first, second) in [
+        (ClusterPlan::proposed(), fixed(&["Program", "Storage"])),
+        (fixed(&["Program", "Storage"]), ClusterPlan::proposed()),
+        (
+            fixed(&["Program", "Storage"]),
+            fixed(&["Storage", "Program"]),
+        ),
+    ] {
+        let scratch = Scratch::new();
+        let _ = evaluator_with(&scratch.0, first.clone()).evaluate(&fixture::graph());
+        let error = evaluator_with(&scratch.0, second)
+            .evaluate(&fixture::graph())
+            .unwrap_err();
+        assert!(
+            error.message.starts_with("the layer plan changed"),
+            "{}",
+            error.message
+        );
+        assert!(error.message.contains("start a fresh workbook"));
+        let kept = DirStore::new(&scratch.0).load_workbook().unwrap().unwrap();
+        let first_names = first
+            .fixed_clusters()
+            .map(|c| c.iter().map(|n| n.0.clone()).collect::<Vec<_>>());
+        assert_eq!(kept.fixed_clusters, first_names);
+    }
+}
+
+#[test]
+fn the_same_layer_plan_resumes_the_workbook() {
+    let scratch = Scratch::new();
+    let plan = fixed(&["Program", "Storage"]);
+    let _ = evaluator_with(&scratch.0, plan.clone()).evaluate(&fixture::graph());
+    let error = evaluator_with(&scratch.0, plan)
+        .evaluate(&fixture::graph())
+        .unwrap_err();
+    assert!(
+        error.message.contains("were not submitted"),
+        "{}",
+        error.message
     );
 }

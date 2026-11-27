@@ -550,10 +550,9 @@ fn with_fixed_clusters_the_model_is_not_asked_for_them_and_must_name_one() {
         "Storage".to_string(),
         "Contracts".to_string(),
     ];
-    let settings = EvaluatorSettings::recommended(ClusterPlan {
-        fixed: Some(fixed.clone()),
-        previous: Default::default(),
-    });
+    let settings = EvaluatorSettings::recommended(
+        ClusterPlan::fixed(fixed.clone(), Default::default()).unwrap(),
+    );
     let evaluation = evaluate_with(&model, &log, settings, &testing::graph()).unwrap();
 
     let names: Vec<_> = evaluation.clusters.iter().map(|c| c.0.clone()).collect();
@@ -575,10 +574,13 @@ fn a_module_naming_a_cluster_outside_the_fixed_list_goes_back_for_repair() {
     let model = FakeModel::new(sensible);
     let log = RecordedLog::default();
     // `sensible` puts store in Contracts, which this list lacks.
-    let settings = EvaluatorSettings::recommended(ClusterPlan {
-        fixed: Some(vec!["Program".to_string(), "Storage".to_string()]),
-        previous: Default::default(),
-    });
+    let settings = EvaluatorSettings::recommended(
+        ClusterPlan::fixed(
+            vec!["Program".to_string(), "Storage".to_string()],
+            Default::default(),
+        )
+        .unwrap(),
+    );
     let error = evaluate_with(&model, &log, settings, &testing::graph()).unwrap_err();
     assert!(error.message.contains("module:store"), "{}", error.message);
     assert!(

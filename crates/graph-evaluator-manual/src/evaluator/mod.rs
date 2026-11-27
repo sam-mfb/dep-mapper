@@ -5,9 +5,11 @@
 //! `AgentRunner` to work through it. It returns once the runner returns and
 //! the answers are submitted, after checking every answer again.
 //!
-//! A workbook for the same graph is resumed: its answers are kept, and if
-//! they were already submitted the runner is not called again. A workbook
-//! for a different graph is never overwritten.
+//! A workbook for the same graph and the same fixed clusters is resumed: its
+//! answers are kept, and if they were already submitted the runner is not
+//! called again. A workbook for a different graph, or made with different
+//! fixed clusters or none, is never overwritten. The clusters' hints may
+//! change between runs; they only change the pieces' text.
 
 use crate::checking::{self, Finding};
 use crate::commands;
@@ -103,13 +105,20 @@ impl GraphEvaluator for ManualEvaluator {
         };
         let workbook = workbook::present(graph, &presentation);
         let location = self.store.location();
-        if let Some(existing) = self.store.load_workbook().map_err(store_failed)?
-            && existing.graph != workbook.graph
-        {
-            return Err(failed(format!(
-                "the workbook at {location} belongs to graph {}, not {}; move it aside or choose another location",
-                existing.graph, workbook.graph
-            )));
+        if let Some(existing) = self.store.load_workbook().map_err(store_failed)? {
+            if existing.graph != workbook.graph {
+                return Err(failed(format!(
+                    "the workbook at {location} belongs to graph {}, not {}; move it aside or choose another location",
+                    existing.graph, workbook.graph
+                )));
+            }
+            if existing.fixed_clusters != workbook.fixed_clusters {
+                return Err(failed(format!(
+                    "the layer plan changed: the workbook at {location} was made with {}, but this run has {}. Its answers were checked against the old plan. Run again with the old plan to resume it, or move it aside or choose another location to start a fresh workbook",
+                    plan_text(existing.fixed_clusters.as_deref()),
+                    plan_text(workbook.fixed_clusters.as_deref())
+                )));
+            }
         }
         let instructions = commands::instructions(&self.settings.command, &workbook);
         self.store
@@ -138,6 +147,14 @@ impl GraphEvaluator for ManualEvaluator {
                 list(&problems)
             ))),
         }
+    }
+}
+
+/// A workbook's layer plan, for people to read.
+fn plan_text(fixed: Option<&[String]>) -> String {
+    match fixed {
+        Some(names) => format!("the layers fixed as {}", names.join(", ")),
+        None => "the layers left for the evaluator to propose".into(),
     }
 }
 

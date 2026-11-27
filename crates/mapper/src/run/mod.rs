@@ -2,8 +2,7 @@
 //! Side effects go through the injected implementations, files and outputs.
 
 use crate::draft::{self, DraftFiles};
-use crate::implementations::{EvaluatorChoice, Implementations, Language, Unavailable};
-use graph_evaluation_assembly::workbook::ClusterPlan;
+use crate::implementations::{EvaluatorChoice, Implementations, Language, LayerPlan, Unavailable};
 use graph_evaluator::EvaluationError;
 use map_builder::{BuildProblem, GraphMismatch, MapBuild};
 use map_persist::MapDocument;
@@ -89,8 +88,8 @@ pub fn build(
 ) -> Result<MapBuild, MapError> {
     // The layers and the evaluator first: their checks are quick, while a
     // grapher may build tools before it can start.
-    let clusters = cluster_plan(&command.layers, files)?;
-    let evaluator = implementations.evaluator(&command.evaluator, &command.selection, &clusters)?;
+    let layers = layer_plan(&command.layers, files)?;
+    let evaluator = implementations.evaluator(&command.evaluator, &command.selection, &layers)?;
     let grapher = implementations.grapher(&command.language)?;
     let graph = grapher.build_graph(&command.selection)?;
     let evaluation = evaluator.evaluate(&graph)?;
@@ -116,11 +115,11 @@ pub fn map(
 }
 
 /// What the evaluator is told about layers, from the command's source.
-fn cluster_plan(source: &LayerSource, files: &dyn DraftFiles) -> Result<ClusterPlan, MapError> {
+fn layer_plan(source: &LayerSource, files: &dyn DraftFiles) -> Result<LayerPlan, MapError> {
     match source {
-        LayerSource::Proposed => Ok(ClusterPlan::proposed()),
-        LayerSource::Listed(layers) => Ok(ClusterPlan {
-            fixed: Some(layers.clone()),
+        LayerSource::Proposed => Ok(LayerPlan::Proposed),
+        LayerSource::Listed(layers) => Ok(LayerPlan::Fixed {
+            layers: layers.clone(),
             previous: BTreeMap::new(),
         }),
         LayerSource::Draft(path) => {
@@ -131,8 +130,8 @@ fn cluster_plan(source: &LayerSource, files: &dyn DraftFiles) -> Result<ClusterP
                     path.display()
                 )]));
             }
-            Ok(ClusterPlan {
-                fixed: Some(map.layers.iter().map(|layer| layer.0.clone()).collect()),
+            Ok(LayerPlan::Fixed {
+                layers: map.layers.iter().map(|layer| layer.0.clone()).collect(),
                 previous: planned_layers(&map),
             })
         }

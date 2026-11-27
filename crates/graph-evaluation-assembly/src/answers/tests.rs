@@ -307,10 +307,11 @@ fn fixed_workbook() -> Workbook {
             page_size: 10,
             source: &ByteOffsets,
             command: Some("srs eval"),
-            clusters: &ClusterPlan {
-                fixed: Some(vec!["Program".into(), "Storage".into()]),
-                previous: Default::default(),
-            },
+            clusters: &ClusterPlan::fixed(
+                vec!["Program".into(), "Storage".into()],
+                Default::default(),
+            )
+            .unwrap(),
         },
     )
 }

@@ -51,7 +51,7 @@ fn evaluation() -> GraphEvaluation {
 #[derive(Default)]
 struct StandIns {
     graphers: bool,
-    plans: RefCell<Vec<ClusterPlan>>,
+    plans: RefCell<Vec<LayerPlan>>,
 }
 
 fn stand_ins(graphers: bool) -> StandIns {
@@ -73,9 +73,9 @@ impl Implementations for StandIns {
         &self,
         _choice: &EvaluatorChoice,
         _selection: &BuildSelection,
-        clusters: &ClusterPlan,
+        layers: &LayerPlan,
     ) -> Result<Box<dyn graph_evaluator::GraphEvaluator>, Unavailable> {
-        self.plans.borrow_mut().push(clusters.clone());
+        self.plans.borrow_mut().push(layers.clone());
         Ok(Box::new(FixedEvaluator(evaluation())))
     }
 }
@@ -207,7 +207,7 @@ fn a_grapher_failure_stops_the_command() {
     assert!(matches!(error, MapError::Graphing(_)));
 }
 
-fn plan_for(layers: LayerSource, files: &Files) -> Result<ClusterPlan, MapError> {
+fn plan_for(layers: LayerSource, files: &Files) -> Result<LayerPlan, MapError> {
     let mut command = command();
     command.layers = layers;
     let implementations = stand_ins(true);
@@ -219,7 +219,7 @@ fn plan_for(layers: LayerSource, files: &Files) -> Result<ClusterPlan, MapError>
 fn without_a_layer_source_the_evaluator_proposes_the_layers() {
     assert_eq!(
         plan_for(LayerSource::Proposed, &no_files()).unwrap(),
-        ClusterPlan::proposed()
+        LayerPlan::Proposed
     );
 }
 
@@ -232,8 +232,8 @@ fn listed_layers_are_fixed_without_hints() {
     .unwrap();
     assert_eq!(
         plan,
-        ClusterPlan {
-            fixed: Some(vec!["Program".into(), "Base".into()]),
+        LayerPlan::Fixed {
+            layers: vec!["Program".into(), "Base".into()],
             previous: BTreeMap::new(),
         }
     );
@@ -295,8 +295,8 @@ fn a_draft_fixes_the_combined_layers_and_hints_each_modules_planned_layer() {
     .unwrap();
     assert_eq!(
         plan,
-        ClusterPlan {
-            fixed: Some(vec!["program".into(), "base".into(), "foundation".into()]),
+        LayerPlan::Fixed {
+            layers: vec!["program".into(), "base".into(), "foundation".into()],
             previous: BTreeMap::from([
                 ("app".to_string(), "program".to_string()),
                 ("core".to_string(), "foundation".to_string()),

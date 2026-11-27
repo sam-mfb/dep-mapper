@@ -327,10 +327,9 @@ fn the_clusters_piece_asks_for_the_list_from_top_to_bottom() {
 
 #[test]
 fn a_fixed_list_is_stated_in_the_clusters_piece_and_every_module_piece() {
-    let workbook = planned_workbook(ClusterPlan {
-        fixed: Some(vec!["Program".into(), "Storage".into()]),
-        previous: BTreeMap::new(),
-    });
+    let workbook = planned_workbook(
+        ClusterPlan::fixed(vec!["Program".into(), "Storage".into()], BTreeMap::new()).unwrap(),
+    );
     assert_eq!(
         workbook.fixed_clusters,
         Some(vec!["Program".to_string(), "Storage".to_string()])
@@ -347,10 +346,13 @@ fn a_fixed_list_is_stated_in_the_clusters_piece_and_every_module_piece() {
 
 #[test]
 fn a_module_piece_shows_the_modules_earlier_cluster_as_a_hint() {
-    let workbook = planned_workbook(ClusterPlan {
-        fixed: None,
-        previous: BTreeMap::from([("disk".to_string(), "Storage".to_string())]),
-    });
+    let workbook = planned_workbook(
+        ClusterPlan::fixed(
+            vec!["Program".into(), "Storage".into()],
+            BTreeMap::from([("disk".to_string(), "Storage".to_string())]),
+        )
+        .unwrap(),
+    );
     let disk = &workbook.piece(&PieceId::module("disk")).unwrap().pages[0];
     assert!(disk.contains("An earlier evaluation put this module in cluster \"Storage\""));
     let app = &workbook.piece(&PieceId::module("app")).unwrap().pages[0];
@@ -366,4 +368,28 @@ fn a_workbook_saved_before_clusters_could_be_fixed_still_loads() {
     let loaded: Workbook = serde_json::from_value(saved).unwrap();
     assert_eq!(loaded.fixed_clusters, None);
     assert!(loaded.uses.is_empty());
+}
+
+#[test]
+fn an_empty_blank_or_repeating_list_cannot_be_fixed() {
+    let fixed = |names: &[&str]| {
+        ClusterPlan::fixed(
+            names.iter().map(|n| n.to_string()).collect(),
+            BTreeMap::new(),
+        )
+    };
+    assert_eq!(fixed(&[]), Err(InvalidClusterList::Empty));
+    assert_eq!(fixed(&["Program", "  "]), Err(InvalidClusterList::Blank));
+    assert_eq!(
+        fixed(&["Program", "Base", "Program"]),
+        Err(InvalidClusterList::Repeated("Program".into()))
+    );
+    let plan = fixed(&["Program", "Base"]).unwrap();
+    let names: Vec<&str> = plan
+        .fixed_clusters()
+        .unwrap()
+        .iter()
+        .map(|c| c.0.as_str())
+        .collect();
+    assert_eq!(names, ["Program", "Base"]);
 }
