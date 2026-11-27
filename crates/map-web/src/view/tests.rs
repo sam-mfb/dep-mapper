@@ -548,3 +548,50 @@ fn each_view_groups_by_what_it_shows() {
         [none, grouped.clone(), grouped]
     );
 }
+
+/// A route from an item in `origin` with one hop into each listed module,
+/// each receiver using its sender.
+fn route_from(origin: &str, modules: &[&str]) -> MapRoute {
+    let mut route = route_through(modules, Review::Unreviewed);
+    route.origin = RoutePoint::Project(ProjectPoint {
+        module: ModuleId(origin.into()),
+        item: Some("Thing".into()),
+    });
+    for hop in &mut route.hops {
+        if let HopTarget::Project { link, .. } = &mut hop.to {
+            *link = HopLink::ReceiverUsesSender;
+        }
+    }
+    route
+}
+
+#[test]
+fn an_arrow_lists_the_one_hop_routes_that_travel_along_it() {
+    let mut map = mixed_map();
+    map.routes = BTreeMap::from([
+        // `new` uses `core`: the arrow new → core.
+        (RouteId("direct-1".into()), route_from("core", &["new"])),
+        (RouteId("direct-2".into()), route_from("core", &["new"])),
+        // Two hops: listed among the routes, not under the arrow.
+        (
+            RouteId("longer".into()),
+            route_from("core", &["new", "stray"]),
+        ),
+        // One hop along a dependency the map does not have.
+        (RouteId("orphan".into()), route_from("stray", &["core"])),
+    ]);
+    let view = view(&map);
+    let edge = view
+        .edges
+        .iter()
+        .find(|e| e.from == "new" && e.to == "core")
+        .unwrap();
+    assert_eq!(edge.routes, ["direct-1", "direct-2"]);
+    assert!(
+        view.edges
+            .iter()
+            .filter(|e| !(e.from == "new" && e.to == "core"))
+            .all(|e| e.routes.is_empty())
+    );
+    assert_eq!(view.routes.len(), 4, "every route stays in the view");
+}

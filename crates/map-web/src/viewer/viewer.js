@@ -1166,10 +1166,27 @@
       return;
     }
     const c=crates.get(n), routes=graph.routes.filter(r=>statusShown(r.status)&&routeNames(r).includes(n));
-    const neighbors=(edges,other)=>el("ul",{class:"flows"},edges.map(e=>el("li",{},
-      el("div",{class:"item-head"},moduleLink(e[other]),el("span",{class:"muted"},roleWords(e)),statusBadge(e),reviewBadge(e.review)),
-      el("div",{},e.detail),changeList(e),reviewDetails(e))));
     const includes=graph.edges.filter(e=>statusShown(e.status)&&e.from===n), users=graph.edges.filter(e=>statusShown(e.status)&&e.to===n);
+    // A one-hop route is a direct use: it is listed under the arrow it
+    // travels along. Longer routes, and one-hop routes along no arrow
+    // shown here (within the module or out of the project), keep their
+    // own sections.
+    const byId=new Map(routes.map(r=>[r.id,r]));
+    const usesOf=(e)=>(e.routes||[]).map(id=>byId.get(id)).filter(Boolean);
+    const alongArrows=new Set([...includes,...users].flatMap(usesOf).map(r=>r.id));
+    const longer=routes.filter(r=>r.hops.length>1);
+    const otherUses=routes.filter(r=>r.hops.length<=1&&!alongArrows.has(r.id));
+    const useCount=(rs)=>rs.reduce((k,r)=>k+Math.max(r.use_sites.length,1),0);
+    const holdsRoute=(rs)=>rs.some(r=>r.id===state.route);
+    const neighbors=(edges,other)=>el("ul",{class:"flows"},edges.map(e=>{
+      const uses=usesOf(e);
+      return el("li",{},
+        el("div",{class:"item-head"},moduleLink(e[other]),el("span",{class:"muted"},roleWords(e)),
+          uses.length?el("span",{class:"muted"},plural(useCount(uses),"use")):null,statusBadge(e),reviewBadge(e.review)),
+        el("div",{},e.detail),changeList(e),reviewDetails(e),
+        uses.length?el("details",{class:"route-detail arrow-uses",...(holdsRoute(uses)?{open:""}:{})},
+          el("summary",{},`Direct-use routes (${uses.length})`),routeList(uses)):null);
+    }));
     const surface=()=>el("ul",{class:"items"},c.surface.map(item=>el("li",{},
       el("div",{class:"item-head"},el("span",{class:"kind"},item.kind),el("code",{},item.name)),
       item.signature?el("div",{class:"item-doc"},el("code",{},item.signature)):null,
@@ -1179,9 +1196,10 @@
       c.concern?el("p",{},c.concern):null, section("surface","Surface",c.surface.length,surface),
       section("review",c.status==="addition"?"Proposed review":"Review",1,()=>reviewBody(codeReview(c))),
       c.status==="update"?section("update","Proposed update",1,()=>updateBody(c),null,true):null,
-      section("wiring","Routes",routes.length,()=>routeList(routes),null,routes.some(r=>r.id===state.route)),
-      section("includes","Depends on",includes.length,()=>neighbors(includes,"to")),
-      section("included-in","Used by",users.length,()=>neighbors(users,"from"))].filter(Boolean));
+      section("wiring","Routes",longer.length,()=>routeList(longer),"Routes of more than one hop",holdsRoute(longer)),
+      section("includes","Depends on",includes.length,()=>neighbors(includes,"to"),null,holdsRoute(includes.flatMap(usesOf))),
+      section("included-in","Used by",users.length,()=>neighbors(users,"from"),null,holdsRoute(users.flatMap(usesOf))),
+      section("other-uses","Other uses",otherUses.length,()=>routeList(otherUses),"One-hop routes within the module or out of the project",holdsRoute(otherUses))].filter(Boolean));
     panel.scrollTop=0;
     const current=panel.querySelector(".current-route");
     if (current) current.scrollIntoView({block:"nearest"});
