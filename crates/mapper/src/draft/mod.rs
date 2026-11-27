@@ -75,33 +75,47 @@ pub struct Build {
 /// builds the page. A base path is relative to the draft's folder.
 pub fn build(path: &Path, files: &dyn DraftFiles) -> Build {
     let mut sources = vec![path.to_path_buf()];
-    let page = load_draft(path, files).and_then(|draft| {
-        let base = match &draft.base {
-            DraftBase::Saved(base) => {
-                let base_path = path.parent().unwrap_or(Path::new("")).join(base);
-                sources.push(base_path.clone());
-                Some(load_map(&base_path, files)?)
-            }
-            DraftBase::None { .. } => None,
-        };
-        let combined = map_draft::combine(&draft, base.as_ref()).map_err(|mismatch| {
-            vec![format!(
-                "{}: {}",
-                path.display(),
-                describe_mismatch(&mismatch)
-            )]
-        })?;
-        if combined.problems.is_empty() {
-            Ok(map_web::page(&combined.map))
-        } else {
-            Err(combined
-                .problems
-                .iter()
-                .map(|problem| format!("{}: {}", path.display(), describe(problem)))
-                .collect())
-        }
-    });
+    let page = lay_over(path, files, &mut sources).map(|map| map_web::page(&map));
     Build { page, sources }
+}
+
+/// Loads the draft at `path` and its base, and lays the draft over the base.
+/// Returns the combined map, or every problem found, each as a line to show.
+pub fn laid_over(path: &Path, files: &dyn DraftFiles) -> Result<ProjectMap, Vec<String>> {
+    lay_over(path, files, &mut vec![])
+}
+
+/// As `laid_over`, adding each file it reads or tries to read to `sources`.
+fn lay_over(
+    path: &Path,
+    files: &dyn DraftFiles,
+    sources: &mut Vec<PathBuf>,
+) -> Result<ProjectMap, Vec<String>> {
+    let draft = load_draft(path, files)?;
+    let base = match &draft.base {
+        DraftBase::Saved(base) => {
+            let base_path = path.parent().unwrap_or(Path::new("")).join(base);
+            sources.push(base_path.clone());
+            Some(load_map(&base_path, files)?)
+        }
+        DraftBase::None { .. } => None,
+    };
+    let combined = map_draft::combine(&draft, base.as_ref()).map_err(|mismatch| {
+        vec![format!(
+            "{}: {}",
+            path.display(),
+            describe_mismatch(&mismatch)
+        )]
+    })?;
+    if combined.problems.is_empty() {
+        Ok(combined.map)
+    } else {
+        Err(combined
+            .problems
+            .iter()
+            .map(|problem| format!("{}: {}", path.display(), describe(problem)))
+            .collect())
+    }
 }
 
 /// `srs draft check`: reports each problem, and fails if there are any.

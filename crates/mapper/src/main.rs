@@ -162,7 +162,7 @@ fn main() -> ExitCode {
             Err(error) => Err(format!("reading {}: {error}", command.map.display())),
         },
         Command::Map(command) => {
-            run::map(&command, &installed(), &mut Terminal).map_err(|e| e.to_string())
+            run::map(&command, &installed(), &Terminal, &mut Terminal).map_err(|e| e.to_string())
         }
         Command::Draft(DraftCommand::Check { draft }) => {
             draft::check(&draft, &mut Terminal).map_err(|e: DraftError| e.to_string())

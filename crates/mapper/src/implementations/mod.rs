@@ -4,7 +4,7 @@
 
 use graph_evaluator::GraphEvaluator;
 use graph_evaluator_llm::{
-    AnthropicClient, AnthropicConfig, EvaluatorSettings, LlmEvaluator, ProjectFiles,
+    AnthropicClient, AnthropicConfig, ClusterPlan, EvaluatorSettings, LlmEvaluator, ProjectFiles,
     RetryingClient, StderrLog, ThreadPause, UreqTransport,
 };
 use graph_evaluator_manual::checkout::CheckoutLines;
@@ -18,6 +18,7 @@ use project_graph_rust::{
     PINNED_TOOLCHAIN, RustGrapher, RustGrapherSettings, ToolchainCargo, build_driver,
 };
 use project_graph_typescript::{GitRevision, NodeCollector, TraceLimits, TypeScriptGrapher};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use thiserror::Error;
@@ -73,6 +74,33 @@ pub enum EvaluatorChoice {
     Llm,
 }
 
+/// What the evaluator is told about the map's layers before it starts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LayerPlan {
+    /// The evaluator proposes the layers.
+    Proposed,
+    /// The layers are fixed in advance.
+    Fixed {
+        /// The layers from top to bottom.
+        layers: Vec<String>,
+        /// Each module's layer in an earlier map, by module identifier,
+        /// shown to the evaluator as a hint.
+        previous: BTreeMap<String, String>,
+    },
+}
+
+/// The evaluators' cluster plan for a layer plan. Fails on a fixed list
+/// that is empty, has a blank name or repeats one.
+fn cluster_plan(plan: &LayerPlan) -> Result<ClusterPlan, Unavailable> {
+    match plan {
+        LayerPlan::Proposed => Ok(ClusterPlan::proposed()),
+        LayerPlan::Fixed { layers, previous } => {
+            ClusterPlan::fixed(layers.clone(), previous.clone())
+                .map_err(|error| Unavailable(format!("the layers cannot be fixed: {error}")))
+        }
+    }
+}
+
 /// Who answers a manual evaluation's workbook while `srs map` runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Agent {
@@ -97,11 +125,13 @@ pub const WAIT_LIMIT: Duration = Duration::from_secs(4 * 60 * 60);
 pub trait Implementations {
     fn grapher(&self, language: &Language) -> Result<Box<dyn ProjectGrapher>, Unavailable>;
     /// `selection` is the build being mapped, for evaluators that read the
-    /// project's source.
+    /// project's source. `layers` says whether the layers are fixed in
+    /// advance, and gives each module's earlier layer.
     fn evaluator(
         &self,
         choice: &EvaluatorChoice,
         selection: &BuildSelection,
+        layers: &LayerPlan,
     ) -> Result<Box<dyn GraphEvaluator>, Unavailable>;
 }
 
@@ -185,7 +215,9 @@ impl Implementations for Installed {
         &self,
         choice: &EvaluatorChoice,
         selection: &BuildSelection,
+        layers: &LayerPlan,
     ) -> Result<Box<dyn GraphEvaluator>, Unavailable> {
+        let clusters = cluster_plan(layers)?;
         match choice {
             EvaluatorChoice::Manual { workbook, agent } => {
                 let runner: Box<dyn AgentRunner> = match agent {
@@ -214,6 +246,7 @@ impl Implementations for Installed {
                     Settings {
                         page_size: WORKBOOK_PAGE_SIZE,
                         command: eval_command(workbook),
+                        clusters,
                     },
                 )))
             }
@@ -235,7 +268,7 @@ impl Implementations for Installed {
                     model,
                     ProjectFiles::new(selection.root.clone(), EXCERPT_LINES),
                     StderrLog,
-                    EvaluatorSettings::recommended(),
+                    EvaluatorSettings::recommended(clusters),
                 )))
             }
         }

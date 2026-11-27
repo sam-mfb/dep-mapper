@@ -1,7 +1,7 @@
 use super::*;
 use crate::source::{Excerpt, LinesFrom, NoSource, locate};
 use graph_evaluation_assembly::testing;
-use graph_evaluation_assembly::workbook::{Presentation, present};
+use graph_evaluation_assembly::workbook::{ClusterPlan, Presentation, present};
 
 /// Every file has the same five ten-byte lines.
 pub(crate) struct SameText;
@@ -21,6 +21,7 @@ fn workbook(graph: &ProjectGraph) -> Workbook {
             page_size: 40,
             source: &LinesFrom(&SameText),
             command: None,
+            clusters: &ClusterPlan::proposed(),
         },
     )
 }

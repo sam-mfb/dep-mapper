@@ -2,7 +2,7 @@ use super::*;
 use crate::commands::{self, Outcome};
 use crate::fixture::{self, Scratch};
 use crate::store::DirStore;
-use crate::workbook::ByteOffsets;
+use crate::workbook::{ByteOffsets, ClusterPlan};
 use graph_evaluator::{Decision, ModuleKind, RelationshipKind};
 use project_graph::{GraphId, ModuleId};
 use std::cell::RefCell;
@@ -56,6 +56,7 @@ fn evaluator(root: &PathBuf, runner: Box<dyn AgentRunner>) -> ManualEvaluator {
         Settings {
             page_size: 20,
             command: "srs eval".into(),
+            clusters: ClusterPlan::proposed(),
         },
     )
 }
@@ -252,5 +253,124 @@ fn submitted_answers_that_were_changed_by_hand_are_checked_again() {
         .unwrap_err();
     assert!(
         error.message.contains("have problems") && error.message.contains("cluster \"Storage\"")
+    );
+}
+
+#[test]
+fn with_fixed_clusters_the_agent_records_no_list_and_the_evaluation_keeps_the_fixed_order() {
+    let scratch = Scratch::new();
+    let lines: Vec<Vec<&'static str>> = full_session()
+        .into_iter()
+        .filter(|line| line[0] != "clusters")
+        .collect();
+    let agent = ScriptedAgent {
+        root: scratch.0.clone(),
+        lines,
+        tasks: Rc::default(),
+    };
+    let fixed = vec![
+        "Program".to_string(),
+        "Storage".to_string(),
+        "Base".to_string(),
+    ];
+    let evaluator = ManualEvaluator::new(
+        Box::new(DirStore::new(&scratch.0)),
+        Box::new(agent),
+        Box::new(ByteOffsets),
+        Settings {
+            page_size: 20,
+            command: "srs eval".into(),
+            clusters: ClusterPlan::fixed(fixed.clone(), Default::default()).unwrap(),
+        },
+    );
+    let evaluation = evaluator.evaluate(&fixture::graph()).unwrap();
+    let order: Vec<&str> = evaluation.clusters.iter().map(|c| c.0.as_str()).collect();
+    assert_eq!(order, ["Program", "Storage", "Base"]);
+
+    let store = DirStore::new(&scratch.0);
+    assert_eq!(
+        store.load_workbook().unwrap().unwrap().fixed_clusters,
+        Some(fixed)
+    );
+    let instructions = std::fs::read_to_string(scratch.0.join("INSTRUCTIONS.md")).unwrap();
+    assert!(
+        instructions
+            .contains("The clusters are fixed, from top to bottom: Program, Storage, Base.")
+    );
+    let args = vec!["clusters".to_string(), "Other".to_string()];
+    let mut out = Vec::new();
+    assert_eq!(
+        commands::run("srs eval", &args, &store, &mut out).unwrap(),
+        Outcome::Refused
+    );
+    assert!(
+        String::from_utf8(out)
+            .unwrap()
+            .contains("the cluster list is fixed")
+    );
+}
+
+fn evaluator_with(root: &PathBuf, clusters: ClusterPlan) -> ManualEvaluator {
+    ManualEvaluator::new(
+        Box::new(DirStore::new(root)),
+        Box::new(ReturnAtOnce),
+        Box::new(ByteOffsets),
+        Settings {
+            page_size: 20,
+            command: "srs eval".into(),
+            clusters,
+        },
+    )
+}
+
+fn fixed(names: &[&str]) -> ClusterPlan {
+    ClusterPlan::fixed(
+        names.iter().map(|n| n.to_string()).collect(),
+        Default::default(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_workbook_made_with_another_layer_plan_is_refused_and_kept() {
+    for (first, second) in [
+        (ClusterPlan::proposed(), fixed(&["Program", "Storage"])),
+        (fixed(&["Program", "Storage"]), ClusterPlan::proposed()),
+        (
+            fixed(&["Program", "Storage"]),
+            fixed(&["Storage", "Program"]),
+        ),
+    ] {
+        let scratch = Scratch::new();
+        let _ = evaluator_with(&scratch.0, first.clone()).evaluate(&fixture::graph());
+        let error = evaluator_with(&scratch.0, second)
+            .evaluate(&fixture::graph())
+            .unwrap_err();
+        assert!(
+            error.message.starts_with("the layer plan changed"),
+            "{}",
+            error.message
+        );
+        assert!(error.message.contains("start a fresh workbook"));
+        let kept = DirStore::new(&scratch.0).load_workbook().unwrap().unwrap();
+        let first_names = first
+            .fixed_clusters()
+            .map(|c| c.iter().map(|n| n.0.clone()).collect::<Vec<_>>());
+        assert_eq!(kept.fixed_clusters, first_names);
+    }
+}
+
+#[test]
+fn the_same_layer_plan_resumes_the_workbook() {
+    let scratch = Scratch::new();
+    let plan = fixed(&["Program", "Storage"]);
+    let _ = evaluator_with(&scratch.0, plan.clone()).evaluate(&fixture::graph());
+    let error = evaluator_with(&scratch.0, plan)
+        .evaluate(&fixture::graph())
+        .unwrap_err();
+    assert!(
+        error.message.contains("were not submitted"),
+        "{}",
+        error.message
     );
 }

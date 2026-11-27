@@ -119,8 +119,10 @@ pub fn record(workbook: &Workbook, answers: &Answers, edit: Edit) -> Result<Reco
     if !problems.is_empty() {
         return Err(Refused { problems });
     }
+    let mut warnings = about(review.warnings);
+    warnings.extend(upward_from_others(workbook, &answers, &subject));
     Ok(Recorded {
-        warnings: about(review.warnings),
+        warnings,
         answers,
         piece,
         subject,
@@ -130,6 +132,22 @@ pub fn record(workbook: &Workbook, answers: &Answers, edit: Edit) -> Result<Reco
 /// A new cluster list is refused if it drops a cluster a judgment names.
 fn drops_a_cluster(subject: &Subject, finding: &Finding) -> bool {
     *subject == Subject::Clusters && finding.rule == Rule::UnlistedCluster
+}
+
+/// Warnings about modules that use a higher cluster, whose subject is another
+/// module but which the edit bears on: a use of the judged module, or any
+/// use once a new cluster list is recorded.
+fn upward_from_others(workbook: &Workbook, answers: &Answers, subject: &Subject) -> Vec<Finding> {
+    checking::upward_dependencies(workbook, answers)
+        .into_iter()
+        .filter(|upward| upward.finding.subject != *subject)
+        .filter(|upward| match subject {
+            Subject::Clusters => true,
+            Subject::Module(module) => upward.used == *module,
+            _ => false,
+        })
+        .map(|upward| upward.finding)
+        .collect()
 }
 
 fn refused(subject: Subject, message: String) -> Refused {
@@ -194,6 +212,18 @@ fn apply(
             Ok((piece, Subject::Module(module)))
         }
         Edit::Clusters(names) => {
+            if let Some(fixed) = &workbook.fixed_clusters {
+                return Err(Refused {
+                    problems: vec![Finding {
+                        subject: Subject::Clusters,
+                        rule: Rule::FixedClusterList,
+                        message: format!(
+                            "the cluster list is fixed for this workbook: {}",
+                            fixed.join(", ")
+                        ),
+                    }],
+                });
+            }
             let piece = PieceId::clusters();
             answers.entry(piece.clone()).or_default().clusters = Some(names);
             Ok((piece, Subject::Clusters))

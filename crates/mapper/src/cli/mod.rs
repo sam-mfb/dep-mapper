@@ -6,7 +6,7 @@ use crate::eval::EvalCommand;
 use crate::implementations::{
     Agent, DEFAULT_RUST_EXCLUDED, DEFAULT_TYPESCRIPT_EXCLUDED, EvaluatorChoice, Language,
 };
-use crate::run::MapCommand;
+use crate::run::{LayerSource, MapCommand};
 use crate::show::ShowCommand;
 use clap::error::ErrorKind;
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
@@ -184,6 +184,16 @@ struct MapArgs {
     /// `wait` waits for a submission. `claude` runs Claude Code.
     #[arg(long, value_enum)]
     agent: Option<AgentArg>,
+    /// Fix the map's layers in advance, from top to bottom, separated by
+    /// commas. Every module judgment must name one of them. Without this or
+    /// --draft, the evaluator proposes the layers.
+    #[arg(long, conflicts_with = "draft")]
+    layers: Option<String>,
+    /// Fix the map's layers in advance from this draft, laid over its base
+    /// map: the combined map's layers, from top to bottom. Each module's
+    /// layer there is shown to the evaluator as a hint.
+    #[arg(long)]
+    draft: Option<PathBuf>,
     /// Save the map to this file, to reopen without analysis.
     #[arg(long)]
     out: PathBuf,
@@ -271,6 +281,11 @@ impl MapArgs {
                 ));
             }
         };
+        let layers = match (self.layers, self.draft) {
+            (Some(list), _) => LayerSource::Listed(layer_list(&list)?),
+            (None, Some(draft)) => LayerSource::Draft(current_dir.join(draft)),
+            (None, None) => LayerSource::Proposed,
+        };
         Ok(MapCommand {
             selection: BuildSelection {
                 root: self.root,
@@ -279,11 +294,32 @@ impl MapArgs {
             },
             language,
             evaluator,
+            layers,
             out: self.out,
             page: self.page,
             serve: self.serve,
         })
     }
+}
+
+/// The names in a `--layers` list: at least one, none empty or repeated.
+fn layer_list(list: &str) -> Result<Vec<String>, clap::Error> {
+    let names: Vec<String> = list
+        .split(',')
+        .map(|name| name.trim().to_string())
+        .collect();
+    let invalid = |message: String| Cli::command().error(ErrorKind::InvalidValue, message);
+    if names.iter().any(String::is_empty) {
+        return Err(invalid(
+            "--layers needs layer names separated by commas, none of them empty".into(),
+        ));
+    }
+    for (index, name) in names.iter().enumerate() {
+        if names[..index].contains(name) {
+            return Err(invalid(format!("--layers lists {name:?} more than once")));
+        }
+    }
+    Ok(names)
 }
 
 #[cfg(test)]

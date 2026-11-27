@@ -51,6 +51,12 @@ A `ProjectGraph` records receiver bounds separately from witnessed handoffs. A r
 
 `project-graph-typescript` reads an npm workspace, one module per package, with the build selected by a tsconfig. It runs the TypeScript checker in a Node child process. The child uses the TypeScript 6 API through a small interface of our own, so the move to TypeScript 7 changes one file. It prints items, facts and receiver links as JSON Lines, and the Rust crate assembles the graph. It traces value routes with `route-grapher`, the shared tracer that `project-graph-rust` also uses.
 
+## Layers
+
+A map's layers run from top to bottom. The first layer holds the program, which uses the others; the last holds the foundations, which use none of them. A module's layer normally sits at or above every layer it uses. `Clusters` in `graph-evaluator` and `Layers` in `project-map` carry this order. The evaluators' checks warn, without refusing the answer, when a module uses a module in a layer listed above its own. A use here is a fact whose subject uses its object, the same rule `map-builder` follows to draw an arrow.
+
+The layers can be fixed in advance. `srs map --layers` lists them, or `srs map --draft` takes them from a draft laid over its base map. The list is evaluator configuration, given at construction, and not part of the `GraphEvaluator` contract. With a fixed list, the evaluator does not propose layers, every module judgment must name one of them, and a module that fits none is deferred with a reason. Only the list is fixed. A draft also supplies each module's earlier layer, which module pieces show as a hint. Without a fixed list, as on a project's first run, the evaluator proposes the layers in this order. A draft can add layers below its base's but cannot reorder them, so the base map's order, set by the evaluator that produced it, stays in force.
+
 ## Excluded crates
 
 Some outside crates are, in effect, part of the language. Every module uses them, so their routes say little about the architecture and crowd out the ones that do. Each grapher takes a list of outside crates or packages at construction and leaves out the routes that start in them. The list is grapher configuration. It is not part of the `ProjectGrapher` contract or the `BuildSelection`.

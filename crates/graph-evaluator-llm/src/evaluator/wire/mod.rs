@@ -37,7 +37,19 @@ pub enum ModuleAnswer {
     },
 }
 
-pub fn module_schema() -> Value {
+/// The schema for a module answer. With a fixed cluster list, the cluster
+/// must be one of its names.
+pub fn module_schema(fixed_clusters: Option<&[String]>) -> Value {
+    let cluster = match fixed_clusters {
+        Some(names) => json!({
+            "type": "string",
+            "enum": names,
+            "description": "The fixed cluster the module belongs in. If none fits, defer instead.",
+        }),
+        None => {
+            json!({"type": "string", "description": "The name of the cluster the module belongs in."})
+        }
+    };
     let decision = json!({
         "anyOf": [
             {
@@ -46,7 +58,7 @@ pub fn module_schema() -> Value {
                     "decision": {"type": "string", "enum": ["judge"]},
                     "concern": {"type": "string", "description": "The module's responsibility, in one or two sentences."},
                     "kind": {"type": "string", "enum": ["logic", "effect", "composition", "contract"]},
-                    "cluster": {"type": "string", "description": "The name of the cluster the module belongs in."},
+                    "cluster": cluster,
                     "reason": {"type": "string", "description": "Why, including how each citation bears on the judgment."},
                     "evidence": citations(),
                 },
@@ -116,7 +128,7 @@ pub fn clusters_schema() -> Value {
         "properties": {
             "clusters": {
                 "type": "array",
-                "description": "Clusters in the order a reader should meet them.",
+                "description": "Clusters from top to bottom: first the program's cluster, which uses the others, and last the foundations. A module's cluster should sit at or above every cluster it uses.",
                 "items": {
                     "type": "object",
                     "properties": {

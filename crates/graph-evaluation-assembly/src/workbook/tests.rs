@@ -20,6 +20,7 @@ fn workbook(page_size: usize) -> Workbook {
             page_size,
             source: &ByteOffsets,
             command: Some("srs eval"),
+            clusters: &ClusterPlan::proposed(),
         },
     )
 }
@@ -99,6 +100,7 @@ fn long_lists_are_paged_and_each_page_repeats_the_heading_and_instructions() {
             page_size: 1,
             source: &ByteOffsets,
             command: Some("srs eval"),
+            clusters: &ClusterPlan::proposed(),
         },
     );
     let pages = &workbook.piece(&PieceId::module("app")).unwrap().pages;
@@ -130,6 +132,7 @@ fn spans_show_lines_when_the_source_is_available_and_byte_offsets_otherwise() {
             page_size: 10,
             source: &EveryTenBytes,
             command: Some("srs eval"),
+            clusters: &ClusterPlan::proposed(),
         },
     );
     assert!(
@@ -160,6 +163,7 @@ fn without_a_command_pieces_hold_the_evidence_and_no_command_lines() {
             page_size: 10,
             source: &ByteOffsets,
             command: None,
+            clusters: &ClusterPlan::proposed(),
         },
     );
     for piece in &workbook.pieces {
@@ -188,6 +192,7 @@ fn every_module_piece_shows_the_routes_left_out_of_the_whole_graph() {
             page_size: 10,
             source: &ByteOffsets,
             command: Some("srs eval"),
+            clusters: &ClusterPlan::proposed(),
         },
     );
     for module in ["app", "disk", "store"] {
@@ -229,6 +234,7 @@ fn a_route_used_at_many_sites_shows_the_first_few_and_counts_the_rest() {
             page_size: 10,
             source: &ByteOffsets,
             command: Some("srs eval"),
+            clusters: &ClusterPlan::proposed(),
         },
     );
     let info = &workbook.refs["route:r-write"];
@@ -290,9 +296,100 @@ fn without_a_command_a_summary_counts_the_rest_without_naming_a_command() {
             page_size: 10,
             source: &ByteOffsets,
             command: None,
+            clusters: &ClusterPlan::proposed(),
         },
     );
     let summary = workbook.refs["route:r-write"].brief_detail();
     assert!(summary.contains(") and 1 more\n"), "{summary}");
     assert!(!summary.contains("show"), "{summary}");
+}
+
+fn planned_workbook(clusters: ClusterPlan) -> Workbook {
+    present(
+        &testing::graph(),
+        &Presentation {
+            page_size: 10,
+            source: &ByteOffsets,
+            command: Some("srs eval"),
+            clusters: &clusters,
+        },
+    )
+}
+
+#[test]
+fn the_clusters_piece_asks_for_the_list_from_top_to_bottom() {
+    let workbook = workbook(10);
+    let page = &workbook.piece(&PieceId::clusters()).unwrap().pages[0];
+    assert!(page.contains("from top to bottom"));
+    assert!(page.contains("srs eval clusters <name>"));
+    assert_eq!(workbook.fixed_clusters, None);
+}
+
+#[test]
+fn a_fixed_list_is_stated_in_the_clusters_piece_and_every_module_piece() {
+    let workbook = planned_workbook(
+        ClusterPlan::fixed(vec!["Program".into(), "Storage".into()], BTreeMap::new()).unwrap(),
+    );
+    assert_eq!(
+        workbook.fixed_clusters,
+        Some(vec!["Program".to_string(), "Storage".to_string()])
+    );
+    let clusters = &workbook.piece(&PieceId::clusters()).unwrap().pages[0];
+    assert!(clusters.contains("fixed, from top to bottom: \"Program\", \"Storage\""));
+    assert!(!clusters.contains("srs eval clusters"));
+    let module = &workbook.piece(&PieceId::module("disk")).unwrap().pages[0];
+    assert!(
+        module.contains("The clusters are fixed, from top to bottom: \"Program\", \"Storage\"")
+    );
+    assert!(module.contains("If none fits, defer"));
+}
+
+#[test]
+fn a_module_piece_shows_the_modules_earlier_cluster_as_a_hint() {
+    let workbook = planned_workbook(
+        ClusterPlan::fixed(
+            vec!["Program".into(), "Storage".into()],
+            BTreeMap::from([("disk".to_string(), "Storage".to_string())]),
+        )
+        .unwrap(),
+    );
+    let disk = &workbook.piece(&PieceId::module("disk")).unwrap().pages[0];
+    assert!(disk.contains("An earlier evaluation put this module in cluster \"Storage\""));
+    let app = &workbook.piece(&PieceId::module("app")).unwrap().pages[0];
+    assert!(!app.contains("earlier evaluation"));
+}
+
+#[test]
+fn a_workbook_saved_before_clusters_could_be_fixed_still_loads() {
+    let mut saved = serde_json::to_value(workbook(10)).unwrap();
+    let fields = saved.as_object_mut().unwrap();
+    fields.remove("fixed_clusters");
+    fields.remove("uses");
+    let loaded: Workbook = serde_json::from_value(saved).unwrap();
+    assert_eq!(loaded.fixed_clusters, None);
+    assert!(loaded.uses.is_empty());
+}
+
+#[test]
+fn an_empty_blank_or_repeating_list_cannot_be_fixed() {
+    let fixed = |names: &[&str]| {
+        ClusterPlan::fixed(
+            names.iter().map(|n| n.to_string()).collect(),
+            BTreeMap::new(),
+        )
+    };
+    assert_eq!(fixed(&[]), Err(InvalidClusterList::Empty));
+    assert_eq!(fixed(&["Program", "  "]), Err(InvalidClusterList::Blank));
+    assert_eq!(
+        fixed(&["Program", "Base", "Program"]),
+        Err(InvalidClusterList::Repeated("Program".into()))
+    );
+    let plan = fixed(&["Program", "Base"]).unwrap();
+    let names: Vec<&str> = plan
+        .fixed_clusters()
+        .unwrap()
+        .iter()
+        .map(|c| c.0.as_str())
+        .collect();
+    assert_eq!(names, ["Program", "Base"]);
 }

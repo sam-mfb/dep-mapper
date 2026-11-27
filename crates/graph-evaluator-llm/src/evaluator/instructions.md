@@ -8,8 +8,9 @@ Your job is to interpret this evidence, not to repeat it. You will be asked abou
    - composition: constructs the other modules' implementations and wires them together.
    - contract: defines types and traits that other modules implement or exchange.
    If the evidence does not support a decision, defer and say what is missing. Deferring is better than guessing.
+   If the piece gives a fixed list of clusters, name one of them. If none fits, defer and say why.
 
-2. The clusters piece: you see every judged module with the cluster you proposed for it. Settle the cluster names, place each judged module in exactly one cluster, and order the clusters the way a reader should meet them.
+2. The clusters piece: you see every judged module with the cluster you proposed for it. Settle the cluster names, place each judged module in exactly one cluster, and order the clusters from top to bottom: first the cluster of the program, which uses the others, and last the foundations, which use none of them. A module's cluster should sit at or above every cluster it uses. When the clusters are fixed in advance, you are not asked this.
 
 3. A routes piece: the routes that join two modules, or that stay in one module or leave it for code outside the project. Say what the routes mean in the architecture, as relationships:
    - direct-use: one module uses another's types, values or operations itself.

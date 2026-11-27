@@ -1,12 +1,14 @@
 //! Running `srs map`: graph, evaluate, build the map, save it, then show it.
-//! Side effects go through the injected implementations and outputs.
+//! Side effects go through the injected implementations, files and outputs.
 
-use crate::implementations::{EvaluatorChoice, Implementations, Language, Unavailable};
+use crate::draft::{self, DraftFiles};
+use crate::implementations::{EvaluatorChoice, Implementations, Language, LayerPlan, Unavailable};
 use graph_evaluator::EvaluationError;
 use map_builder::{BuildProblem, GraphMismatch, MapBuild};
 use map_persist::MapDocument;
 use project_graph::{BuildSelection, GraphingError};
-use project_map::ProjectMap;
+use project_map::{ProjectMap, Review, Status};
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -17,6 +19,8 @@ pub struct MapCommand {
     pub selection: BuildSelection,
     pub language: Language,
     pub evaluator: EvaluatorChoice,
+    /// Where the map's layers come from.
+    pub layers: LayerSource,
     /// Where to save the map, so it can be reopened without analysis.
     pub out: PathBuf,
     /// Where to write the map's page, if anywhere.
@@ -24,6 +28,19 @@ pub struct MapCommand {
     /// Where to serve the map's page, if anywhere. Serving runs until the
     /// program is stopped.
     pub serve: Option<SocketAddr>,
+}
+
+/// Where `srs map` gets the map's layers.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LayerSource {
+    /// The evaluator proposes them.
+    Proposed,
+    /// Fixed in advance, from top to bottom.
+    Listed(Vec<String>),
+    /// Fixed in advance by the draft at this path, laid over its base map:
+    /// the combined map's layers. Each module's layer there is shown to the
+    /// evaluator as a hint.
+    Draft(PathBuf),
 }
 
 /// Where a command's results go.
@@ -48,6 +65,8 @@ pub enum MapError {
     Evaluation(#[from] EvaluationError),
     #[error(transparent)]
     Mismatch(#[from] GraphMismatch),
+    #[error("the draft that gives the layers cannot be used:\n{}", .0.join("\n"))]
+    Layers(Vec<String>),
     #[error("writing {path}: {source}")]
     WriteFile {
         path: PathBuf,
@@ -61,13 +80,16 @@ pub enum MapError {
 }
 
 /// Graphs, evaluates and builds the map for the command's selection.
+/// `files` holds the draft, when the layers come from one.
 pub fn build(
     command: &MapCommand,
     implementations: &dyn Implementations,
+    files: &dyn DraftFiles,
 ) -> Result<MapBuild, MapError> {
-    // The evaluator first: its checks are quick, while a grapher may build
-    // tools before it can start.
-    let evaluator = implementations.evaluator(&command.evaluator, &command.selection)?;
+    // The layers and the evaluator first: their checks are quick, while a
+    // grapher may build tools before it can start.
+    let layers = layer_plan(&command.layers, files)?;
+    let evaluator = implementations.evaluator(&command.evaluator, &command.selection, &layers)?;
     let grapher = implementations.grapher(&command.language)?;
     let graph = grapher.build_graph(&command.selection)?;
     let evaluation = evaluator.evaluate(&graph)?;
@@ -79,9 +101,10 @@ pub fn build(
 pub fn map(
     command: &MapCommand,
     implementations: &dyn Implementations,
+    files: &dyn DraftFiles,
     outputs: &mut dyn MapOutputs,
 ) -> Result<(), MapError> {
-    let built = build(command, implementations)?;
+    let built = build(command, implementations, files)?;
     for problem in &built.problems {
         outputs.note(&describe(problem));
     }
@@ -89,6 +112,50 @@ pub fn map(
     write(outputs, &command.out, &saved)?;
     outputs.note(&format!("saved the map to {}", command.out.display()));
     present(&built.map, command.page.as_deref(), command.serve, outputs)
+}
+
+/// What the evaluator is told about layers, from the command's source.
+fn layer_plan(source: &LayerSource, files: &dyn DraftFiles) -> Result<LayerPlan, MapError> {
+    match source {
+        LayerSource::Proposed => Ok(LayerPlan::Proposed),
+        LayerSource::Listed(layers) => Ok(LayerPlan::Fixed {
+            layers: layers.clone(),
+            previous: BTreeMap::new(),
+        }),
+        LayerSource::Draft(path) => {
+            let map = draft::laid_over(path, files).map_err(MapError::Layers)?;
+            if map.layers.is_empty() {
+                return Err(MapError::Layers(vec![format!(
+                    "{}: the draft and its base list no layers",
+                    path.display()
+                )]));
+            }
+            Ok(LayerPlan::Fixed {
+                layers: map.layers.iter().map(|layer| layer.0.clone()).collect(),
+                previous: planned_layers(&map),
+            })
+        }
+    }
+}
+
+/// Each module's layer in a map, by module identifier: its proposed layer
+/// when the map proposes a new review, otherwise its reviewed one.
+fn planned_layers(map: &ProjectMap) -> BTreeMap<String, String> {
+    map.modules
+        .iter()
+        .filter_map(|(id, module)| {
+            let review = match &module.status {
+                Status::ProposedUpdate { proposed } => proposed,
+                _ => &module.description,
+            };
+            match review {
+                Review::Judged { judgment, .. } => {
+                    Some((id.0.clone(), judgment.layer.as_ref()?.0.clone()))
+                }
+                Review::Unreviewed | Review::Deferred { .. } => None,
+            }
+        })
+        .collect()
 }
 
 /// Writes the map's page to `page` and serves it at `serve`, each if given.

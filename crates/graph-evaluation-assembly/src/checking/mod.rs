@@ -5,7 +5,14 @@
 //! judgment or relationship with no citations, or a cluster that is not
 //! listed. A warning is kept with the answers for a reviewer: a module
 //! judgment whose citations never touch the module, a relationship that
-//! cites no route, or a kind its evidence does not show.
+//! cites no route, a kind its evidence does not show, a module that uses a
+//! module in a cluster listed above its own, or a recorded cluster list that
+//! a fixed list replaces.
+//!
+//! The cluster list is the workbook's fixed list when it has one, and
+//! otherwise the list recorded in the clusters piece. Clusters run from top
+//! to bottom, so a module's cluster should sit at or above every cluster it
+//! uses.
 
 use crate::answers::{Answers, ModuleAnswer, RelationshipAnswer};
 use crate::handles::Handle;
@@ -49,10 +56,16 @@ pub enum Rule {
     UnlistedCluster,
     DuplicateCluster,
     MissingClusterList,
+    /// A cluster list was recorded for a workbook whose list is fixed.
+    FixedClusterList,
     // Warnings.
     CitationOffSubject,
     NoRouteCited,
     KindNotShown,
+    /// A module uses a module whose cluster is listed above its own.
+    UpwardDependency,
+    /// A recorded cluster list is ignored because the workbook fixes the list.
+    RecordedListIgnored,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -78,7 +91,7 @@ pub struct Assembled {
 /// Every problem and warning in the answers.
 pub fn review(workbook: &Workbook, answers: &Answers) -> Review {
     let mut review = Review::default();
-    let clusters = cluster_list(answers);
+    let clusters = cluster_list(workbook, answers);
     for (piece_id, piece) in answers {
         let Some(found) = workbook.piece(piece_id) else {
             review.problem(
@@ -127,6 +140,16 @@ pub fn review(workbook: &Workbook, answers: &Answers) -> Review {
             }
         }
     }
+    if workbook.fixed_clusters.is_some() && recorded_list(answers).is_some() {
+        review.warning(
+            Subject::Clusters,
+            Rule::RecordedListIgnored,
+            "the recorded cluster list is ignored: this workbook's list is fixed".into(),
+        );
+    }
+    for upward in upward_dependencies(workbook, answers) {
+        review.warnings.push(upward.finding);
+    }
     if let Some(list) = clusters {
         let mut seen = BTreeSet::new();
         for name in list {
@@ -166,7 +189,7 @@ pub fn assemble(workbook: &Workbook, answers: &Answers) -> Result<Assembled, Vec
             .filter_map(|text| Handle::parse(text).ok()?.graph_ref())
             .collect()
     };
-    let list = cluster_list(answers).cloned().unwrap_or_default();
+    let list = cluster_list(workbook, answers).cloned().unwrap_or_default();
     let clusters = Clusters::new(list.into_iter().map(ClusterName).collect())
         .expect("the review rejects duplicate clusters");
     let mut modules = BTreeMap::new();
@@ -255,7 +278,7 @@ pub fn progress(workbook: &Workbook, answers: &Answers) -> Vec<(PieceId, Progres
                     }
                 }
                 PieceSubject::Clusters => {
-                    if cluster_list(answers).is_some() {
+                    if cluster_list(workbook, answers).is_some() {
                         Progress::Done
                     } else {
                         Progress::NotStarted
@@ -325,10 +348,62 @@ impl Review {
     }
 }
 
-fn cluster_list(answers: &Answers) -> Option<&Vec<String>> {
+/// The cluster list in force: the workbook's fixed list, or else the
+/// recorded one.
+fn cluster_list<'a>(workbook: &'a Workbook, answers: &'a Answers) -> Option<&'a Vec<String>> {
+    workbook
+        .fixed_clusters
+        .as_ref()
+        .or_else(|| recorded_list(answers))
+}
+
+fn recorded_list(answers: &Answers) -> Option<&Vec<String>> {
     answers
         .get(&PieceId::clusters())
         .and_then(|a| a.clusters.as_ref())
+}
+
+/// A warning that a module uses a module in a higher cluster.
+pub(crate) struct Upward {
+    /// The used module. The finding's subject is the user.
+    pub(crate) used: String,
+    pub(crate) finding: Finding,
+}
+
+/// Each use of a module whose cluster is listed above the user's own, among
+/// judged modules whose clusters are listed.
+pub(crate) fn upward_dependencies(workbook: &Workbook, answers: &Answers) -> Vec<Upward> {
+    let Some(list) = cluster_list(workbook, answers) else {
+        return vec![];
+    };
+    let position = |cluster: &String| list.iter().position(|listed| listed == cluster);
+    let placed: BTreeMap<&String, (&String, usize)> = judged_modules(answers)
+        .filter_map(|(module, cluster)| Some((module, (cluster, position(cluster)?))))
+        .collect();
+    let mut upward = vec![];
+    for (user, used_modules) in &workbook.uses {
+        let Some((user_cluster, user_at)) = placed.get(user) else {
+            continue;
+        };
+        for (used, fact) in used_modules {
+            let Some((used_cluster, used_at)) = placed.get(used) else {
+                continue;
+            };
+            if used_at < user_at {
+                upward.push(Upward {
+                    used: used.clone(),
+                    finding: Finding {
+                        subject: Subject::Module(user.clone()),
+                        rule: Rule::UpwardDependency,
+                        message: format!(
+                            "module:{user} in cluster {user_cluster:?} uses module:{used} in cluster {used_cluster:?}, which is listed above it ({fact}); clusters run from top to bottom, so a module's cluster should sit at or above every cluster it uses"
+                        ),
+                    },
+                });
+            }
+        }
+    }
+    upward
 }
 
 fn judged_modules(answers: &Answers) -> impl Iterator<Item = (&String, &String)> {

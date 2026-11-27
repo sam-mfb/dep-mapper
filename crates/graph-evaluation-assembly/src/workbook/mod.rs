@@ -4,13 +4,15 @@
 //! graph. Answers are checked against it.
 //!
 //! Pieces come in three sorts. A module piece covers one module and asks for
-//! its decision. The clusters piece asks for the cluster list. A routes piece
+//! its decision. The clusters piece asks for the cluster list, or states it
+//! when the list is fixed in advance. A routes piece
 //! covers the routes between two modules, or the routes that stay in one
 //! module or leave it for points outside the project, and asks for the
 //! relationships those routes carry.
 
 mod render;
 
+use graph_evaluator::{ClusterName, Clusters};
 use project_graph::{Endpoint, FactKind, ModuleId, ProjectGraph, RouteId, SourceSpan, UnitId};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -29,6 +31,15 @@ pub struct Workbook {
     pub modules: BTreeMap<String, String>,
     /// Every handle an answer may cite as evidence.
     pub refs: BTreeMap<String, RefInfo>,
+    /// The clusters from top to bottom, when they were fixed in advance.
+    /// `None` means the answers propose the list.
+    #[serde(default)]
+    pub fixed_clusters: Option<Vec<String>>,
+    /// Which modules each module uses, by module identifier, each with one
+    /// fact that shows the use. A fact shows a use when its subject uses its
+    /// object, as an import, reference, implementation or call does.
+    #[serde(default)]
+    pub uses: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,6 +100,75 @@ pub struct Presentation<'a> {
     /// How a reader invokes the answer commands, such as `srs eval`. With
     /// `None`, pieces hold the evidence and the request without command lines.
     pub command: Option<&'a str>,
+    pub clusters: &'a ClusterPlan,
+}
+
+/// What the evaluator is told about clusters before it starts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClusterPlan {
+    fixed: Option<Clusters>,
+    previous: BTreeMap<String, String>,
+}
+
+/// Why a list cannot be fixed as the clusters.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum InvalidClusterList {
+    #[error("the cluster list is empty")]
+    Empty,
+    #[error("a cluster name is blank")]
+    Blank,
+    #[error("cluster {0:?} is listed more than once")]
+    Repeated(String),
+}
+
+impl ClusterPlan {
+    /// No fixed list and no hints: the answers propose the clusters.
+    pub fn proposed() -> Self {
+        ClusterPlan {
+            fixed: None,
+            previous: BTreeMap::new(),
+        }
+    }
+
+    /// The clusters fixed in advance, from top to bottom, so every module
+    /// judgment must name one of them. `previous` gives each module's
+    /// cluster in an earlier evaluation, by module identifier, which module
+    /// pieces show as a hint. Fails on an empty list, a blank name or a
+    /// name listed twice.
+    pub fn fixed(
+        names: Vec<String>,
+        previous: BTreeMap<String, String>,
+    ) -> Result<Self, InvalidClusterList> {
+        if names.is_empty() {
+            return Err(InvalidClusterList::Empty);
+        }
+        if names.iter().any(|name| name.trim().is_empty()) {
+            return Err(InvalidClusterList::Blank);
+        }
+        let clusters = Clusters::new(names.into_iter().map(ClusterName).collect())
+            .map_err(|repeated| InvalidClusterList::Repeated(repeated.0.0))?;
+        Ok(ClusterPlan {
+            fixed: Some(clusters),
+            previous,
+        })
+    }
+
+    /// The fixed clusters, from top to bottom, if there are any.
+    pub fn fixed_clusters(&self) -> Option<&Clusters> {
+        self.fixed.as_ref()
+    }
+
+    /// Each module's cluster in an earlier evaluation, by module identifier.
+    pub fn previous(&self) -> &BTreeMap<String, String> {
+        &self.previous
+    }
+
+    /// The fixed names as text, as the workbook stores them.
+    fn fixed_names(&self) -> Option<Vec<String>> {
+        self.fixed
+            .as_ref()
+            .map(|clusters| clusters.iter().map(|c| c.0.clone()).collect())
+    }
 }
 
 impl PieceId {
@@ -116,7 +196,12 @@ impl Workbook {
 }
 
 pub fn present(graph: &ProjectGraph, presentation: &Presentation) -> Workbook {
-    let text = render::Renderer::new(graph, presentation.source, presentation.command);
+    let text = render::Renderer::new(
+        graph,
+        presentation.source,
+        presentation.command,
+        presentation.clusters,
+    );
     let refs = refs(graph, &text);
     let groups = route_groups(graph);
 
@@ -176,6 +261,53 @@ pub fn present(graph: &ProjectGraph, presentation: &Presentation) -> Workbook {
             .map(|(id, module)| (id.0.clone(), module.name.clone()))
             .collect(),
         refs,
+        fixed_clusters: presentation.clusters.fixed_names(),
+        uses: uses(graph),
+    }
+}
+
+/// Which modules each module uses, each with the first fact that shows it.
+fn uses(graph: &ProjectGraph) -> BTreeMap<String, BTreeMap<String, String>> {
+    let mut uses: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    for (id, fact) in &graph.facts {
+        if !subject_uses_object(&fact.kind) {
+            continue;
+        }
+        let in_graph = |endpoint| {
+            endpoint_module(graph, endpoint).filter(|module| graph.modules.contains_key(module))
+        };
+        let (Some(user), Some(used)) = (in_graph(&fact.subject), in_graph(&fact.object)) else {
+            continue;
+        };
+        if user != used {
+            uses.entry(user.0)
+                .or_default()
+                .entry(used.0)
+                .or_insert_with(|| format!("fact:{}", id.0));
+        }
+    }
+    uses
+}
+
+/// Whether a fact of this kind shows its subject using its object. This is
+/// the rule map-builder uses to draw an arrow from one module to another.
+fn subject_uses_object(kind: &FactKind) -> bool {
+    match kind {
+        FactKind::DeclaredDependency
+        | FactKind::Import { .. }
+        | FactKind::Reexport { .. }
+        | FactKind::TypeReference
+        | FactKind::ValueReference
+        | FactKind::Implements
+        | FactKind::Call(_)
+        | FactKind::ReceiverBound { .. } => true,
+        FactKind::Construct
+        | FactKind::Read
+        | FactKind::Store
+        | FactKind::Pass
+        | FactKind::Return
+        | FactKind::Coerce
+        | FactKind::Capture => false,
     }
 }
 

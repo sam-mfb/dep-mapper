@@ -19,7 +19,7 @@ Every file starts with these two fields:
 | --- | --- | --- |
 | `project` | yes | The project's name. |
 | `source` | no | The analyzed build. Left out for a map with no analyzed source. |
-| `layers` | yes | Layer names from top to bottom, each listed once. |
+| `layers` | yes | Layer names from top to bottom, each listed once. The first layer holds the program, which uses the others; the last holds the foundations. A module's layer normally sits at or above every layer it uses. |
 | `modules` | no | Modules keyed by ID. Left out means none. |
 | `dependencies` | no | An array of dependencies. Left out means none. |
 | `routes` | no | Routes keyed by ID. Left out means none. |
