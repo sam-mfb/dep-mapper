@@ -1,5 +1,5 @@
 [package]
-name = "graph-evaluator-pieces"
+name = "graph-evaluation-assembly"
 description = "Presents a project graph as pieces with citable handles, and checks answers and assembles them into a GraphEvaluation"
 version.workspace = true
 edition.workspace = true

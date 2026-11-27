@@ -2,7 +2,7 @@
 //! judge the modules of a project graph and the relationships its routes
 //! show.
 //!
-//! `LlmEvaluator` presents the graph with `graph-evaluator-pieces`, the same
+//! `LlmEvaluator` presents the graph with `graph-evaluation-assembly`, the same
 //! pieces, handles and checks the manual evaluator uses. It asks the model
 //! about one piece at a time and sends refused answers back with their
 //! problems. Its parts, each behind its own contract and injected:

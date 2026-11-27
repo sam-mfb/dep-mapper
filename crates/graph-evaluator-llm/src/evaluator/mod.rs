@@ -11,12 +11,12 @@ mod wire;
 use crate::context::{Limits, supplement};
 use crate::model::{ModelClient, ModelReply, ModelRequest, Turn};
 use crate::source::{LinesFrom, SourceText};
-use graph_evaluator::{EvaluationError, GraphEvaluation, GraphEvaluator};
-use graph_evaluator_pieces::answers::{Answers, Edit, ModuleAnswer, record};
-use graph_evaluator_pieces::checking::assemble;
-use graph_evaluator_pieces::workbook::{
+use graph_evaluation_assembly::answers::{Answers, Edit, ModuleAnswer, record};
+use graph_evaluation_assembly::checking::assemble;
+use graph_evaluation_assembly::workbook::{
     Piece, PieceId, PieceSubject, Presentation, Workbook, present,
 };
+use graph_evaluator::{EvaluationError, GraphEvaluation, GraphEvaluator};
 use project_graph::ProjectGraph;
 use std::collections::BTreeSet;
 use std::fmt::Write;

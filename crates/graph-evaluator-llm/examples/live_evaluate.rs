@@ -32,7 +32,7 @@ fn main() -> ExitCode {
         ],
     );
     let evaluator = LlmEvaluator::new(model, NoSource, StderrLog, EvaluatorSettings::recommended());
-    match evaluator.evaluate(&graph_evaluator_pieces::testing::graph()) {
+    match evaluator.evaluate(&graph_evaluation_assembly::testing::graph()) {
         Ok(evaluation) => {
             println!("{evaluation:#?}");
             ExitCode::SUCCESS

@@ -1,7 +1,7 @@
 use super::*;
 use crate::source::{Excerpt, LinesFrom, NoSource, locate};
-use graph_evaluator_pieces::testing;
-use graph_evaluator_pieces::workbook::{Presentation, present};
+use graph_evaluation_assembly::testing;
+use graph_evaluation_assembly::workbook::{Presentation, present};
 
 /// Every file has the same five ten-byte lines.
 pub(crate) struct SameText;

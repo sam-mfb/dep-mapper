@@ -3,7 +3,7 @@
 //! by written handles, such as `route:R12`, and are checked against the
 //! workbook as they are recorded and again before the evaluation is built.
 //!
-//! Presenting, checking and assembling come from `graph-evaluator-pieces`
+//! Presenting, checking and assembling come from `graph-evaluation-assembly`
 //! and are re-exported here under their own names: [`workbook::present`],
 //! [`answers::record`] and [`checking::assemble`].
 //! [`store`] keeps a workbook and its answers between commands, and
@@ -14,7 +14,7 @@
 //! person or start Claude Code, and [`checkout::CheckoutLines`] reads line
 //! numbers from the project checkout.
 
-pub use graph_evaluator_pieces::{answers, checking, handles, workbook};
+pub use graph_evaluation_assembly::{answers, checking, handles, workbook};
 
 pub mod checkout;
 pub mod commands;

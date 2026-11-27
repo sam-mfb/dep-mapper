@@ -1,8 +1,8 @@
 //! The JSON the model writes for each sort of piece, and its schema. Each
 //! answer becomes edits to the shared answers, which check it.
 
-use graph_evaluator_pieces::answers::Edit;
-use graph_evaluator_pieces::workbook::PieceId;
+use graph_evaluation_assembly::answers::Edit;
+use graph_evaluation_assembly::workbook::PieceId;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
