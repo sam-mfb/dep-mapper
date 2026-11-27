@@ -396,7 +396,7 @@ fn the_surface_lists_only_exported_items() {
 }
 
 #[test]
-fn the_surface_leaves_out_methods_submodules_and_trait_impl_items_which_the_graph_keeps() {
+fn the_surface_leaves_out_methods_and_submodules_which_the_graph_keeps() {
     let mut graph = graph();
     for (key, name, kind) in [
         (
@@ -414,11 +414,6 @@ fn the_surface_leaves_out_methods_submodules_and_trait_impl_items_which_the_grap
         (
             "store::FileSaver::DEFAULT",
             "FileSaver::DEFAULT",
-            ItemKind::Value,
-        ),
-        (
-            "store::<FileSaver as Saver>::NAME",
-            "<FileSaver as port::Saver>::NAME",
             ItemKind::Value,
         ),
         ("store::open", "open", ItemKind::Function),

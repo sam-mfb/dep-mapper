@@ -103,15 +103,13 @@ fn description(
 
 /// The module's consumer-facing declarations, in the graph's item order:
 /// the exported types (traits and interfaces among them), values and
-/// functions the grapher records. Methods, submodules and the items of trait
-/// implementations are left out; the graph keeps them, and routes still cite
-/// them.
+/// functions the grapher records. Methods and submodules are left out; the
+/// graph keeps them, and routes still cite them.
 fn surface(graph: &ProjectGraph, module: &ModuleId) -> Vec<SurfaceItem> {
     graph
         .items
         .values()
         .filter(|item| &item.module == module && item.visibility == Visibility::Exported)
-        .filter(|item| !in_trait_impl(&item.name))
         .filter_map(|item| {
             let kind = match item.kind {
                 ItemKind::Type => project_map::ItemKind::Type,
@@ -127,13 +125,4 @@ fn surface(graph: &ProjectGraph, module: &ModuleId) -> Vec<SurfaceItem> {
             })
         })
         .collect()
-}
-
-/// Whether a name is that of an item in a trait implementation, such as the
-/// associated constant `<Disk as Store>::LIMIT`: a qualified path, as the
-/// Rust grapher writes it. A constant declared in a trait itself, such as
-/// `Store::LIMIT`, reads like an inherent one, and the graph does not say
-/// which its owner is, so it stays.
-fn in_trait_impl(name: &str) -> bool {
-    name.starts_with('<') && name.contains(" as ")
 }
