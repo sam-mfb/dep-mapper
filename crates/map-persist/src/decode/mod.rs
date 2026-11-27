@@ -241,7 +241,7 @@ impl Decoder<'_> {
                                 .as_ref()
                                 .map(|location| self.location(location))
                                 .transpose()?,
-                            used_by: self.used_by(item)?,
+                            used_by: self.used_by(key, item)?,
                         })
                     })
                     .collect::<Result<_>>()?;
@@ -361,8 +361,10 @@ impl Decoder<'_> {
 
     /// A surface item's users, sorted. `used_by` is written in format 3 and
     /// later; left out, it means no other module uses the item. A module
-    /// may be listed only once.
-    fn used_by(&self, item: &SurfaceDoc) -> Result<Vec<ModuleId>> {
+    /// may be listed only once, and `owner`, the item's own module, not at
+    /// all. Whether the others are on the map is checked with the rest of
+    /// the map's parts.
+    fn used_by(&self, owner: &str, item: &SurfaceDoc) -> Result<Vec<ModuleId>> {
         let Some(users) = &item.used_by else {
             return Ok(Vec::new());
         };
@@ -377,6 +379,14 @@ impl Decoder<'_> {
         }
         let mut seen = BTreeSet::new();
         for user in users.get_ref() {
+            if user.get_ref() == owner {
+                return Err(self.error(
+                    user.span(),
+                    format!(
+                        "`used_by` lists only other modules, not the item's own module {owner:?}"
+                    ),
+                ));
+            }
             if !seen.insert(user.get_ref().clone()) {
                 return Err(self.error(
                     user.span(),

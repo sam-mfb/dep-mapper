@@ -731,7 +731,7 @@ fn used_by_loads_sorted_and_is_always_saved() {
 }
 
 #[test]
-fn used_by_is_refused_before_format_3_and_when_a_module_repeats() {
+fn used_by_is_refused_before_format_3_and_when_a_module_repeats_or_owns_the_item() {
     let error = refused(&surface_draft(2, "used_by = [\"map-web\"]\n"));
     assert_eq!(
         error.message,
@@ -742,6 +742,12 @@ fn used_by_is_refused_before_format_3_and_when_a_module_repeats() {
     assert_eq!(
         error.message,
         "module \"map-web\" is listed twice in `used_by`"
+    );
+    assert_eq!(error.position, position(12, 23));
+    let error = refused(&surface_draft(3, "used_by = [\"map-web\", \"cache\"]\n"));
+    assert_eq!(
+        error.message,
+        "`used_by` lists only other modules, not the item's own module \"cache\""
     );
     assert_eq!(error.position, position(12, 23));
 }

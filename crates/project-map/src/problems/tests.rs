@@ -221,6 +221,30 @@ fn a_dependency_on_a_module_not_on_the_map_is_reported() {
 }
 
 #[test]
+fn a_surface_item_used_by_a_module_not_on_the_map_is_reported_once() {
+    let mut map = mixed();
+    let mut keys = map.modules.keys().cloned();
+    let (owner, user) = (keys.next().unwrap(), keys.next().unwrap());
+    map.modules.get_mut(&owner).unwrap().surface = ["One", "Two"]
+        .into_iter()
+        .map(|name| crate::SurfaceItem {
+            name: name.into(),
+            kind: crate::ItemKind::Type,
+            signature: None,
+            declaration: None,
+            used_by: vec![user.clone(), id("ghost")],
+        })
+        .collect();
+    assert_eq!(
+        map.problems(),
+        [MapProblem::MissingModule {
+            part: MapPart::Module(owner),
+            module: id("ghost"),
+        }]
+    );
+}
+
+#[test]
 fn a_hop_along_a_dependency_not_on_the_map_is_reported() {
     let mut map = mixed();
     map.dependencies.remove(&dep("a", "b"));

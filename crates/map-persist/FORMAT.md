@@ -100,7 +100,7 @@ used_by = ["map-preview", "map-web"]
 
 - `name` and `review` are required. `surface` may be left out to mean none.
 - A surface item needs `name` and `kind`, which is `type`, `value`, `function`, `method` or `module`. `signature` and `declaration` may be left out. A `declaration` is a location.
-- A surface item's `used_by` lists the IDs of the other modules that use it, each once. It may be left out to mean none, as a draft's items usually do. Loading sorts it. `map-builder` fills it from the graph's use facts, the same facts that draw dependency arrows.
+- A surface item's `used_by` lists the IDs of the other modules that use it, each once. Each must be a module on the map, or for a draft, on the map the draft makes with its base; the item's own module is refused. It may be left out to mean none, as a draft's items usually do. Loading sorts it. `map-builder` fills it from the graph's use facts, the same facts that draw dependency arrows.
 
 ### Dependency
 

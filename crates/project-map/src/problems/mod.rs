@@ -25,7 +25,8 @@ pub enum MapPart {
 pub enum MapProblem {
     /// The part cites an entry that is not in the map's evidence.
     MissingEvidence { part: MapPart, citation: CitationId },
-    /// A dependency or route names a module that is not on the map.
+    /// A dependency, a route or a module's surface item names a module that
+    /// is not on the map. For a surface item, `part` is the item's module.
     MissingModule { part: MapPart, module: ModuleId },
     /// A route hop travels along a dependency that is not on the map.
     MissingDependency {
@@ -78,6 +79,19 @@ impl ProjectMap {
                     problems.push(MapProblem::UnlistedLayer {
                         module: id.clone(),
                         layer: layer.clone(),
+                    });
+                }
+            }
+            let users: BTreeSet<&ModuleId> = module
+                .surface
+                .iter()
+                .flat_map(|item| &item.used_by)
+                .collect();
+            for user in users {
+                if !self.modules.contains_key(user) {
+                    problems.push(MapProblem::MissingModule {
+                        part: part.clone(),
+                        module: user.clone(),
                     });
                 }
             }
